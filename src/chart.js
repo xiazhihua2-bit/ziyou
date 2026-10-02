@@ -235,6 +235,20 @@ XJ.chart = (function () {
         (isZero ? 'var(--text-2)' : 'var(--text-3)') + '">' + esc(fmtY(t)) + '</text>';
     });
 
+    /* 自定义基准虚线（如覆盖率卡的 100% 🎉）：独立于刻度线，只在值落在量程内时画 */
+    if (opts.hline && opts.hline.value !== undefined) {
+      var hv = Number(opts.hline.value);
+      if (isFinite(hv) && hv >= sc.lo && hv <= sc.hi) {
+        var hy = py(hv);
+        svg += '<line x1="' + x0 + '" y1="' + hy.toFixed(1) + '" x2="' + x1 + '" y2="' + hy.toFixed(1) +
+          '" style="stroke:' + (opts.hline.color || 'var(--payout)') + '" stroke-width="1.2" stroke-dasharray="5 4"/>';
+        if (opts.hline.label) {
+          svg += '<text x="' + (x0 + 4) + '" y="' + (hy - 4).toFixed(1) + '" font-size="9.5" style="fill:' +
+            (opts.hline.color || 'var(--payout)') + '">' + esc(opts.hline.label) + '</text>';
+        }
+      }
+    }
+
     /* 蜡烛（可选，指数）—— 先画，避免压住折线 */
     if (opts.candles && opts.candles.length) {
       var candleColor = opts.candleColor || '#8E8E93';
@@ -254,6 +268,21 @@ XJ.chart = (function () {
           '" stroke-width="1" vector-effect="non-scaling-stroke"/>';
       });
       void candleColor;
+    }
+
+    /* 面积填充（可选，opts.area）：只支持第一条曲线（渐变 gid 只绑定了它的颜色）。
+       画在折线之下 —— 先插面积 path，再走下面的折线循环。 */
+    if (opts.area && seriesList[0] && seriesList[0].points.length > 1) {
+      var s0 = seriesList[0];
+      var d0 = s0.points.map(function (p, i) {
+        return (i ? 'L' : 'M') + px(di[p.date]).toFixed(1) + ' ' + py(p.pct).toFixed(1);
+      }).join('');
+      if (d0) {
+        var lastPt = s0.points[s0.points.length - 1];
+        var areaPath = d0 + ' L' + px(di[lastPt.date]).toFixed(1) + ' ' + y1.toFixed(1) +
+          ' L' + px(di[s0.points[0].date]).toFixed(1) + ' ' + y1.toFixed(1) + ' Z';
+        svg += '<path d="' + areaPath + '" fill="url(#' + gid + ')" stroke="none"/>';
+      }
     }
 
     /* 曲线 */
