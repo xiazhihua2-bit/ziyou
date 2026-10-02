@@ -1072,6 +1072,262 @@ XJ.calc = (function () {
     return { total: total, existing: exist, fromNew: total - exist };
   }
 
+  /* ==================== FIRE（财务自由试算） ====================
+   * 口径总纲（全部新函数共用，不得各写一套）：
+   *   被动收入(t) = P0/12 + 新钱池月分红(t)/12
+   *   P0 = summary().totalPredicted（现有持仓预测年分红，恒定不随时间变）
+   *   新钱完全按 forecastRows 口径：当年投入当年即生息、年末再投次年起息；
+   *   forecastRows 是年度递推 → 月度插值统一为「年内线性」：
+   *     D(k + i/12) = D_k + (D_{k+1} − D_k) × i/12    （k 完整年，i=0..11）
+   *
+   * 三档定义（用户拍板）：
+   *   Lean    = 被动收入覆盖【生存支出】
+   *   Regular = 被动收入覆盖【生存 + 品质支出】
+   *   Fat     = 被动收入覆盖【生存 + 200% 品质支出】（即 es + 2q）
+   */
+  var FIRE = {
+    spendMax: 30000, spendStep: 10,     // 花费滑杆（元/月）
+    dripMax: 50000, dripStep: 100,      // 每月攒股滑杆（元/月）
+    daysPerMonth: 30.44,                // 日↔月显示换算（年平均月长度）
+    capitalRule4: 0.04,                 // 4% 法则（仅提示条参考文案用）
+    futureMonthsCap: 600,               // 覆盖率外推封顶 50 年
+  };
+
+  /** 'YYYY-MM' 加 n 个月（n 可负），返回 'YYYY-MM' */
+  function ymAdd(ym, n) {
+    var y = parseInt(String(ym).slice(0, 4), 10);
+    var m = parseInt(String(ym).slice(5, 7), 10) - 1 + n;
+    y += Math.floor(m / 12);
+    m = ((m % 12) + 12) % 12;
+    return y + '-' + String(m + 1).padStart(2, '0');
+  }
+
+  /** 三档月支出分母：enabled 项；es=Σ生存、q=Σ品质；lean=es、regular=es+q、fat=es+2q */
+  function tierMonthlySpend(expenses, tier) {
+    var es = 0, q = 0;
+    (expenses || []).forEach(function (e) {
+      if (!e || !e.enabled) return;
+      var m = Math.max(0, U.n0(e.monthlyAmount));
+      if (e.category === 'quality') q += m; else es += m;
+    });
+    if (tier === 'lean') return es;
+    if (tier === 'fat') return es + 2 * q;
+    return es + q;
+  }
+
+  /**
+   * 三档 FIRE 目标与 FI 进度。
+   * fireNumber = 档位年支出 ÷ 真实持仓息率（口径 yieldBasis：'cost'|'market'）；
+   * 息率 ≤ 0 / 成本非正 → fireNumber = null（界面如实显示「暂无法测算」）。
+   * capitalAt4 = 年支出 ÷ 4%（4% 法则参考值，仅提示条文案用）。
+   */
+  function fireTargets(state, acc, yieldBasis) {
+    var s = summary(state, acc);
+    var basis = yieldBasis === 'cost' ? 'cost' : 'market';
+    var yieldPct = (basis === 'cost') ? s.costYield : s.compositeYield;
+    if (yieldPct !== null && !isFinite(yieldPct)) yieldPct = null;
+    var tiers = {};
+    ['lean', 'regular', 'fat'].forEach(function (t) {
+      var monthly = tierMonthlySpend(state.expenses, t);
+      var annual = monthly * 12;
+      var fireNumber = (yieldPct !== null && yieldPct > 0) ? annual / (yieldPct / 100) : null;
+      tiers[t] = {
+        monthly: monthly,
+        annual: annual,
+        fireNumber: fireNumber,
+        fiRatio: (fireNumber !== null && fireNumber > 0 && s.totalMarketValue > 0)
+          ? s.totalMarketValue / fireNumber * 100 : null,
+        capitalAt4: annual / FIRE.capitalRule4,
+      };
+    });
+    return { tiers: tiers, yieldPct: yieldPct, yieldBasis: basis, fiPrincipal: s.totalMarketValue };
+  }
+
+  /**
+   * 归一化某档的试算参数（滑杆值 → 模型入参）。
+   * null 语义：monthlySpend=null → 该档真实台账；dripYieldPct=null → 当前组合息率（按口径）。
+   */
+  function fireCfg(state, acc, tier, fire) {
+    fire = fire || (state.settings && state.settings.fire) || {};
+    var s = summary(state, acc);
+    var basis = fire.yieldBasis === 'cost' ? 'cost' : 'market';
+    var baseYieldPct = (basis === 'cost') ? s.costYield : s.compositeYield;
+    if (baseYieldPct !== null && !isFinite(baseYieldPct)) baseYieldPct = null;
+
+    var sim = (fire.tierSims && fire.tierSims[tier]) || {};
+    var monthlySpend = U.num(sim.monthlySpend);
+    if (monthlySpend === null) monthlySpend = tierMonthlySpend(state.expenses, tier);
+    monthlySpend = U.clamp(monthlySpend, 0, FIRE.spendMax);
+
+    var drip = U.num(sim.drip);
+    if (drip === null) drip = 5000;
+    drip = U.clamp(drip, 0, FIRE.dripMax);
+
+    var dripYieldPct = U.num(sim.dripYieldPct);
+    if (dripYieldPct === null) dripYieldPct = baseYieldPct;
+    dripYieldPct = (dripYieldPct === null) ? 0 : U.clamp(dripYieldPct, 0, FORECAST.yieldMaxPct);
+
+    return {
+      P0: Math.max(0, U.n0(s.totalPredicted)),       // 现有持仓预测年分红（恒定）
+      X: drip * 12,                                   // 年投入（新钱）
+      y: dripYieldPct,                                // 攒股息率 %
+      r: U.clamp(U.n0(fire.reinvestPct), 0, 100),     // 再投比例 %
+      monthlySpend: monthlySpend,                     // 目标月支出（当前档模拟值）
+      drip: drip,
+      dripYieldPct: dripYieldPct,
+      baseYieldPct: baseYieldPct,                     // 组合真实息率（口径内），供场景合成
+      yieldBasis: basis,
+    };
+  }
+
+  /** cfg → forecast 家族的 cfg 形状（避免两处形状漂移） */
+  function fireAsForecast(cfg) {
+    return { annualInvest: cfg.X, yieldPct: cfg.y, years: FORECAST.yearsMax, reinvestPct: cfg.r };
+  }
+
+  /**
+   * 距离财务自由的时间：解「被动收入(t) ≥ 目标月支出」。
+   * reached（目标 ≤ 当前被动收入）→ months=0；
+   * reason ∈ 'no-growth' | 'beyond-limit' 原样透出（调用方不得改参数）。
+   */
+  function fireTimeline(state, acc, cfg) {
+    var solved = forecastSolveYears(fireAsForecast(cfg), cfg.P0, cfg.monthlySpend);
+    var todayYm = U.ymOf(U.today());
+    if (solved.ok && solved.reached) {
+      return { solvable: true, reached: true, exact: 0, months: 0, date: todayYm,
+        fromNow: { y: 0, m: 0 }, targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+    }
+    if (!solved.ok) {
+      return { solvable: false, reason: solved.reason, exact: solved.exact || null, months: null,
+        date: null, fromNow: null, targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+    }
+    var months = solved.exact * 12;
+    var yy = Math.floor(months / 12);
+    var mm = Math.round(months - yy * 12);
+    if (mm === 12) { yy += 1; mm = 0; }
+    return { solvable: true, reached: false, exact: solved.exact, months: months,
+      date: ymAdd(todayYm, Math.round(months)), fromNow: { y: yy, m: mm },
+      targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+  }
+
+  /** 小数月 t（t/12=年）的月被动收入；t=0 → P0/12（与「当前」对齐）。年内线性插值。 */
+  function fireMonthlyPassive(cfg, tMonths) {
+    var t = Math.max(0, U.n0(tMonths));
+    var k = Math.floor(t / 12);
+    var i = t - k * 12;
+    var fc = fireAsForecast(cfg);
+    var Dk = forecastDividendAt(fc, cfg.P0, k);
+    var Dk1 = forecastDividendAt(fc, cfg.P0, k + 1);
+    return (Dk + (Dk1 - Dk) * (i / 12)) / 12;
+  }
+
+  /**
+   * 被动收入覆盖率月度序列（图 2 曲线数据）。
+   * ★ 历史段自行遍历 received 并按标的币种折 CNY —— stats().byMonth 是原币合计，
+   *   跨币种直接加总会把港币当人民币（踩过：summary 的 recvCny 范式，calc.js 同款）。
+   * 历史段缺月填 0（连续填月不断线）；未来段从当月起按月外推，≥100% 即停或 600 个月封顶。
+   */
+  function fireCoverageHistory(state, acc, tier, cfg) {
+    var fxNow = (state.settings && state.settings.fx) || {};
+    var target = cfg.monthlySpend;
+    var byMonth = {};
+    state.received.forEach(function (r) {
+      if (acc !== ALL && r.accountId !== acc) return;
+      var ym = U.ymOf(r.exDividendDate);
+      if (!ym) return;
+      var cny = U.n0(r.amount) * fxRate(XJ.market.currency(r.symbol), fxNow);
+      byMonth[ym] = (byMonth[ym] || 0) + cny;
+    });
+    var todayYm = U.ymOf(U.today());
+    var keys = Object.keys(byMonth).filter(function (k) { return k <= todayYm; }).sort();
+    var history = [];
+    if (keys.length) {
+      var cur = keys[0];
+      while (cur <= todayYm) {
+        var amt = byMonth[cur] || 0;
+        history.push({ date: cur, pct: target > 0 ? amt / target * 100 : null });
+        cur = ymAdd(cur, 1);
+      }
+    }
+    var future = [];
+    for (var j = 1; j <= FIRE.futureMonthsCap; j++) {
+      var mp = fireMonthlyPassive(cfg, j);      // t 单位=月
+      var pct = target > 0 ? mp / target * 100 : null;
+      future.push({ date: ymAdd(todayYm, j), pct: pct });
+      if (pct !== null && pct >= 100) break;
+    }
+    var currentPct = null;
+    if (history.length && history[history.length - 1].pct !== null) {
+      currentPct = history[history.length - 1].pct;
+    } else if (future.length) {
+      currentPct = future[0].pct;
+    }
+    return { history: history, future: future, currentPct: currentPct, targetMonthly: target };
+  }
+
+  /**
+   * FI 进度卡数据：FI 本金（持仓市值）÷ 各档 FIRE number。
+   * series 复用 marketValueSeries（历史市值曲线，含快照覆盖口径）；
+   * 粗算年数不在这里算——视图层拿 gap 与 drip 自行除（要标注「不计入投资收益」）。
+   */
+  function fireProgress(state, acc, yieldBasis) {
+    var priceMap = {};
+    Object.keys(state.priceHistory || {}).forEach(function (sym) {
+      var ph = state.priceHistory[sym];
+      priceMap[sym] = (ph && ph.points) || [];
+    });
+    var mvs = marketValueSeries(state, acc, priceMap);
+    var targets = fireTargets(state, acc, yieldBasis);
+    var tiers = {};
+    ['lean', 'regular', 'fat'].forEach(function (t) {
+      var fn = targets.tiers[t].fireNumber;
+      tiers[t] = {
+        fireNumber: fn,
+        ratio: (fn !== null && fn > 0) ? targets.fiPrincipal / fn * 100 : null,
+        gap: (fn !== null) ? Math.max(0, fn - targets.fiPrincipal) : null,
+      };
+    });
+    return { fiPrincipal: targets.fiPrincipal, series: mvs.series, tiers: tiers, missing: mvs.missing };
+  }
+
+  /**
+   * 场景求解：相对「全默认基准」的自由日变化。
+   * 场景参数语义（相对【默认值】而非当前模拟值）：
+   *   spendPct    相对该档真实台账支出的 % 变化
+   *   dripPct     相对默认攒股 5000 的 % 变化
+   *   yieldAdjPct 息率偏移百分点（合成后 clamp 0–30）
+   */
+  function fireSceneSolve(state, acc, tier, fire, scene) {
+    fire = fire || (state.settings && state.settings.fire) || {};
+    var base = fireCfg(state, acc, tier, fire);
+    var defSpend = tierMonthlySpend(state.expenses, tier);
+    var spendPct = U.clamp(U.n0(scene && scene.spendPct), -100, 300);
+    var dripPct = U.clamp(U.n0(scene && scene.dripPct), -100, 900);
+    var yieldAdj = U.clamp(U.n0(scene && scene.yieldAdjPct), -30, 30);
+    var baseY = base.baseYieldPct === null ? 0 : base.baseYieldPct;
+    var drip2 = U.clamp(5000 * (1 + dripPct / 100), 0, FIRE.dripMax);
+    var y2 = U.clamp(baseY + yieldAdj, 0, FORECAST.yieldMaxPct);
+    var cfg2 = {
+      P0: base.P0, X: drip2 * 12, y: y2, r: base.r,
+      monthlySpend: U.clamp(defSpend * (1 + spendPct / 100), 0, FIRE.spendMax),
+      drip: drip2, dripYieldPct: y2, baseYieldPct: base.baseYieldPct, yieldBasis: base.yieldBasis,
+    };
+    var tScene = fireTimeline(state, acc, cfg2);
+    var cleanFire = { yieldBasis: fire.yieldBasis, reinvestPct: fire.reinvestPct,
+      tierSims: { lean: {}, regular: {}, fat: {} } };   // 全默认（monthlySpend/dripYieldPct=null, drip=5000）
+    var tBase = fireTimeline(state, acc, fireCfg(state, acc, tier, cleanFire));
+    var deltaMonths = (tScene.solvable && tBase.solvable)
+      ? tScene.months - tBase.months : null;
+    var delta = null;
+    if (deltaMonths !== null) {
+      var neg = deltaMonths < 0;
+      var abs = Math.abs(deltaMonths);
+      delta = { earlier: neg, months: deltaMonths, y: Math.floor(abs / 12), m: Math.round(abs - Math.floor(abs / 12) * 12) };
+    }
+    return { scene: tScene, base: tBase, delta: delta,
+      params: { monthlySpend: cfg2.monthlySpend, drip: drip2, dripYieldPct: y2 } };
+  }
+
   /* ---------------- 股息统计 ---------------- */
 
   function stats(state, accountId) {
@@ -2671,6 +2927,16 @@ XJ.calc = (function () {
     rebasePercent: rebasePercent,
     indexBarsInRange: indexBarsInRange,
     indexCandles: indexCandles,
+    /* FIRE 视图（v6）：财务自由试算 */
+    FIRE: FIRE,
+    tierMonthlySpend: tierMonthlySpend,
+    fireTargets: fireTargets,
+    fireCfg: fireCfg,
+    fireTimeline: fireTimeline,
+    fireMonthlyPassive: fireMonthlyPassive,
+    fireCoverageHistory: fireCoverageHistory,
+    fireProgress: fireProgress,
+    fireSceneSolve: fireSceneSolve,
     netInvested: function (txs, upToDate) {
       var p = position(txs, upToDate, 'weighted');
       return {
