@@ -2314,7 +2314,7 @@ section('【26】对比指数 · TWR 收益率 · 成本口径迁移');
   eq('seriesDelta(pct) · pct 字段不再二次换算', sdPct.pct, 7.5);
 
   /* ---- 成本口径迁移：v3 → v4 全部改为分红摊薄 ---- */
-  eq('DATA_VERSION 已升到 5（v5 新增 syncMeta，只补容器）', M.DATA_VERSION, 5);
+  eq('DATA_VERSION 已升到 6（v6 新增 expenses.category 与 settings.fire）', M.DATA_VERSION, 6);
   eq('默认成本口径 = 分红摊薄', M.DEFAULT_COST_METHOD, 'dividendDiluted');
 
   const v3raw = {
@@ -2328,7 +2328,7 @@ section('【26】对比指数 · TWR 收益率 · 成本口径迁移');
     settings: { defaultAccountId: 'a1' },
   };
   const migrated = M.fromImport(v3raw);
-  eq('迁移 · 版本号升到 5', migrated.version, 5);
+  eq('迁移 · 版本号升到 6', migrated.version, 6);
   eq('迁移 · 原本是加权平均的被切到分红摊薄', migrated.symbols['sh600023'].costMethod, 'dividendDiluted');
   eq('迁移 · 原本没设口径的也切到分红摊薄', migrated.symbols['sz000858'].costMethod, 'dividendDiluted');
   eq('迁移 · 幂等（再导入同一份已升版数据不再改动）', M.fromImport(migrated).symbols['sh600023'].costMethod, 'dividendDiluted');
@@ -2924,7 +2924,7 @@ section('【30】技术信号：BOLL 下轨 + KDJ 的 J<0（吃 OHLC）');
   eq('toExport 带上 klineCache（换设备也带得走）', 'klineCache' in exp, true);
   const imp = XJ.model.fromImport({ klineCache: { sh600036: { at: REF_TODAY, day: [{ d: '2026-09-10', o: 1, h: 2, l: 0.5, c: 1.5 }], week: [] } } });
   eq('fromImport 读回 klineCache', !!(imp.klineCache && imp.klineCache.sh600036), true);
-  eq('DATA_VERSION 仍为 5（新增容器不升版本号，靠 ensureBootstrapped 补齐）', XJ.model.DATA_VERSION, 5);
+  eq('DATA_VERSION 仍为 6（新增容器不升版本号，靠 ensureBootstrapped 补齐）', XJ.model.DATA_VERSION, 6);
 
   /* ---- 30.7 当日分时缓存：模型层四同步点 + 裁字段迁移 ---- */
   const mst = XJ.model.defaultState();
@@ -2967,7 +2967,7 @@ section('【30】技术信号：BOLL 下轨 + KDJ 的 J<0（吃 OHLC）');
   eq('★ toExport 不带 minuteCache（当天有效，导出无意义）', 'minuteCache' in mexp, false);
   const mimp = XJ.model.fromImport({ minuteCache: { at: REF_TODAY, bySymbol: {} } });
   eq('★ fromImport 忽略 minuteCache（下次刷新自动重建）', mimp.minuteCache, null);
-  eq('DATA_VERSION 仍为 5（minuteCache 同样靠 ensureBootstrapped 补齐）', XJ.model.DATA_VERSION, 5);
+  eq('DATA_VERSION 仍为 6（minuteCache 同样靠 ensureBootstrapped 补齐）', XJ.model.DATA_VERSION, 6);
 
   /* 与 calc.minuteOf 打通：模型层产出的结构能被取用 */
   eq('ensureBootstrapped 后的结构可被 calc.minuteOf 消费',
@@ -3155,7 +3155,7 @@ section('【31】股息率曲线：财年分子 · 预案公告日生效 · 含�
   });
   eq('fromImport 读回 yieldHistory', !!(yimp.yieldHistory && yimp.yieldHistory.sh600036), true);
   eq('fromImport 读回 benchHistory', !!(yimp.benchHistory && yimp.benchHistory.points.length === 2), true);
-  eq('DATA_VERSION 仍为 5（新容器靠 ensureBootstrapped 补齐）', XJ.model.DATA_VERSION, 5);
+  eq('DATA_VERSION 仍为 6（新容器靠 ensureBootstrapped 补齐）', XJ.model.DATA_VERSION, 6);
 
   /* ---- 取数层：两窗拼接依赖的归一化 + 七日年化解析 ---- */
   /* ★ fetchYieldHistory 把「近 8 年」与「再往前 3 年」两段拼起来，
@@ -3626,6 +3626,149 @@ section('【36】历史 cost 只用「截至当日」已到账的分红（分红
   eq('32.7 ★ keepSync 时结构仍在（将来接回即生效）', !!kept.syncMeta && typeof kept.syncMeta === 'object', true);
 }
 
+/* -------------------------------------------------------------------------
+ * 【37】FIRE：三档分母 / fireNumber 双口径 / 时间反解 / 覆盖率历史折算 / 场景
+ *
+ * 全部新函数（tierMonthlySpend / fireTargets / fireCfg / fireTimeline /
+ * fireMonthlyPassive / fireCoverageHistory / fireProgress / fireSceneSolve）
+ * 的口径锚：
+ *   · 三档分母 Lean=生存、Regular=生存+品质、Fat=生存+2×品质（停用项不计）
+ *   · fireNumber = 档位年支出 ÷ 真实持仓息率（cost/market 两口径）
+ *   · fireTimeline 与 forecastRows/forecastSolveYears 逐位交叉一致
+ *   · 覆盖率历史按标的币种折 CNY（stats().byMonth 是原币，绝不能直接用）
+ * ------------------------------------------------------------------------- */
+section('【37】FIRE：三档分母 · fireNumber 双口径 · 时间反解 · 覆盖率折算 · 场景');
+{
+  const C = XJ.calc, M = XJ.model;
+
+  /* ---- 37.1~37.3 三档分母（含停用项不计） ---- */
+  const fstate = M.ensureBootstrapped(M.defaultState());
+  fstate.expenses = [
+    { expenseId: 'e1', key: 'A', label: '生存A', icon: '🏠', iconAuto: false, monthlyAmount: 600, enabled: true, sortOrder: 1, category: 'essential' },
+    { expenseId: 'e2', key: 'B', label: '生存B', icon: '⚡', iconAuto: false, monthlyAmount: 900, enabled: true, sortOrder: 2, category: 'essential' },
+    { expenseId: 'e3', key: 'C', label: '品质C', icon: '🎮', iconAuto: false, monthlyAmount: 500, enabled: true, sortOrder: 3, category: 'quality' },
+    { expenseId: 'e4', key: 'D', label: '停用D', icon: '🏷️', iconAuto: false, monthlyAmount: 999, enabled: false, sortOrder: 4, category: 'quality' },
+  ];
+  eq('37.1 Lean 分母 = 生存合计（停用项不计）', C.tierMonthlySpend(fstate.expenses, 'lean'), 1500);
+  eq('37.2 Regular 分母 = 生存 + 品质', C.tierMonthlySpend(fstate.expenses, 'regular'), 2000);
+  eq('37.3 ★ Fat 分母 = 生存 + 2×品质（es+2q，不是 es+3q）', C.tierMonthlySpend(fstate.expenses, 'fat'), 2500);
+
+  /* ---- 37.4~37.8 fireNumber 双口径（用主 fixtures state） ---- */
+  const st2 = M.ensureBootstrapped(state);
+  const s0 = C.summary(st2, C.ALL);
+  const tgM = C.fireTargets(st2, C.ALL, 'market');
+  const tgC = C.fireTargets(st2, C.ALL, 'cost');
+  eq('37.4 market 口径 yieldPct == summary().marketYield', tgM.yieldPct, s0.marketYield);
+  eq('37.5 cost 口径 yieldPct == summary().costYield', tgC.yieldPct, s0.costYield);
+  close('37.6 Regular fireNumber = 年支出 ÷ (市值息率/100)',
+    tgM.tiers.regular.fireNumber, tgM.tiers.regular.annual / (s0.marketYield / 100), 1e-6);
+  close('37.7 ★ capitalAt4 = 年支出 × 25（4% 法则）',
+    tgM.tiers.lean.capitalAt4, tgM.tiers.lean.annual * 25, 1e-6);
+  close('37.8 fiRatio = 本金 ÷ fireNumber × 100',
+    tgM.tiers.regular.fiRatio, s0.totalMarketValue / tgM.tiers.regular.fireNumber * 100, 1e-6);
+
+  /* ---- 37.9~37.17 fireCfg / fireTimeline（与 forecastRows 交叉） ---- */
+  const fire = st2.settings.fire;
+  fire.tierSims.regular = { monthlySpend: 2000, drip: 3000, dripYieldPct: 6 };
+  const cfg = C.fireCfg(st2, C.ALL, 'regular', fire);
+  eq('37.9 cfg.X = drip × 12', cfg.X, 36000);
+  eq('37.10 cfg.P0 = summary().totalPredicted', cfg.P0, s0.totalPredicted);
+  const tl = C.fireTimeline(st2, C.ALL, cfg);
+  if (tl.solvable && !tl.reached) {
+    const rows = C.forecastRows({ annualInvest: cfg.X, yieldPct: cfg.y, years: 50, reinvestPct: cfg.r }, cfg.P0).rows;
+    const N = Math.ceil(tl.exact);
+    eq('37.11 交叉 · 第 ceil(exact) 年月均已达标', rows[N - 1].monthly >= tl.targetMonthly, true);
+    eq('37.12 交叉 · 前一年月均未达标', rows[N - 2] ? rows[N - 2].monthly < tl.targetMonthly : true, true);
+    close('37.12b 交叉 · exact 年分红 == 闭式 D_N', C.forecastDividendAt(
+      { annualInvest: cfg.X, yieldPct: cfg.y, years: 50, reinvestPct: cfg.r }, cfg.P0, N),
+      rows[N - 1].dividend, 1e-6);
+  } else if (tl.solvable && tl.reached) {
+    eq('37.11 reached · months=0', tl.months, 0);
+  }
+  const mp0 = C.fireMonthlyPassive(cfg, 0);
+  close('37.13 fireMonthlyPassive(0) = P0/12', mp0, cfg.P0 / 12, 1e-9);
+  const fc = { annualInvest: cfg.X, yieldPct: cfg.y, years: 50, reinvestPct: cfg.r };
+  const d0 = C.forecastDividendAt(fc, cfg.P0, 0);
+  const d1 = C.forecastDividendAt(fc, cfg.P0, 1);
+  close('37.14 ★ 月度线性插值 · t=6 个月 = (D0 + (D1−D0)×0.5)/12',
+    C.fireMonthlyPassive(cfg, 6), (d0 + (d1 - d0) * 0.5) / 12, 1e-9);
+  const cfg0 = Object.assign({}, cfg, { y: 0, dripYieldPct: 0, monthlySpend: cfg.monthlySpend + 100000 });
+  const tl0 = C.fireTimeline(st2, C.ALL, cfg0);
+  eq('37.15 no-growth · 不可解', tl0.solvable, false);
+  eq('37.16 reason = no-growth', tl0.reason, 'no-growth');
+  const cfgR = Object.assign({}, cfg, { monthlySpend: cfg.P0 / 12 });
+  const tlR = C.fireTimeline(st2, C.ALL, cfgR);
+  eq('37.17 reached · months=0', tlR.reached, true);
+  eq('37.17b reached · 月份为 0', tlR.months, 0);
+
+  /* ---- 37.18~37.22 覆盖率历史：双币种折算 / 缺月 / 外推首月 / 连续填月 ---- */
+  const hstate = M.ensureBootstrapped(M.defaultState());
+  hstate.settings.fx = { HKD: 0.9, USD: 7.1, updatedAt: REF_TODAY + 'T00:00:00Z' };
+  const acc1 = hstate.accounts[0].accountId;
+  hstate.received = [
+    { recId: 'r1', accountId: acc1, symbol: 'sh600036', planId: null, exDividendDate: '2026-01-10',
+      perShareAmount: 2, qtyAtRecord: 100, amount: 1000, source: 'MANUAL', year: 2026, createdAt: '2026-01-10T00:00:00Z' },
+    { recId: 'r2', accountId: acc1, symbol: 'hk00700', planId: null, exDividendDate: '2026-01-20',
+      perShareAmount: 3, qtyAtRecord: 100, amount: 500, source: 'MANUAL', year: 2026, createdAt: '2026-01-20T00:00:00Z' },
+  ];
+  const hcfg = { P0: 0, X: 12000, y: 5, r: 100, monthlySpend: 1500, drip: 1000,
+    dripYieldPct: 5, baseYieldPct: 5, yieldBasis: 'market' };
+  const cov = C.fireCoverageHistory(hstate, C.ALL, 'lean', hcfg);
+  const jan = cov.history.find(function (h) { return h.date === '2026-01'; });
+  close('37.18 ★ 港币按 fx 折算（1000 + 500×0.9 = 1450 → 96.67%）',
+    jan.pct, 1450 / 1500 * 100, 1e-6);
+  eq('37.19 对照 · byMonth 是原币合计（1500 ≠ 1450，证明折算生效）',
+    C.stats(hstate, C.ALL).byMonth['2026-01'], 1500);
+  const feb = cov.history.find(function (h) { return h.date === '2026-02'; });
+  eq('37.20 缺月 = 0（连续填月不断线）', feb.pct, 0);
+  close('37.21 外推第 12 个月 = (P0 + y·X)/12 ÷ 分母 × 100（年内线性：B(1年)=X）',
+    cov.future[11].pct, ((0 + 0.05 * 12000) / 12) / 1500 * 100, 1e-6);
+  eq('37.22 连续填月（2026-01 .. REF_TODAY 月）',
+    cov.history.length, (2026 - 2026) * 12 + (Number(REF_TODAY.slice(5, 7)) - 1 + 1));
+  close('37.22b 外推收口 · 达标即停（末点 ≥ 100）',
+    cov.future[cov.future.length - 1].pct >= 100 ? 1 : 0, 1, 0);
+
+  /* ---- 37.23~37.24 fireProgress 一致性 ---- */
+  const pr = C.fireProgress(st2, C.ALL, 'market');
+  close('37.23 fireProgress.tiers.regular.fireNumber == fireTargets 同口径',
+    pr.tiers.regular.fireNumber, tgM.tiers.regular.fireNumber, 1e-6);
+  close('37.24 gap = max(0, fireNumber − 本金)',
+    pr.tiers.regular.gap, Math.max(0, tgM.tiers.regular.fireNumber - s0.totalMarketValue), 1e-6);
+
+  /* ---- 37.25 场景：方向断言 + clamp ---- */
+  const baseTl = C.fireTimeline(st2, C.ALL, C.fireCfg(st2, C.ALL, 'regular',
+    Object.assign(JSON.parse(JSON.stringify(fire)), { tierSims: { lean: {}, regular: {}, fat: {} } })));
+  const sc = C.fireSceneSolve(st2, C.ALL, 'regular', fire, { spendPct: -10, dripPct: 100, yieldAdjPct: 0 });
+  eq('37.25 场景 · 参数合成（支出 −10%：默认模板 6 项合计 1810 → 1629）', sc.params.monthlySpend, 1629);
+  eq('37.26 场景 · 攒股 +100%（5000→10000，相对默认而非当前 sim）', sc.params.drip, 10000);
+  if (sc.solvable !== false && sc.scene.solvable && baseTl.solvable && !baseTl.reached && !sc.scene.reached) {
+    eq('37.27 场景 · 少花钱多攒股 → 自由日不晚于基准',
+      sc.scene.months <= baseTl.months, true);
+  }
+  const scClamp = C.fireSceneSolve(st2, C.ALL, 'regular', fire, { spendPct: 0, dripPct: 0, yieldAdjPct: 99 });
+  eq('37.28 场景 · 息率合成后 clamp 到 30', scClamp.params.dripYieldPct, 30);
+
+  /* ---- 37.29~37.31 v5 备份迁移：category 全 essential + fire 补齐 + 幂等 ---- */
+  const v5raw = {
+    version: 5,
+    accounts: [{ accountId: 'a1', name: 'A', type: 'BROKER', sortOrder: 1, createdAt: '2026-01-01T00:00:00Z' }],
+    expenses: [
+      { expenseId: 'exp_phone', key: 'PHONE', label: '话费', icon: '💬', monthlyAmount: 60, enabled: true, sortOrder: 1 },
+      { expenseId: 'exp_x', key: 'X', label: '自定义', icon: '🏷️', monthlyAmount: 300, enabled: true, sortOrder: 2 },
+    ],
+    settings: { defaultAccountId: 'a1' },
+    transactions: [], plans: {}, received: [], symbols: {}, quoteCache: {},
+  };
+  const mi1 = M.fromImport(v5raw);
+  eq('37.29 v5 迁移 · 存量支出全部归 essential（不预判品质）',
+    mi1.expenses.every(function (e) { return e.category === 'essential'; }), true);
+  eq('37.30 v5 迁移 · settings.fire 三档补齐',
+    ['lean', 'regular', 'fat'].every(function (t) {
+      return mi1.settings.fire.tierSims[t] && mi1.settings.fire.tierSims[t].drip === 5000;
+    }), true);
+  eq('37.31 ★ 迁移幂等（再导入 JSON 全等）',
+    JSON.stringify(M.fromImport(mi1)), JSON.stringify(mi1));
+}
 
 fs.writeFileSync(
   path.join(ROOT, 'fixtures.json'),
