@@ -2,7 +2,7 @@
 XJ.model = (function () {
   var U = XJ.util;
 
-  var DATA_VERSION = 5;
+  var DATA_VERSION = 6;
 
   /**
    * v4：默认成本口径改成「分红摊薄」——分红到账后自动降低持仓成本。
@@ -10,6 +10,9 @@ XJ.model = (function () {
    * 迁移只跑一次，之后用户手动改过的口径不会被覆盖。
    * v5：新增 syncMeta（跨设备同步的连接信息与修订账本）。**只补容器、不动数据**，
    *     同步默认关闭，不开就等于没这回事。
+   * v6：支出项新增 category（'essential' 生存 | 'quality' 品质，FIRE 视图三档分母用），
+   *     存量数据**全部归 essential**（用户自行挑品质项，不做预判）；
+   *     新增 settings.fire（FIRE 视图的模拟参数 / 档位 / 场景），**只补容器、不动数据**。
    */
   var DEFAULT_COST_METHOD = 'dividendDiluted';
 
@@ -32,12 +35,12 @@ XJ.model = (function () {
   /* ---- 息覆生活默认支出项（与息记截图一致的 6 项，含 emoji 图标）
    * 用户可自由增删改；这里只是新装的初始值 ---- */
   var EXPENSE_TEMPLATE = [
-    { key: 'PHONE', label: '话费', icon: '💬', monthlyAmount: 60, sortOrder: 1 },
-    { key: 'INSURANCE', label: '保险', icon: '🛡️', monthlyAmount: 200, sortOrder: 2 },
-    { key: 'FRUIT', label: '水果', icon: '🍎', monthlyAmount: 150, sortOrder: 3 },
-    { key: 'UTILITY', label: '水电燃气', icon: '⚡', monthlyAmount: 100, sortOrder: 4 },
-    { key: 'MEALS', label: '三餐', icon: '🍱', monthlyAmount: 600, sortOrder: 5 },
-    { key: 'MORTGAGE', label: '房贷/房租', icon: '🏠', monthlyAmount: 700, sortOrder: 6 },
+    { key: 'PHONE', label: '话费', icon: '💬', monthlyAmount: 60, sortOrder: 1, category: 'essential' },
+    { key: 'INSURANCE', label: '保险', icon: '🛡️', monthlyAmount: 200, sortOrder: 2, category: 'essential' },
+    { key: 'FRUIT', label: '水果', icon: '🍎', monthlyAmount: 150, sortOrder: 3, category: 'essential' },
+    { key: 'UTILITY', label: '水电燃气', icon: '⚡', monthlyAmount: 100, sortOrder: 4, category: 'essential' },
+    { key: 'MEALS', label: '三餐', icon: '🍱', monthlyAmount: 600, sortOrder: 5, category: 'essential' },
+    { key: 'MORTGAGE', label: '房贷/房租', icon: '🏠', monthlyAmount: 700, sortOrder: 6, category: 'essential' },
   ];
 
   /* v1/v2 的旧模板：仅用于识别「用户从未改过支出项」从而安全升级到新模板 */
@@ -180,6 +183,22 @@ XJ.model = (function () {
         /* 分红汇总里的趣味换算基准（可配置）：默认「视频会员 ¥25/月」。
            monthly ≤ 0 时界面隐藏这一行。 */
         dividendFun: { name: '视频会员', monthly: 25 },
+        /* FIRE 视图（v6）：试算滑杆模拟值 / 三档 / 息率口径 / 场景。
+           ★ monthlySpend / dripYieldPct 为 null 表示「跟随真实值」（该档支出台账 / 当前组合息率），
+           与 heroForecast.yieldPct 的 null 语义同一范式；用户一动滑杆就落成数字固定下来。
+           每档（lean/regular/fat）各自记忆模拟值，互不干扰。 */
+        fire: {
+          v: 1,
+          yieldBasis: 'market',          // 息率口径：'cost' 成本息率 | 'market' 市值息率
+          activeTier: 'regular',         // 当前选中的 FIRE 档
+          tierSims: {
+            lean:    { monthlySpend: null, drip: 5000, dripYieldPct: null },
+            regular: { monthlySpend: null, drip: 5000, dripYieldPct: null },
+            fat:     { monthlySpend: null, drip: 5000, dripYieldPct: null },
+          },
+          reinvestPct: 100,              // 再投比例（与 FORECAST.reinvestDefaultPct 一致）
+          scenes: [],                    // [{ sceneId, name, spendPct, dripPct, yieldAdjPct }]
+        },
       },
       quoteCache: {},       // symbol -> quote
       snapshots: {},        // 'YYYY-MM-DD' -> { mv, cost, pred, recv, fx }
@@ -278,6 +297,9 @@ XJ.model = (function () {
         e.icon = KEY_EMOJI[e.key] || '🏷️';
         e.iconAuto = true;
       }
+      /* v6 分类归一：FIRE 三档分母用。存量数据全部归「生存」，用户在 FIRE 视图
+         自行把品质项挑出去；只认 'quality'，其余脏值一律归 'essential'（幂等）。 */
+      if (e.category !== 'quality') e.category = 'essential';
       if (e.sortOrder === undefined) e.sortOrder = i + 1;
       if (e.enabled === undefined) e.enabled = true;
     });
@@ -414,6 +436,28 @@ XJ.model = (function () {
     if (!state.settings.ocr.model) state.settings.ocr.model = 'glm-4v-flash';
     if (!state.settings.ocr.apiKey) state.settings.ocr.apiKey = DEFAULT_OCR_KEY;
     if (!Array.isArray(state.settings.unsupportedDividend)) state.settings.unsupportedDividend = [];
+
+    /* ---- v6：settings.fire 补齐（只补容器、不动数据；跑两遍结果全等） ---- */
+    var fire = state.settings.fire;
+    if (!fire || typeof fire !== 'object') fire = state.settings.fire = {};
+    if (fire.yieldBasis !== 'cost') fire.yieldBasis = 'market';
+    if (fire.activeTier !== 'lean' && fire.activeTier !== 'fat') fire.activeTier = 'regular';
+    if (!fire.tierSims || typeof fire.tierSims !== 'object') fire.tierSims = {};
+    ['lean', 'regular', 'fat'].forEach(function (t) {
+      var s = fire.tierSims[t];
+      if (!s || typeof s !== 'object') s = fire.tierSims[t] = {};
+      if (s.monthlySpend !== null && !isFinite(s.monthlySpend)) s.monthlySpend = null;
+      if (s.drip !== null && !isFinite(s.drip)) s.drip = 5000;
+      if (s.dripYieldPct !== null && !isFinite(s.dripYieldPct)) s.dripYieldPct = null;
+    });
+    if (!isFinite(fire.reinvestPct)) fire.reinvestPct = 100;
+    if (!Array.isArray(fire.scenes)) fire.scenes = [];
+    fire.scenes = fire.scenes.filter(function (sc) {
+      return sc && typeof sc === 'object' && sc.sceneId;
+    });
+
+    /* ---- v6 版本号推进（category 归一已在上面无版本门地完成） ---- */
+    if (U.n0(state.version) < 6) state.version = DATA_VERSION;
     return state;
   }
 
