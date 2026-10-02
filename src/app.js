@@ -5,7 +5,7 @@
   var TABS = [
     { id: 'overview', label: '持仓', icon: 'overview' },
     { id: 'calendar', label: '分红日历', icon: 'calendar' },
-    { id: 'find', label: '发现', icon: 'plan' },
+    { id: 'find', label: 'FIRE', icon: 'flame' },
     { id: 'mine', label: '我的', icon: 'mine' },
   ];
 
@@ -69,7 +69,7 @@
     var meta = {
       overview: ['自由', '股息收入追踪'],
       calendar: ['分红日历', '股权登记 · 除权除息 · 派息日'],
-      find: ['发现', '息覆生活 · 展望未来 · 股息统计'],
+      find: ['FIRE', '被动收入 · 财务自由试算'],
       mine: ['我的', '账户 · 数据 · 设置'],
     }[S.ui.tab] || ['自由', ''];
 
@@ -2909,10 +2909,19 @@
     UI.openSheet({ title: '息覆生活 · 支出项设置', html: html });
   });
 
-  /** 支出项编辑表单（含分类 emoji 图标选择器） */
+  /** 支出项编辑表单（含分类 emoji 图标选择器 + 生存/品质分类） */
   function expenseFormHtml(e) {
     var groups = M.EMOJI_GROUPS || [];
+    var cat = e.category === 'quality' ? 'quality' : 'essential';
     return '' +
+      '<div class="field"><label>分类（FIRE 视图三档分母）</label>' +
+      '<div class="segmented" style="width:100%">' +
+      '<button type="button" data-act="setExpenseCategory" data-v="essential" class="xp-cat' + (cat === 'essential' ? ' active' : '') + '" style="flex:1">🛡 生存支出</button>' +
+      '<button type="button" data-act="setExpenseCategory" data-v="quality" class="xp-cat' + (cat === 'quality' ? ' active' : '') + '" style="flex:1">✨ 品质支出</button>' +
+      '</div>' +
+      '<input type="hidden" data-k="category" value="' + cat + '">' +
+      '<div class="tiny" style="margin-top:6px">生存支出计入 Lean FIRE；品质支出只计入 Regular / Fat。</div>' +
+      '</div>' +
       '<div class="field"><label>图标</label>' +
       '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
       '<span id="xj-icon-preview" style="width:44px;height:44px;border-radius:12px;background:var(--dividend-soft);' +
@@ -2952,6 +2961,19 @@
     if (prev) prev.textContent = ic;
   });
 
+  /* 编辑器内切换生存/品质分类（纯表单状态，保存时落库） */
+  UI.on('setExpenseCategory', function (node) {
+    var sheet = node.closest('.sheet');
+    if (!sheet) return;
+    var v = node.getAttribute('data-v');
+    Array.prototype.forEach.call(sheet.querySelectorAll('.xp-cat.active'), function (b) {
+      b.classList.remove('active');
+    });
+    node.classList.add('active');
+    var inp = sheet.querySelector('[data-k="category"]');
+    if (inp) inp.value = v;
+  });
+
   UI.on('openExpenseEditor', function (node) {
     var key = node.getAttribute('data-key');
     var e = S.state.expenses.filter(function (x) { return x.key === key; })[0];
@@ -2984,7 +3006,7 @@
     S.commit(function (s) {
       s.expenses.push({
         expenseId: 'exp_' + key.toLowerCase(), key: key, label: '新支出项', icon: '💰',
-        monthlyAmount: 100, enabled: true, sortOrder: order,
+        monthlyAmount: 100, enabled: true, sortOrder: order, category: 'essential',
       });
     });
     UI.closeSheet();
@@ -3012,6 +3034,7 @@
         e.iconAuto = false;          // 用户确认过图标 → 不再被自动修正覆盖
         e.monthlyAmount = Math.max(0, U.n0(f.monthlyAmount));
         e.enabled = en;
+        e.category = (f.category === 'quality') ? 'quality' : 'essential';
       });
     });
     UI.closeSheet();
@@ -3029,6 +3052,188 @@
     });
     UI.closeSheet();
     UI.toast('已保存');
+  });
+
+  /* ==================== FIRE 视图动作 ====================
+   * ★ 滑杆联动是「局部更新」：input（高频）绝不走 S.setUI/S.commit——
+   *   全量重渲染会让拖动卡顿；input 只就地改大数字/提示行 DOM（rAF 节流），
+   *   change（松手）才 commit 持久化并整页刷新一次（覆盖率曲线等统一更新）。 */
+  var fireRAF = null;
+
+  /** 用一个「滑杆临时值」构造 fireCfg（不碰 state，纯读） */
+  function fireCfgWithOverride(k, v) {
+    var fire = S.state.settings.fire;
+    var tier = fire.activeTier;
+    var sim = Object.assign({}, fire.tierSims[tier]);
+    if (k === 'monthlySpend') sim.monthlySpend = v;
+    else if (k === 'drip') sim.drip = v;
+    else if (k === 'dripYieldPct') sim.dripYieldPct = v;
+    var sims = Object.assign({}, fire.tierSims);
+    sims[tier] = sim;
+    return C.fireCfg(S.state, S.acc(), tier, Object.assign({}, fire, { tierSims: sims }));
+  }
+
+  function fireTierName(tier) {
+    return tier === 'lean' ? 'Lean FIRE' : tier === 'fat' ? 'Fat FIRE' : 'Regular FIRE';
+  }
+
+  function fireMonthsText(months) {
+    if (months === null || months === undefined) return '—';
+    if (months <= 0) return '已达成';
+    var y = Math.floor(months / 12);
+    var m = Math.round(months - y * 12);
+    if (m === 12) { y += 1; m = 0; }
+    if (y <= 0) return m + ' 个月';
+    if (m <= 0) return y + ' 年';
+    return y + ' 年 ' + m + ' 个月';
+  }
+
+  function fireBigText(tl) {
+    if (!tl.solvable) return '—';
+    if (tl.reached) return '已达成';
+    return fireMonthsText(tl.months);
+  }
+
+  function fireSubText(tl) {
+    if (!tl.solvable) {
+      return tl.reason === 'beyond-limit' ? '按当前参数 50 年内无法达成' : '投入与息率不足以增长——请调高攒股金额或息率';
+    }
+    if (tl.reached) return '🎉 当前被动收入已覆盖目标支出';
+    var startYear = Number(U.ymOf(U.today()).slice(0, 4));
+    var endYear = startYear + Math.ceil(tl.months / 12);
+    return '预计 ' + endYear + '–' + (endYear + 1) + ' 年间达成';
+  }
+
+  /** 就地刷新大数字 / 副行 / 提示行（滑杆 input 高频路径） */
+  function firePatchDom(cfg) {
+    var tl = C.fireTimeline(S.state, S.acc(), cfg);
+    var big = document.getElementById('fire-big-num');
+    var sub = document.getElementById('fire-big-sub');
+    var tip = document.getElementById('fire-tip-line');
+    var txt = fireBigText(tl);
+    if (big) {
+      if (big.textContent !== txt) {
+        big.classList.add('blur');
+        void big.offsetWidth;                      // 强制 reflow，让 blur→clear 过渡触发
+        big.textContent = txt;
+        requestAnimationFrame(function () { big.classList.remove('blur'); });
+      }
+    }
+    if (sub) sub.textContent = fireSubText(tl);
+    if (tip) {
+      var base = C.fireTimeline(S.state, S.acc(), C.fireCfg(S.state, S.acc(), S.state.settings.fire.activeTier,
+        { yieldBasis: S.state.settings.fire.yieldBasis, reinvestPct: S.state.settings.fire.reinvestPct,
+          tierSims: { lean: {}, regular: {}, fat: {} } }));
+      var seg = '';
+      if (tl.solvable && base.solvable && !tl.reached && !base.reached && tl.months !== base.months) {
+        var d = base.months - tl.months;           // 正 = 提前
+        seg = (d >= 0 ? '自由日提前 ' : '自由日推后 ') + fireMonthsText(Math.abs(d)) + ' · ';
+      }
+      var t = S.state.settings.fire.activeTier;
+      var cap4 = C.fireTargets(S.state, S.acc(), S.state.settings.fire.yieldBasis);
+      var cap = cap4.tiers[t] ? cap4.tiers[t].capitalAt4 : 0;
+      tip.textContent = seg + '完全覆盖约需 ' + U.moneySign(cap, 0) + ' 生息资产（按 4% 法则）';
+    }
+    return tl;
+  }
+
+  UI.on('fireSliderInput', function (node) {
+    if (fireRAF) return;
+    fireRAF = requestAnimationFrame(function () {
+      fireRAF = null;
+      var k = node.getAttribute('data-k');
+      var v = Number(node.value);
+      /* 数值回显与滑杆填充（就地） */
+      var val = document.getElementById('fs-val-' + k);
+      if (val) {
+        if (k === 'monthlySpend') {
+          val.textContent = S.ui.fireSpendMode === 'day'
+            ? '¥' + (v / C.FIRE.daysPerMonth).toFixed(2) + '/日'
+            : U.moneySign(v, 0);
+        } else if (k === 'drip') {
+          val.textContent = U.moneySign(v, 0);
+        } else {
+          val.textContent = U.pct(v, 1);
+        }
+      }
+      node.style.setProperty('--p', ((v - Number(node.min)) / (Number(node.max) - Number(node.min)) * 100) + '%');
+      firePatchDom(fireCfgWithOverride(k, v));
+    });
+  });
+
+  UI.on('fireSliderCommit', function (node) {
+    var k = node.getAttribute('data-k');
+    var v = Number(node.value);
+    var tier = S.state.settings.fire.activeTier;
+    S.commit(function (s) {
+      var sim = s.settings.fire.tierSims[tier];
+      if (k === 'monthlySpend') sim.monthlySpend = v;
+      else if (k === 'drip') sim.drip = v;
+      else if (k === 'dripYieldPct') sim.dripYieldPct = v;
+    });
+  });
+
+  UI.on('setFireTier', function (node) {
+    var v = node.getAttribute('data-v');
+    if (v === S.state.settings.fire.activeTier) return;
+    S.commit(function (s) { s.settings.fire.activeTier = v; });   // 整页重渲染：滑杆回该档记忆值
+  });
+
+  UI.on('setFireYieldBasis', function (node) {
+    var v = node.getAttribute('data-v') === 'cost' ? 'cost' : 'market';
+    if (v === S.state.settings.fire.yieldBasis) return;
+    S.commit(function (s) { s.settings.fire.yieldBasis = v; });   // fireNumber/默认息率/显示口径联动
+  });
+
+  UI.on('fireSpendMode', function (node) {
+    S.setUI({ fireSpendMode: node.getAttribute('data-v') === 'day' ? 'day' : 'month' });
+  });
+
+  UI.on('fireReset', function () {
+    var tier = S.state.settings.fire.activeTier;
+    S.commit(function (s) {
+      s.settings.fire.tierSims[tier] = { monthlySpend: null, drip: 5000, dripYieldPct: null };
+    });
+    UI.toast('已重置为当前真实值');
+  });
+
+  /* ---- FIRE 场景 ---- */
+  UI.on('addFireScene', function () {
+    var html =
+      UI.field('场景名称', UI.inputHtml('name', '换个城市')) +
+      UI.field('支出变化（%，相对该档真实支出）', UI.inputHtml('spendPct', '-20', { inputmode: 'decimal' })) +
+      UI.field('每月攒股变化（%，相对默认 5000）', UI.inputHtml('dripPct', '100', { inputmode: 'decimal' })) +
+      UI.field('息率偏移（百分点，如 -1 表示低 1 个点）', UI.inputHtml('yieldAdjPct', '0', { inputmode: 'decimal' })) +
+      '<button class="btn-block" data-act="saveFireScene">保存场景</button>' +
+      '<div class="tiny" style="margin-top:10px">场景只用于对比「要是……会怎样」，不影响首页与试算卡的实际数字。</div>';
+    UI.openSheet({ title: '添加场景', html: html });
+  });
+
+  UI.on('saveFireScene', function (node) {
+    var f = UI.readFields(node.closest('.sheet'));
+    var name = String(f.name || '').trim() || '未命名场景';
+    S.commit(function (s) {
+      s.settings.fire.scenes.push({
+        sceneId: U.uid('scene'),
+        name: name,
+        spendPct: U.clamp(U.n0(f.spendPct), -100, 300),
+        dripPct: U.clamp(U.n0(f.dripPct), -100, 900),
+        yieldAdjPct: U.clamp(U.n0(f.yieldAdjPct), -30, 30),
+      });
+    });
+    UI.closeSheet();
+    UI.toast('场景已保存');
+  });
+
+  UI.on('deleteFireScene', function (node) {
+    var id = node.getAttribute('data-id');
+    UI.confirm({ title: '删除场景', message: '删除后不可恢复。', confirmText: '删除', danger: true })
+      .then(function (ok) {
+        if (!ok) return;
+        S.commit(function (s) {
+          s.settings.fire.scenes = s.settings.fire.scenes.filter(function (x) { return x.sceneId !== id; });
+        });
+      });
   });
 
   /* ---- 展望参数 ---- */
