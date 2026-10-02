@@ -1326,4 +1326,98 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 /* 收益率口径胶囊行：贴着指标行，右对齐的独立一行 */
 .nw-retmodes{ padding-top:0; padding-bottom:6px; }
 
+/* ==================== FIRE 视图 ==================== */
+/* 大数字卡（环境光渐变 + 模糊→清晰动画） */
+.fire-hero{ text-align:left; padding:22px 18px 18px; }
+.fire-hero-title{ font-size:14px; font-weight:600; color:var(--text-2); letter-spacing:-.2px; }
+.fire-big{
+  font-size:38px; font-weight:750; letter-spacing:-1px; line-height:1.15;
+  color:var(--text); margin:8px 0 6px; font-variant-numeric:tabular-nums;
+  transition: filter .28s ease, opacity .28s ease, transform .28s ease;
+}
+.fire-big.blur{ filter: blur(6px); opacity:.35; transform: scale(.985); }
+.fire-sub{ font-size:13.5px; color:var(--dividend); font-weight:600; }
+.fire-hero-note{ font-size:11px; color:var(--text-3); margin-top:10px; line-height:1.6; }
+
+/* 试算滑杆 */
+.fire-slider{ margin:14px 0 4px; }
+.fs-head{ display:flex; align-items:center; gap:8px; margin-bottom:2px; }
+.fs-head label{ font-size:13px; font-weight:550; color:var(--text-2); flex:1 1 auto; min-width:0; }
+.fs-val{ font-size:15px; font-weight:700; color:var(--dividend); font-variant-numeric:tabular-nums; flex:0 0 auto; }
+.fs-mini{ padding:2px; border-radius:8px; }
+.fs-mini button{ padding:3px 10px; font-size:12px; border-radius:6px; color:var(--text-2); }
+.fs-mini-seg{ display:inline-flex; gap:4px; }
+.fs-mini-seg .chip{ padding:3px 10px; font-size:12px; }
+.fs-range{
+  -webkit-appearance:none; appearance:none;
+  width:100%; height:44px; background:transparent; margin:0; display:block; cursor:pointer;
+}
+.fs-range::-webkit-slider-runnable-track{
+  height:4px; border-radius:2px;
+  background:linear-gradient(to right, var(--dividend) var(--p, 0%), var(--fill) var(--p, 0%));
+}
+.fs-range::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none;
+  width:26px; height:26px; border-radius:50%; margin-top:-11px;
+  background:var(--bg-elev);
+  box-shadow:0 2px 8px rgba(0,0,0,.22), 0 0 0 .5px var(--glass-edge);
+  transition:transform .15s ease;
+}
+.fs-range:active::-webkit-slider-thumb{ transform:scale(1.15); }
+.fs-range::-moz-range-track{
+  height:4px; border-radius:2px;
+  background:linear-gradient(to right, var(--dividend) var(--p, 0%), var(--fill) var(--p, 0%));
+}
+.fs-range::-moz-range-thumb{
+  width:26px; height:26px; border:0; border-radius:50%;
+  background:var(--bg-elev); box-shadow:0 2px 8px rgba(0,0,0,.22);
+}
+.fs-ticks{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); padding:0 4px; }
+
+/* 试算提示行（相对基准 Δ） */
+.fire-tip{
+  margin-top:12px; padding:9px 13px; border-radius:11px;
+  font-size:13px; font-weight:600; line-height:1.55;
+  background:var(--fill); color:var(--text-2);
+}
+.fire-tip.good{ background:var(--down-soft); color:var(--down); }
+.fire-tip.warn{ background:var(--up-soft); color:var(--up); }
+
+/* FI 进度卡 */
+.fi-row{ margin:10px 0 2px; }
+.fi-row-t{ display:flex; align-items:baseline; gap:8px; font-size:13.5px; margin-bottom:5px; }
+.fi-row-t b{ font-weight:650; flex:0 0 auto; }
+.fi-goal{ color:var(--text-3); font-size:11.5px; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fi-pct{ font-weight:700; font-variant-numeric:tabular-nums; flex:0 0 auto; }
+.fi-row.active .fi-row-t b{ color:var(--dividend); }
+.fi-principal{ font-size:12.5px; color:var(--text-2); }
+.fi-principal b{ color:var(--text); font-size:15px; font-variant-numeric:tabular-nums; margin-left:2px; }
+.fi-chart{ margin-top:10px; }
+
+/* 覆盖率卡 */
+.cov-head{ display:flex; align-items:baseline; gap:10px; margin:2px 0 8px; }
+.cov-num{ font-size:30px; font-weight:750; letter-spacing:-.5px; color:var(--blue); font-variant-numeric:tabular-nums; }
+.cov-hint{ font-size:12px; color:var(--text-3); }
+.cov-chart{ margin-top:4px; }
+
+/* FI / 覆盖率卡片底部说明条 */
+.fire-note{
+  margin-top:10px; padding:9px 12px; border-radius:10px;
+  background:var(--pend-bg); color:var(--pend-text);
+  font-size:12px; line-height:1.65;
+}
+
+/* 支出分组（FIRE 视图） */
+.exp-group{ margin-bottom:14px; }
+.exp-group-t{ display:flex; align-items:baseline; gap:8px; margin-bottom:8px; }
+.exp-group-t b{ font-size:14px; font-weight:650; }
+.exp-group .exp-item{ cursor:pointer; }
+.exp-group .exp-item:active{ transform:scale(.97); }
+
+@media (prefers-reduced-motion: reduce){
+  .fire-big{ transition:none; }
+  .fire-big.blur{ filter:none; opacity:.6; transform:none; }
+  .fs-range::-webkit-slider-thumb{ transition:none; }
+}
+
 
