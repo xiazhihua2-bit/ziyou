@@ -1,0 +1,22 @@
+# 内部记忆与计划，不随仓库公开
+.workbuddy/
+.zcode/
+# ★ 部署用的 GitHub 令牌：只留在本机，绝不入库（连文件名都不要出现）
+.token
+.token.txt
+.secrets/
+# 工具产物
+node_modules/
+*.log
+/tmp/
+# 部署压缩包（由 dist/pwa/ 临时打包，供网页上传用，不入库）
+dist/*.zip
+# 截图产物：uitest.mjs 每次跑都会重写，属于本机产物而非源码
+shots/
+# dist/根目录那份单文件是「双击即用」的产物，需要时用 node build.mjs 现生成。
+# ★ 真正要上线的只有 dist/pwa/（GitHub Pages 用的就是它），所以那一份必须提交。
+dist/*.html
+# docs/ 默认视为内部文档：实施计划、方案评估、截图核对表都留本机不进公开仓库。
+# 只有面向使用者的《部署指南》例外（下面强制保留）。
+docs/
+!docs/部署指南.md
