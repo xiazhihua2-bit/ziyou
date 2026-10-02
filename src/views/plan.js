@@ -38,62 +38,64 @@ XJ.views.plan = (function () {
   }
   function ticksFor(k) {
     if (k === 'dripYieldPct') return '<span>0%</span><span>10%</span><span>20%</span><span>30%</span>';
+    if (k === 'reinvest') return '<span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>';
     if (k === 'drip') return '<span>0</span><span>1万</span><span>2万</span><span>3万</span><span>4万</span><span>5万</span>';
     return '<span>0</span><span>1万</span><span>2万</span><span>3万</span>';
   }
 
-  /* ---------------- 卡 1：大数字 ---------------- */
+  /* ---------------- 卡 1：大数字（具体年月 + 档位切换 chips） ---------------- */
+  function tierChipsHtml(tier) {
+    return ['lean', 'regular', 'fat'].map(function (t) {
+      return '<button type="button" class="chip' + (t === tier ? ' active' : '') +
+        '" data-act="setFireTier" data-v="' + t + '">' + tierName(t).replace(' FIRE', '') + '</button>';
+    }).join('');
+  }
+
   function bigCardHtml(fire, tier, tl) {
-    var title = '距离财务自由（' + tierName(tier) + '）';
-    var sub;
+    var title = '距离财务自由';
+    var big, sub;
     if (!tl.solvable) {
+      big = '—';
       sub = tl.reason === 'beyond-limit'
         ? '按当前参数 50 年内无法达成'
         : '投入与息率不足以增长——请调高攒股金额或息率';
     } else if (tl.reached) {
+      big = '已达成';
       sub = '🎉 当前被动收入已覆盖目标支出';
     } else {
-      var startYear = Number(U.ymOf(U.today()).slice(0, 4));
-      var endYear = startYear + Math.ceil(tl.months / 12);
-      sub = '预计 ' + endYear + '–' + (endYear + 1) + ' 年间达成';
+      var ym = tl.date || U.ymOf(U.today());
+      big = Number(ym.slice(0, 4)) + ' 年 ' + Number(ym.slice(5, 7)) + ' 月';
+      sub = '距今日 ' + monthsText(tl.months);
     }
-    var big = !tl.solvable ? '—' : (tl.reached ? '已达成' : monthsText(tl.months));
-    return '<div class="card fire-hero">' +
-      '<div class="fire-hero-title">' + title + '</div>' +
+    return '<div class="card fire-hero fi-glass">' +
+      '<div class="fire-hero-row"><span class="fire-hero-title">' + title + '</span>' +
+      '<span class="fs-mini-seg fi-glass" role="group">' + tierChipsHtml(tier) + '</span></div>' +
       '<div class="fire-big" id="fire-big-num">' + big + '</div>' +
       '<div class="fire-sub" id="fire-big-sub">' + sub + '</div>' +
       '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红（再投 ' +
-      U.n0(fire.reinvestPct) + '%）</div>' +
+      U.n0(fire.reinvestPct) + '%，可在下方试算卡调节）</div>' +
       '</div>';
   }
 
-  /* ---------------- 卡 2：试算滑杆 ---------------- */
+  /* ---------------- 卡 2：试算滑杆（四根：花费/攒股/息率/再投） ---------------- */
   function sliderCardHtml(st, fire, tier, cfg, targets) {
     var spendMode = st.ui.fireSpendMode === 'day' ? 'day' : 'month';
     var spendVal = spendMode === 'day'
       ? '¥' + (cfg.monthlySpend / X.FIRE.daysPerMonth).toFixed(2) + '/日'
       : U.moneySign(cfg.monthlySpend, 0);
-    var spendLabel = spendMode === 'day' ? '每日花费' : '每月花费';
+    var spendLabel = spendMode === 'day' ? '每日消费' : '每月花费';
     var spendSwitch =
-      '<span class="segmented fs-mini" role="group">' +
-      '<button type="button" data-act="fireSpendMode" data-v="day"' + (spendMode === 'day' ? ' style="background:var(--bg-elev);color:var(--text)"' : '') + '>日</button>' +
-      '<button type="button" data-act="fireSpendMode" data-v="month"' + (spendMode === 'month' ? ' style="background:var(--bg-elev);color:var(--text)"' : '') + '>月</button>' +
+      '<span class="segmented fs-mini fi-glass" role="group">' +
+      '<button type="button" class="' + (spendMode === 'day' ? 'on' : '') + '" data-act="fireSpendMode" data-v="day">日</button>' +
+      '<button type="button" class="' + (spendMode === 'month' ? 'on' : '') + '" data-act="fireSpendMode" data-v="month">月</button>' +
       '</span>';
 
-    var yieldLabel = '攒股息率（' + (fire.yieldBasis === 'cost' ? '成本' : '市值') + '口径' +
-      (fire.tierSims[tier].dripYieldPct === null ? ' · 跟随组合' : '') + '）';
-    var basisChip =
-      '<span class="segmented fs-mini" role="group">' +
-      '<button type="button" data-act="setFireYieldBasis" data-v="cost"' + (fire.yieldBasis === 'cost' ? ' style="background:var(--bg-elev);color:var(--text)"' : '') + '>成本</button>' +
-      '<button type="button" data-act="setFireYieldBasis" data-v="market"' + (fire.yieldBasis === 'market' ? ' style="background:var(--bg-elev);color:var(--text)"' : '') + '>市值</button>' +
-      '</span>';
-
-    /* 提示行：相对全默认基准的 Δ + 4% 法则参考（Δ 只在用户动过滑杆后出现） */
+    /* 提示行：相对全默认基准的 Δ + 按市值息率折算的生息资产（随行情自动更新） */
     var sim = fire.tierSims[tier] || {};
     var touched = sim.monthlySpend !== null || (sim.drip !== null && sim.drip !== 5000) || sim.dripYieldPct !== null;
     var tip;
     if (touched) {
-      var cleanFire = { yieldBasis: fire.yieldBasis, reinvestPct: fire.reinvestPct, tierSims: { lean: {}, regular: {}, fat: {} } };
+      var cleanFire = { yieldBasis: 'market', reinvestPct: fire.reinvestPct, tierSims: { lean: {}, regular: {}, fat: {} } };
       var baseTl = X.fireTimeline(st.state, st.acc(), X.fireCfg(st.state, st.acc(), tier, cleanFire));
       var cur = X.fireTimeline(st.state, st.acc(), cfg);
       if (cur.solvable && !cur.reached && baseTl.solvable && !baseTl.reached) {
@@ -108,23 +110,84 @@ XJ.views.plan = (function () {
     } else {
       tip = '<div class="fire-tip" id="fire-tip-line">拖动滑杆试试「少花一点 / 多攒一点」对自由日的影响</div>';
     }
-    var cap4 = targets.tiers[tier].capitalAt4;
+    var tierTarget = targets.tiers[tier];
+    var capText = tierTarget.fireNumber === null
+      ? '暂无法测算'
+      : U.moneySign(tierTarget.fireNumber, 0) + '（按当前市值息率 ' + U.pct(targets.yieldPct === null ? 0 : targets.yieldPct, 2) + ' 折算）';
 
-    return '<div class="card">' +
+    return '<div class="card fi-glass">' +
       '<div class="card-head"><h2>⚖ 试算</h2><span class="spacer"></span>' +
       '<button class="chip" data-act="fireReset">重置</button></div>' +
       sliderHtml('monthlySpend', spendLabel, 0, X.FIRE.spendMax, X.FIRE.spendStep, cfg.monthlySpend, spendVal, spendSwitch) +
       sliderHtml('drip', '每月攒股', 0, X.FIRE.dripMax, X.FIRE.dripStep, cfg.drip, U.moneySign(cfg.drip, 0)) +
-      sliderHtml('dripYieldPct', yieldLabel, 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1), basisChip) +
+      sliderHtml('dripYieldPct', '攒股息率（市值口径）', 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1)) +
+      sliderHtml('reinvest', '分红再投', 0, 100, 10, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
       tip +
-      '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + U.moneySign(cap4, 0) + ' 生息资产（按 4% 法则折算，仅作参考）。' +
-      '息率默认跟随当前组合（' + U.pct(targets.yieldPct === null ? 0 : targets.yieldPct, 2) + '），拖动后固定。</div>' +
+      '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + capText +
+      ' 生息资产，随行情刷新自动更新。息率默认跟随当前组合（' +
+      U.pct(targets.yieldPct === null ? 0 : targets.yieldPct, 2) + '），拖动后固定。</div>' +
       '</div>';
   }
 
-  /* ---------------- 卡 3：FI 进度（图 3） ---------------- */
-  function progressCardHtml(st, fire, tier) {
-    var pr = X.fireProgress(st.state, st.acc(), fire.yieldBasis);
+  /* 当日分时市值：薄封装 networth 已验证的链路（holdings → minuteCache → alignMinute）。
+     返回 [{date:'HH:MM', pct:mv}]；无分时数据返回 []。 */
+  function buildIntradayMv(st) {
+    var hs = X.holdings(st.state, st.acc());
+    if (!hs.length) return [];
+    var syms = hs.map(function (h) { return h.symbol; });
+    var minMap = st.intradayFor ? st.intradayFor(syms) : {};
+    if (!minMap || !Object.keys(minMap).length) return [];
+    var fx = (st.state.settings && st.state.settings.fx) || {};
+    var rateFn = function (sym) { return fx[XJ.market.currency(sym)] || 1; };
+    var prevMap = {};
+    hs.forEach(function (h) {
+      var pc = U.num(h.prevClose);
+      if (pc === null || pc <= 0) pc = U.num(h.price);
+      if (pc !== null && pc > 0) prevMap[h.symbol] = pc;
+    });
+    var al = X.alignMinute(hs, minMap, rateFn, { full: true, prev: prevMap });
+    return (al && al.points || []).map(function (p) {
+      return { date: p.t, pct: p.mv };
+    });
+  }
+
+  /* 时间尺度 chips 行 */
+  function rangeChipsHtml(current, ranges, act) {
+    var LABELS = { today: '当日', '1m': '本月', '3m': '近三月', '6m': '近半年', ytd: '今年以来', all: '全部', custom: '自定义' };
+    return ranges.map(function (r) {
+      return '<button type="button" class="chip' + (r === current ? ' active' : '') +
+        '" data-act="' + act + '" data-v="' + r + '">' + LABELS[r] + '</button>';
+    }).join('');
+  }
+
+  function ymAddLocal(ym, n) {
+    var y = parseInt(String(ym).slice(0, 4), 10);
+    var m = parseInt(String(ym).slice(5, 7), 10) - 1 + n;
+    y += Math.floor(m / 12);
+    m = ((m % 12) + 12) % 12;
+    return y + '-' + String(m + 1).padStart(2, '0');
+  }
+
+  /* 按尺度切片（月序列按月粒度对齐；日序列走 chartRange） */
+  function slicePoints(points, range, beg, end, isMonthly) {
+    if (range === 'all') return points;
+    if (isMonthly) {
+      var curYm = U.ymOf(U.today());
+      var startYm = null;
+      if (range === 'custom') startYm = beg || null;
+      else if (range === '3m') startYm = ymAddLocal(curYm, -2);
+      else if (range === '6m') startYm = ymAddLocal(curYm, -5);
+      else if (range === 'ytd') startYm = curYm.slice(0, 4) + '-01';
+      if (!startYm) return points;
+      return points.filter(function (p) { return p.date >= startYm; });
+    }
+    var r = X.chartRange(range === 'today' ? 'all' : range, U.today(), beg, end);
+    return points.filter(function (p) { return (!r.beg || p.date >= r.beg) && (!r.end || p.date <= r.end); });
+  }
+
+  /* ---------------- 卡 3：FI 进度（图 3，七档时间尺度） ---------------- */
+  function progressCardHtml(st, fire, tier, targets) {
+    var pr = X.fireProgress(st.state, st.acc(), 'market');
     var bars = ['lean', 'regular', 'fat'].map(function (t) {
       var d = pr.tiers[t];
       var pct = d.ratio === null ? 0 : Math.min(100, Math.max(0, d.ratio));
@@ -137,109 +200,118 @@ XJ.views.plan = (function () {
         '</div>';
     }).join('');
 
+    var range = st.ui.firePrRange || 'all';
     var chartHtml = '';
-    if (pr.series.length > 1) {
-      var pts = pr.series.map(function (p) { return { date: p.date, pct: p.mv }; });
-      chartHtml = '<div class="fi-chart">' + XJ.chart.renderCompare(
-        [{ name: 'FI 本金', color: '#3FA9C9', points: pts }],
-        { unit: 'money', fmtY: function (v) { return U.moneyCompact(v); }, xTicks: 4, area: true, chartKey: 'firePr' }) +
-        '</div>';
+    var chartNote = '';
+    if (range === 'today') {
+      var pts = buildIntradayMv(st);
+      if (pts.length > 1) {
+        chartHtml = XJ.chart.renderCompare(
+          [{ name: 'FI 本金（当日）', color: '#3FA9C9', points: pts }],
+          { unit: 'money', fmtY: function (v) { return U.moneyAxis(v); }, xTicks: 4, area: true, chartKey: 'firePr' });
+      } else {
+        chartNote = '<div class="tiny" style="padding:8px 0">当日分时数据暂缺（收盘后或新装设备），切到其他时间尺度查看历史。</div>';
+      }
+    } else if (pr.series.length > 1) {
+      var sliced = slicePoints(pr.series, range, st.ui.firePrBeg, st.ui.firePrEnd, false);
+      if (sliced.length > 1) {
+        chartHtml = XJ.chart.renderCompare(
+          [{ name: 'FI 本金', color: '#3FA9C9', points: sliced.map(function (p) { return { date: p.date, pct: p.mv }; }) }],
+          { unit: 'money', fmtY: function (v) { return U.moneyAxis(v); }, xTicks: 4, area: true, chartKey: 'firePr' });
+      } else {
+        chartNote = '<div class="tiny" style="padding:8px 0">该区间内数据不足，换一个更宽的时间尺度试试。</div>';
+      }
     } else {
-      chartHtml = '<div class="tiny" style="padding:8px 0">正在获取历史行情，资产曲线稍后自动出现。</div>';
+      chartNote = '<div class="tiny" style="padding:8px 0">正在获取历史行情，资产曲线稍后自动出现。</div>';
     }
+    var chips = rangeChipsHtml(range, ['today', '1m', '3m', '6m', 'ytd', 'all', 'custom'], 'setFirePrRange');
 
+    /* 小字补全（⑧）：缺口 + 市值息率下的每月新增分红 + 线性推算年月（精确到月） */
     var d0 = pr.tiers[tier];
     var sim = st.state.settings.fire.tierSims[tier] || {};
     var drip = sim.drip === null ? 5000 : sim.drip;
+    var yPct = targets.yieldPct;
     var note;
     if (d0.fireNumber === null) {
-      note = '组合息率暂无法计算（成本非正或无持仓），FI 进度待行情刷新后自动恢复。';
+      note = '组合市值息率暂无法计算（成本非正或无持仓），FI 进度待行情刷新后自动恢复（随行情自动更新）。';
     } else if (d0.gap <= 0) {
       note = '🎉 已越过 ' + tierName(tier) + ' 的本金门槛（' + U.moneyCompact(d0.fireNumber) + '）。';
     } else {
-      var years = drip > 0 ? Math.ceil(d0.gap / (drip * 12)) : null;
+      var newDivM = drip * (yPct === null ? 0 : yPct) / 1200;      // 每月攒股新增月分红
+      var monthsNeed = drip > 0 ? Math.ceil(d0.gap / drip) : null; // 线性：本金缺口 ÷ 每月攒股
+      var needTxt = monthsNeed ? (Math.floor(monthsNeed / 12) + ' 年 ' + (monthsNeed % 12) + ' 个月') : '—';
       note = '距 ' + tierName(tier) + ' 还差 ' + U.moneyCompact(d0.gap) +
-        (years ? '；按每月攒股 ' + U.moneySign(drip, 0) + ' 粗算约 ' + years + ' 年（这个数没有计入投资收益）。' : '。');
+        '；按市值息率 ' + U.pct(yPct === null ? 0 : yPct, 2) + '，每月攒股 ' + U.moneySign(drip, 0) +
+        ' 可新增月分红 ' + U.moneySign(newDivM, 2) + '，按此推算预计还需 ' + needTxt +
+        '（不计价差与收益变化，随行情刷新自动更新）。';
     }
-    return '<div class="card">' +
+    return '<div class="card fi-glass">' +
       '<div class="card-head"><h2>◎ FI 进度</h2><span class="spacer"></span>' +
       '<span class="fi-principal">FI 本金 <b>' + U.moneyCompact(pr.fiPrincipal) + '</b></span></div>' +
-      bars + chartHtml +
+      bars +
+      '<div class="fs-mini-seg fi-range-row fi-glass">' + chips + '</div>' +
+      (chartHtml ? '<div class="fi-chart">' + chartHtml + '</div>' : chartNote) +
       '<div class="fire-note">' + note + '</div>' +
       (pr.missing && pr.missing.length ? '<div class="tiny" style="margin-top:6px">' + pr.missing.length + ' 只标的暂无历史行情，未计入曲线。</div>' : '') +
       '</div>';
   }
 
-  /* ---------------- 卡 4：覆盖率曲线（图 2） ---------------- */
-  function coverageCardHtml(st, fire, tier, cfg) {
+  /* ---------------- 卡 4：覆盖率曲线（图 2，五档时间尺度 + 年均大数字） ---------------- */
+  function coverageCardHtml(st, fire, tier, cfg, targets) {
     var cov = X.fireCoverageHistory(st.state, st.acc(), tier, cfg);
     var chips = ['lean', 'regular', 'fat'].map(function (t) {
       return '<button type="button" class="chip' + (t === tier ? ' active' : '') +
         '" data-act="setFireTier" data-v="' + t + '">' + tierName(t).replace(' FIRE', '') + '</button>';
     }).join('');
 
-    var pct = cov.currentPct;
-    var head = '<div class="cov-head"><span class="cov-num">' + (pct === null ? '—' : U.pct(pct, 1)) + '</span>' +
-      '<span class="cov-hint">达到 100% 即 ' + tierName(tier) + ' 达成</span></div>';
+    /* 大数字 = 近 12 个月平均覆盖率（当前月没分红时不再误导为 0%） */
+    var hist = cov.history.filter(function (p) { return p.pct !== null; });
+    var recent = hist.slice(-12);
+    var avgPct = recent.length
+      ? U.sum(recent, function (p) { return p.pct; }) / recent.length
+      : (cov.future.length ? cov.future[0].pct : null);
+    var head = '<div class="cov-head"><span class="cov-num">' + (avgPct === null ? '—' : U.pct(avgPct, 1)) + '</span>' +
+      '<span class="cov-hint">近 12 个月平均 · 达到 100% 即 ' + tierName(tier) + ' 达成</span></div>';
 
-    var points = cov.history.concat(cov.future).filter(function (p) { return p.pct !== null; });
-    var chartHtml = '';
+    var range = st.ui.fireCovRange || 'all';
+    var histPts = slicePoints(hist, range, st.ui.fireCovBeg, st.ui.fireCovEnd, true);
+    var points = histPts.concat(cov.future).filter(function (p) { return p.pct !== null; });
+    var chartSvg = '';
     if (points.length > 1) {
-      chartHtml = '<div class="cov-chart">' + XJ.chart.renderCompare(
+      chartSvg = XJ.chart.renderCompare(
         [{ name: '被动收入覆盖率', color: '#007AFF', points: points }],
         { unit: '%', fmtY: function (v) { return v.toFixed(0) + '%'; }, xTicks: 4,
-          area: true, hline: { value: 100, color: 'var(--payout)', label: '100% 🎉' }, chartKey: 'fireCov' }) +
-        '</div>';
+          area: true, hline: { value: 100, color: 'var(--payout)', label: '100% 🎉' }, chartKey: 'fireCov' });
     } else {
       chartHtml = '<div class="tiny" style="padding:8px 0">到账记录不足，暂无法画覆盖率曲线（有分红到账后自动出现）。</div>';
     }
+    var covChips = rangeChipsHtml(range, ['3m', '6m', 'ytd', 'all', 'custom'], 'setFireCovRange');
 
+    /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则） */
     var passiveNow = X.fireMonthlyPassive(cfg, 0);
     var gapM = Math.max(0, cfg.monthlySpend - passiveNow);
-    var targets = X.fireTargets(st.state, st.acc(), fire.yieldBasis);
-    var cap4 = targets.tiers[tier] ? targets.tiers[tier].capitalAt4 : null;
+    var tierTarget = targets.tiers[tier];
+    var sim = fire.tierSims[tier] || {};
+    var drip = sim.drip === null ? 5000 : sim.drip;
+    var yPct = targets.yieldPct;
+    var newDivM = drip * (yPct === null ? 0 : yPct) / 1200;
     var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，目标月支出 ' + U.moneySign(cfg.monthlySpend, 2) +
       (gapM > 0 ? '——每月再补 ' + U.moneySign(gapM, 2) + ' 被动现金流即可完全覆盖' : '——已完全覆盖 🎉') +
-      (cap4 ? '（约需 ' + U.moneyCompact(cap4) + ' 生息资产，按 4% 法则）' : '') + '。';
+      '；每月攒股 ' + U.moneySign(drip, 0) + ' 按市值息率新增月分红 ' + U.moneySign(newDivM, 2) +
+      (tierTarget && tierTarget.fireNumber !== null
+        ? '，完全覆盖约需 ' + U.moneyCompact(tierTarget.fireNumber) + ' 生息资产（按市值息率折算，随行情自动更新）'
+        : '') + '。';
 
-    return '<div class="card">' +
+    return '<div class="card fi-glass">' +
       '<div class="card-head"><h2>◉ 被动收入覆盖率</h2><span class="spacer"></span><span class="fs-mini-seg">' + chips + '</span></div>' +
-      head + chartHtml +
+      head +
+      '<div class="fs-mini-seg fi-range-row fi-glass">' + covChips + '</div>' +
+      (chartSvg ? '<div class="cov-chart">' + chartSvg + '</div>' : '<div class="tiny" style="padding:8px 0">到账记录不足，暂无法画覆盖率曲线（有分红到账后自动出现）。</div>') +
       '<div class="fire-note">' + note + '</div>' +
       '</div>';
   }
 
-  /* ---------------- 卡 5：场景模拟（图 4） ---------------- */
-  function scenesCardHtml(st, fire, tier) {
-    var scenes = fire.scenes || [];
-    var rows = scenes.map(function (sc) {
-      var r = X.fireSceneSolve(st.state, st.acc(), tier, fire, sc);
-      var delta = '—';
-      var cls = '';
-      if (r.delta) {
-        delta = (r.delta.earlier ? '提前 ' : '推后 ') + monthsText(r.delta.y * 12 + r.delta.m);
-        cls = r.delta.earlier ? 'c-up' : 'c-down';
-      } else if (r.scene && r.scene.solvable && r.scene.reached) {
-        delta = '立即达成';
-      }
-      return '<button class="list-row" data-act="openFireSceneDetail" data-id="' + sc.sceneId + '">' +
-        '<div class="row-main"><div class="row-t">' + U.esc(sc.name) + '</div>' +
-        '<div class="row-s">支出 ' + (sc.spendPct >= 0 ? '+' : '') + sc.spendPct + '% · 攒股 ' +
-        (sc.dripPct >= 0 ? '+' : '') + sc.dripPct + '% · 息率 ' + (sc.yieldAdjPct >= 0 ? '+' : '') +
-        sc.yieldAdjPct + 'pp</div></div>' +
-        '<div class="row-right"><div class="row-v ' + cls + '">' + delta + '</div></div>' +
-        '<span class="chev">' + UI.icon('chevron', 16) + '</span></button>';
-    }).join('');
-
-    return '<div class="card">' +
-      '<div class="card-head"><h2>🌊 场景模拟</h2><span class="spacer"></span></div>' +
-      '<div class="tiny" style="margin-bottom:10px">加一个「要是我换个城市 / 涨薪 / 降花费」的方案，看看自由日会怎么动。场景只做对比，不影响实际数字。</div>' +
-      (rows || '') +
-      '<button class="btn-block ghost" data-act="addFireScene">+ 添加场景</button>' +
-      '</div>';
-  }
-
-  /* ---------------- 卡 6：支出分组（生存 / 品质） ---------------- */
+  /* ---------------- 卡 5：支出分组（生存 / 品质） ---------------- */
   function expensesCardHtml(st) {
     function group(cat, title, hint) {
       var list = st.state.expenses.filter(function (e) {
@@ -290,15 +362,14 @@ XJ.views.plan = (function () {
 
     var fire = st.state.settings.fire || {};
     var tier = tierKey(fire);
-    var targets = X.fireTargets(st.state, st.acc(), fire.yieldBasis);
+    var targets = X.fireTargets(st.state, st.acc(), 'market');
     var cfg = X.fireCfg(st.state, st.acc(), tier, fire);
     var tl = X.fireTimeline(st.state, st.acc(), cfg);
 
     html += bigCardHtml(fire, tier, tl);
     html += sliderCardHtml(st, fire, tier, cfg, targets);
-    html += progressCardHtml(st, fire, tier);
-    html += coverageCardHtml(st, fire, tier, cfg);
-    html += scenesCardHtml(st, fire, tier);
+    html += progressCardHtml(st, fire, tier, targets);
+    html += coverageCardHtml(st, fire, tier, cfg, targets);
     html += expensesCardHtml(st);
     html += entryCardHtml(st);
 
@@ -306,30 +377,6 @@ XJ.views.plan = (function () {
       'FIRE 试算基于你自己的持仓分红与支出台账推演，只做记录与参考，不构成任何投资建议。</span></div>';
     return html;
   }
-
-  /* ---------------- 场景详情弹层 ---------------- */
-  function openSceneDetail(id) {
-    var st = XJ.store;
-    var fire = st.state.settings.fire || {};
-    var sc = (fire.scenes || []).filter(function (x) { return x.sceneId === id; })[0];
-    if (!sc) return;
-    var tier = tierKey(fire);
-    var r = X.fireSceneSolve(st.state, st.acc(), tier, fire, sc);
-    var html =
-      '<div class="kv"><span class="k">目标月支出</span><span class="v">' + U.moneySign(r.params.monthlySpend, 0) +
-      '（' + (sc.spendPct >= 0 ? '+' : '') + sc.spendPct + '%）</span></div>' +
-      '<div class="kv"><span class="k">每月攒股</span><span class="v">' + U.moneySign(r.params.drip, 0) +
-      '（' + (sc.dripPct >= 0 ? '+' : '') + sc.dripPct + '%）</span></div>' +
-      '<div class="kv"><span class="k">攒股息率</span><span class="v">' + U.pct(r.params.dripYieldPct, 2) +
-      '（' + (sc.yieldAdjPct >= 0 ? '+' : '') + sc.yieldAdjPct + 'pp）</span></div>' +
-      '<div class="kv"><span class="k">' + tierName(tier) + ' 自由日</span><span class="v">' +
-      (r.scene.solvable ? (r.scene.reached ? '已达成' : monthsText(r.scene.months)) : '不可解') + '</span></div>' +
-      (r.delta ? '<div class="kv"><span class="k">相对基准</span><span class="v ' + (r.delta.earlier ? 'c-up' : 'c-down') + '">' +
-        (r.delta.earlier ? '提前 ' : '推后 ') + monthsText(r.delta.y * 12 + r.delta.m) + '</span></div>' : '') +
-      '<button class="btn-block danger" data-act="deleteFireScene" data-id="' + sc.sceneId + '">删除该场景</button>';
-    UI.openSheet({ title: U.esc(sc.name), html: html });
-  }
-  UI.on('openFireSceneDetail', function (node) { openSceneDetail(node.getAttribute('data-id')); });
 
   return { render: render };
 })();
