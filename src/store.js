@@ -28,6 +28,7 @@ XJ.store = (function () {
       annualMonth: null,        // 年度总览选中月份
       calView: 'calendar',      // calendar | annual
       pendCollapsed: false,     // 分红日历「等待除权」卡片是否折叠
+      fireSpendMode: 'month',   // FIRE 试算 · 花费显示单位（month | day，纯显示不持久化）
       foldPlans: true,          // 个股页「分红档案」是否折叠（默认收起，内容较长）
       foldTx: true,             // 个股页「交易明细」是否折叠（默认收起）
       foldMineTx: true,         // 我的页「交易流水」是否折叠（默认收起）
