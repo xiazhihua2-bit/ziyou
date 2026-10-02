@@ -3064,6 +3064,8 @@
   function fireCfgWithOverride(k, v) {
     var fire = S.state.settings.fire;
     var tier = fire.activeTier;
+    var f2 = Object.assign({}, fire);
+    if (k === 'reinvest') { f2.reinvestPct = v; return C.fireCfg(S.state, S.acc(), tier, f2); }
     var sim = Object.assign({}, fire.tierSims[tier]);
     if (k === 'monthlySpend') sim.monthlySpend = v;
     else if (k === 'drip') sim.drip = v;
@@ -3091,7 +3093,8 @@
   function fireBigText(tl) {
     if (!tl.solvable) return '—';
     if (tl.reached) return '已达成';
-    return fireMonthsText(tl.months);
+    var ym = tl.date || U.ymOf(U.today());
+    return Number(ym.slice(0, 4)) + ' 年 ' + Number(ym.slice(5, 7)) + ' 月';
   }
 
   function fireSubText(tl) {
@@ -3152,6 +3155,8 @@
             : U.moneySign(v, 0);
         } else if (k === 'drip') {
           val.textContent = U.moneySign(v, 0);
+        } else if (k === 'reinvest') {
+          val.textContent = U.pct(v, 0);
         } else {
           val.textContent = U.pct(v, 1);
         }
@@ -3164,6 +3169,10 @@
   UI.on('fireSliderCommit', function (node) {
     var k = node.getAttribute('data-k');
     var v = Number(node.value);
+    if (k === 'reinvest') {
+      S.commit(function (s) { s.settings.fire.reinvestPct = v; });
+      return;
+    }
     var tier = S.state.settings.fire.activeTier;
     S.commit(function (s) {
       var sim = s.settings.fire.tierSims[tier];
@@ -3176,7 +3185,12 @@
   UI.on('setFireTier', function (node) {
     var v = node.getAttribute('data-v');
     if (v === S.state.settings.fire.activeTier) return;
-    S.commit(function (s) { s.settings.fire.activeTier = v; });   // 整页重渲染：滑杆回该档记忆值
+    S.commit(function (s) {
+      s.settings.fire.activeTier = v;
+      /* ★ 切档时每月花费强制同步为该档真实台账支出（置 null = 跟随台账），
+         不保留上一档的手动模拟值；每月攒股与息率仍各自记忆。 */
+      s.settings.fire.tierSims[v].monthlySpend = null;
+    });   // 整页重渲染：滑杆回该档真实支出
   });
 
   UI.on('setFireYieldBasis', function (node) {
@@ -3197,43 +3211,52 @@
     UI.toast('已重置为当前真实值');
   });
 
-  /* ---- FIRE 场景 ---- */
-  UI.on('addFireScene', function () {
-    var html =
-      UI.field('场景名称', UI.inputHtml('name', '换个城市')) +
-      UI.field('支出变化（%，相对该档真实支出）', UI.inputHtml('spendPct', '-20', { inputmode: 'decimal' })) +
-      UI.field('每月攒股变化（%，相对默认 5000）', UI.inputHtml('dripPct', '100', { inputmode: 'decimal' })) +
-      UI.field('息率偏移（百分点，如 -1 表示低 1 个点）', UI.inputHtml('yieldAdjPct', '0', { inputmode: 'decimal' })) +
-      '<button class="btn-block" data-act="saveFireScene">保存场景</button>' +
-      '<div class="tiny" style="margin-top:10px">场景只用于对比「要是……会怎样」，不影响首页与试算卡的实际数字。</div>';
-    UI.openSheet({ title: '添加场景', html: html });
+  /* ---- FIRE 曲线时间尺度（FI 进度七档 / 覆盖率五档，自定义弹起止） ---- */
+  var FIRE_PR_RANGES = ['today', '1m', '3m', '6m', 'ytd', 'all'];
+  var FIRE_COV_RANGES = ['3m', '6m', 'ytd', 'all'];
+
+  UI.on('setFirePrRange', function (node) {
+    var v = node.getAttribute('data-v');
+    if (FIRE_PR_RANGES.indexOf(v) >= 0) {
+      S.setUI({ firePrRange: v, firePrBeg: null, firePrEnd: null });
+    } else if (v === 'custom') {
+      var html =
+        UI.field('开始日期', UI.inputHtml('beg', S.ui.firePrBeg || '', { type: 'date' })) +
+        UI.field('结束日期', UI.inputHtml('end', S.ui.firePrEnd || '', { type: 'date' })) +
+        '<button class="btn-block" data-act="setFirePrCustom">应用区间</button>';
+      UI.openSheet({ title: '自定义时间区间', html: html });
+    }
   });
 
-  UI.on('saveFireScene', function (node) {
+  UI.on('setFirePrCustom', function (node) {
     var f = UI.readFields(node.closest('.sheet'));
-    var name = String(f.name || '').trim() || '未命名场景';
-    S.commit(function (s) {
-      s.settings.fire.scenes.push({
-        sceneId: U.uid('scene'),
-        name: name,
-        spendPct: U.clamp(U.n0(f.spendPct), -100, 300),
-        dripPct: U.clamp(U.n0(f.dripPct), -100, 900),
-        yieldAdjPct: U.clamp(U.n0(f.yieldAdjPct), -30, 30),
-      });
-    });
+    var beg = String(f.beg || '').slice(0, 10);
+    var end = String(f.end || '').slice(0, 10);
+    if (!beg || !end || beg > end) return UI.toast('请填写有效的起止日期');
     UI.closeSheet();
-    UI.toast('场景已保存');
+    S.setUI({ firePrRange: 'custom', firePrBeg: beg, firePrEnd: end });
   });
 
-  UI.on('deleteFireScene', function (node) {
-    var id = node.getAttribute('data-id');
-    UI.confirm({ title: '删除场景', message: '删除后不可恢复。', confirmText: '删除', danger: true })
-      .then(function (ok) {
-        if (!ok) return;
-        S.commit(function (s) {
-          s.settings.fire.scenes = s.settings.fire.scenes.filter(function (x) { return x.sceneId !== id; });
-        });
-      });
+  UI.on('setFireCovRange', function (node) {
+    var v = node.getAttribute('data-v');
+    if (FIRE_COV_RANGES.indexOf(v) >= 0) {
+      S.setUI({ fireCovRange: v, fireCovBeg: null, fireCovEnd: null });
+    } else if (v === 'custom') {
+      var html2 =
+        UI.field('开始月份', UI.inputHtml('beg', S.ui.fireCovBeg || '', { type: 'month' })) +
+        UI.field('结束月份（外推段始终显示）', UI.inputHtml('end', S.ui.fireCovEnd || '', { type: 'month' })) +
+        '<button class="btn-block" data-act="setFireCovCustom">应用区间</button>';
+      UI.openSheet({ title: '自定义月份区间', html: html2 });
+    }
+  });
+
+  UI.on('setFireCovCustom', function (node) {
+    var f = UI.readFields(node.closest('.sheet'));
+    var beg = String(f.beg || '').slice(0, 7);
+    var end = String(f.end || '').slice(0, 7);
+    if (!beg || (end && beg > end)) return UI.toast('请填写有效的起始月份');
+    UI.closeSheet();
+    S.setUI({ fireCovRange: 'custom', fireCovBeg: beg, fireCovEnd: end });
   });
 
   /* ---- 展望参数 ---- */
