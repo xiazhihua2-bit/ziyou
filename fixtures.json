@@ -1,0 +1,325 @@
+{
+  "refToday": "2026-09-10",
+  "state": {
+    "app": "自由",
+    "version": 5,
+    "exportedAt": "2026-09-10T07:00:00.000Z",
+    "note": "verify fixtures",
+    "accounts": [
+      {
+        "accountId": "acc_1",
+        "name": "测试账户",
+        "type": "BROKER",
+        "sortOrder": 1,
+        "createdAt": "2026-01-01T00:00:00Z"
+      }
+    ],
+    "symbols": {
+      "sh600023": {
+        "symbol": "sh600023",
+        "code": "600023",
+        "market": "sh",
+        "name": "浙能电力",
+        "type": "STOCK",
+        "costMethod": "weighted"
+      },
+      "sz000858": {
+        "symbol": "sz000858",
+        "code": "000858",
+        "market": "sz",
+        "name": "五粮液",
+        "type": "STOCK",
+        "costMethod": "weighted"
+      }
+    },
+    "transactions": [
+      {
+        "txId": "t1",
+        "accountId": "acc_1",
+        "symbol": "sh600023",
+        "action": "BUY",
+        "date": "2025-03-10",
+        "quantity": 1000,
+        "price": 4,
+        "fee": 5,
+        "createdAt": "2025-03-10T01:00:00Z"
+      },
+      {
+        "txId": "t2",
+        "accountId": "acc_1",
+        "symbol": "sh600023",
+        "action": "BUY",
+        "date": "2025-06-20",
+        "quantity": 1000,
+        "price": 5,
+        "fee": 5,
+        "createdAt": "2025-06-20T01:00:00Z"
+      },
+      {
+        "txId": "t3",
+        "accountId": "acc_1",
+        "symbol": "sh600023",
+        "action": "SELL",
+        "date": "2026-02-11",
+        "quantity": 500,
+        "price": 6,
+        "fee": 5,
+        "createdAt": "2026-02-11T01:00:00Z"
+      },
+      {
+        "txId": "t4",
+        "accountId": "acc_1",
+        "symbol": "sz000858",
+        "action": "BUY",
+        "date": "2024-09-02",
+        "quantity": 1900,
+        "price": 88,
+        "fee": 20,
+        "createdAt": "2024-09-02T01:00:00Z"
+      }
+    ],
+    "plans": {
+      "sh600023_2025-06-30": {
+        "planId": "sh600023_2025-06-30",
+        "symbol": "sh600023",
+        "securityCode": "600023",
+        "securityName": "",
+        "reportDate": "2025-06-30",
+        "reportType": "中报",
+        "pretaxBonusPer10": 0.5,
+        "afterTaxPer10": null,
+        "implPlanProfile": "10派0.50元(含税,扣税后0.45元)",
+        "planNoticeDate": null,
+        "noticeDate": null,
+        "equityRecordDate": "2025-10-16",
+        "exDividendDate": "2025-10-17",
+        "assignProgress": "实施分配",
+        "progressRank": 100,
+        "isImplemented": true,
+        "dividendRatio": null,
+        "fetchedAt": "2026-09-01T00:00:00Z"
+      },
+      "sh600023_2025-12-31": {
+        "planId": "sh600023_2025-12-31",
+        "symbol": "sh600023",
+        "securityCode": "600023",
+        "securityName": "",
+        "reportDate": "2025-12-31",
+        "reportType": "年报",
+        "pretaxBonusPer10": 2.8,
+        "afterTaxPer10": null,
+        "implPlanProfile": "10派2.80元(含税,扣税后2.52元)",
+        "planNoticeDate": null,
+        "noticeDate": null,
+        "equityRecordDate": "2026-07-29",
+        "exDividendDate": "2026-07-30",
+        "assignProgress": "实施分配",
+        "progressRank": 100,
+        "isImplemented": true,
+        "dividendRatio": null,
+        "fetchedAt": "2026-09-01T00:00:00Z"
+      },
+      "sh600023_2026-06-30": {
+        "planId": "sh600023_2026-06-30",
+        "symbol": "sh600023",
+        "securityCode": "600023",
+        "securityName": "",
+        "reportDate": "2026-06-30",
+        "reportType": "中报",
+        "pretaxBonusPer10": 0.2,
+        "afterTaxPer10": null,
+        "implPlanProfile": "10派0.20元(含税)",
+        "planNoticeDate": null,
+        "noticeDate": null,
+        "equityRecordDate": null,
+        "exDividendDate": null,
+        "assignProgress": "董事会决议通过",
+        "progressRank": 60,
+        "isImplemented": false,
+        "dividendRatio": null,
+        "fetchedAt": "2026-09-01T00:00:00Z"
+      },
+      "sz000858_2025-12-31": {
+        "planId": "sz000858_2025-12-31",
+        "symbol": "sz000858",
+        "securityCode": "000858",
+        "securityName": "",
+        "reportDate": "2025-12-31",
+        "reportType": "年报",
+        "pretaxBonusPer10": 25.79685,
+        "afterTaxPer10": null,
+        "implPlanProfile": "10派25.79685元(含税)",
+        "planNoticeDate": null,
+        "noticeDate": null,
+        "equityRecordDate": "2026-07-15",
+        "exDividendDate": "2026-07-16",
+        "assignProgress": "实施分配",
+        "progressRank": 100,
+        "isImplemented": true,
+        "dividendRatio": null,
+        "fetchedAt": "2026-09-01T00:00:00Z"
+      }
+    },
+    "received": [],
+    "expenses": [
+      {
+        "expenseId": "exp_phone",
+        "key": "PHONE",
+        "label": "话费",
+        "icon": "💬",
+        "iconAuto": true,
+        "monthlyAmount": 60,
+        "enabled": true,
+        "sortOrder": 1
+      },
+      {
+        "expenseId": "exp_insurance",
+        "key": "INSURANCE",
+        "label": "保险",
+        "icon": "🛡️",
+        "iconAuto": true,
+        "monthlyAmount": 200,
+        "enabled": true,
+        "sortOrder": 2
+      },
+      {
+        "expenseId": "exp_fruit",
+        "key": "FRUIT",
+        "label": "水果",
+        "icon": "🍎",
+        "iconAuto": true,
+        "monthlyAmount": 150,
+        "enabled": true,
+        "sortOrder": 3
+      },
+      {
+        "expenseId": "exp_utility",
+        "key": "UTILITY",
+        "label": "水电燃气",
+        "icon": "⚡",
+        "iconAuto": true,
+        "monthlyAmount": 100,
+        "enabled": true,
+        "sortOrder": 4
+      },
+      {
+        "expenseId": "exp_meals",
+        "key": "MEALS",
+        "label": "三餐",
+        "icon": "🍱",
+        "iconAuto": true,
+        "monthlyAmount": 600,
+        "enabled": true,
+        "sortOrder": 5
+      },
+      {
+        "expenseId": "exp_mortgage",
+        "key": "MORTGAGE",
+        "label": "房贷/房租",
+        "icon": "🏠",
+        "iconAuto": true,
+        "monthlyAmount": 700,
+        "enabled": true,
+        "sortOrder": 6
+      }
+    ],
+    "projection": {
+      "configId": "proj_default",
+      "monthlyInvest": 5000,
+      "years": 10,
+      "reinvestRatio": 1,
+      "divGrowthRate": 0,
+      "startAssets": null
+    },
+    "settings": {
+      "id": "app_settings",
+      "quoteRefreshMs": 60000,
+      "planCacheTTLMs": 604800000,
+      "defaultAccountId": "acc_1",
+      "reminderLeadDays": 3,
+      "lastPlanAt": null,
+      "onboarded": false,
+      "heroMetrics": [
+        "receivedThisYear",
+        "totalCost",
+        "totalMarketValue",
+        "costYield",
+        "marketYield",
+        "monthlyDividend"
+      ],
+      "heroCollapsed": false,
+      "heroForecast": {
+        "annualInvest": 60000,
+        "yieldPct": null,
+        "years": 10,
+        "reinvestPct": 100,
+        "solveFor": "years"
+      },
+      "defaultDividendBasis": {
+        "type": "years",
+        "value": 1
+      },
+      "fx": null,
+      "ocr": {
+        "model": "glm-4v-flash",
+        "agreed": false,
+        "lastUsedAt": null
+      },
+      "showLogo": true,
+      "unsupportedDividend": [],
+      "indexCompare": [
+        "sh",
+        "hs300",
+        "hsi"
+      ],
+      "showYieldBench": false,
+      "payoutPopupAt": null,
+      "dividendFun": {
+        "name": "视频会员",
+        "monthly": 25
+      }
+    },
+    "quoteCache": {
+      "sh600023": {
+        "symbol": "sh600023",
+        "name": "浙能电力",
+        "price": 4.98,
+        "prevClose": 5.02,
+        "changePct": -0.8,
+        "quoteTime": "20260910150431"
+      },
+      "sz000858": {
+        "symbol": "sz000858",
+        "name": "五粮液",
+        "price": 70.48,
+        "prevClose": 71.16,
+        "changePct": -0.96,
+        "quoteTime": "20260910150031"
+      }
+    },
+    "priceHistory": {},
+    "indexHistory": {},
+    "klineCache": {},
+    "yieldHistory": {},
+    "benchHistory": null,
+    "syncMeta": {
+      "deviceId": null,
+      "enabled": false,
+      "token": null,
+      "gistId": null,
+      "version": 0,
+      "etag": null,
+      "lastOkAt": null,
+      "failSince": null,
+      "lastErr": null,
+      "everPaired": false,
+      "installMode": null,
+      "pairKey": null,
+      "legacyHealed": false,
+      "tokenScopes": null,
+      "outbox": [],
+      "versions": {},
+      "tombstones": {}
+    }
+  }
+}
