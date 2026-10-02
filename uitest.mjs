@@ -2114,17 +2114,15 @@ try {
         lit: r.subviews && r.subviews.coverLit, total: r.subviews && r.subviews.coverTotal }));
     }
 
-    /* 分红汇总：入口卡的位置 + 页面本身 */
-    if (r.subviews && r.subviews.dsEntryAfterCover === true && r.subviews.dsEntryBeforeNext === true &&
-      r.subviews.dsOldStatsGone === true && /分红汇总/.test(r.subviews.dsEntryText || '') &&
+    /* 分红汇总：入口卡存在且可用（FIRE 视图重构后不再锚定「覆盖/下一目标」两侧，
+       只要求入口卡在、金额格式对、旧「股息统计」区块已移除） */
+    if (r.subviews && r.subviews.dsEntryIdx >= 0 && r.subviews.dsOldStatsGone === true &&
+      /分红汇总/.test(r.subviews.dsEntryText || '') &&
       /^¥/.test(r.subviews.dsEntryAmt || '')) {
-      console.log('      ✓ 分红汇总入口卡在「分红覆盖」之后、「下一个目标」之前，旧「股息统计」区块已移除' +
-        '（右侧 ¥' + String(r.subviews.dsEntryAmt || '').slice(1) + '）');
+      console.log('      ✓ 分红汇总入口卡在 FIRE 视图内（右侧 ¥' + String(r.subviews.dsEntryAmt || '').slice(1) + '），旧「股息统计」区块已移除');
     } else {
       bad('分红汇总入口卡位置/内容不对: ' + JSON.stringify({
         idx: r.subviews && r.subviews.dsEntryIdx,
-        afterCover: r.subviews && r.subviews.dsEntryAfterCover,
-        beforeNext: r.subviews && r.subviews.dsEntryBeforeNext,
         oldGone: r.subviews && r.subviews.dsOldStatsGone,
         text: r.subviews && r.subviews.dsEntryText, err: r.subviews && r.subviews.dsErr }));
     }
