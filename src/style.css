@@ -1414,6 +1414,26 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .exp-group .exp-item{ cursor:pointer; }
 .exp-group .exp-item:active{ transform:scale(.97); }
 
+/* 大数字卡标题行（标题 + 档位 chips 同行） */
+.fire-hero-row{ display:flex; align-items:center; gap:8px; }
+.fire-hero-row .fire-hero-title{ flex:1 1 auto; min-width:0; }
+.fire-hero-row .fs-mini-seg{ flex:0 0 auto; }
+
+/* 时间尺度 chips 行（FI 进度 / 覆盖率） */
+.fi-range-row{ display:flex; flex-wrap:wrap; gap:5px; margin:10px 0 4px; }
+.fi-range-row .chip{ padding:4px 11px; font-size:12px; font-weight:550; }
+
+/* 液态玻璃选中态（仅 FIRE 视图作用域，不动全局 .chip.active） */
+.fi-glass .chip.active, .fi-glass .fs-mini button.on{
+  background: var(--bg-elev); color: var(--text);
+  box-shadow: 0 2px 8px rgba(0,0,0,.14), 0 6px 20px rgba(0,0,0,.10),
+              inset 0 1px 0 var(--glass-highlight);
+  border: 1px solid var(--glass-border);
+  transform: scale(1.04);
+  transition: transform .2s cubic-bezier(.25,.8,.3,1), box-shadow .2s ease, background .2s ease;
+}
+.fi-glass .chip.active{ font-weight:650; }
+
 @media (prefers-reduced-motion: reduce){
   .fire-big{ transition:none; }
   .fire-big.blur{ filter:none; opacity:.6; transform:none; }
