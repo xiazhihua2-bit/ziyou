@@ -70,23 +70,26 @@ const PROBE = `
     nodes: body.children.length,
     bigNum: (document.getElementById('fire-big-num')||{}).textContent,
     sliders: document.querySelectorAll('.fs-range').length,
-    chips: document.querySelectorAll('[data-act="setFireTier"]').length,
+    tierChips: document.querySelectorAll('[data-act="setFireTier"]').length,
     expGroups: document.querySelectorAll('.exp-group').length,
-    hasFlameTab: !!document.querySelector('.tab [data-act], .tabbar') && document.querySelectorAll('.tab').length === 4,
     tabLabel: (document.querySelector('.tab.active')||{}).textContent,
     hasCoverage: txt.indexOf('被动收入覆盖率') >= 0,
     hasProgress: txt.indexOf('FI 进度') >= 0,
-    hasScene: txt.indexOf('场景模拟') >= 0,
+    noScene: txt.indexOf('场景模拟') < 0,
     hasGrouped: txt.indexOf('生存支出') >= 0 && txt.indexOf('品质支出') >= 0,
     hasEntry: txt.indexOf('分红汇总') >= 0,
     svgCount: body.querySelectorAll('svg[data-chart]').length,
     hline: body.querySelectorAll('svg[data-chart] line[stroke-dasharray="5 4"]').length,
+    prRangeChips: document.querySelectorAll('[data-act="setFirePrRange"]').length,
+    covRangeChips: document.querySelectorAll('[data-act="setFireCovRange"]').length,
+    bigIsYm: /^\\d{4}\\s*年\\s*\\d{1,2}\\s*月$/.test((document.getElementById('fire-big-num')||{}).textContent || ''),
+    bigCodes: Array.from((document.getElementById('fire-big-num')||{}).textContent || '').map(function(c){return c.charCodeAt(0).toString(16);}).join(','),
+    glassActive: document.querySelectorAll('.fi-glass .chip.active').length,
   };
 
   /* 滑杆局部联动：input 事件 → 大数字变化 + 不触发整页渲染 */
   var slider = document.querySelector('.fs-range[data-k="drip"]');
   var beforeBig = (document.getElementById('fire-big-num')||{}).textContent;
-  var renderMarker = window.__fireRenderMarker = (window.__fireRenderMarker||0) + 1;
   slider.value = 20000;
   slider.dispatchEvent(new Event('input', { bubbles: true }));
   await sleep(220);
@@ -97,37 +100,32 @@ const PROBE = `
   await sleep(120);
   out.sliderCommit = { persisted: XJ.store.state.settings.fire.tierSims.regular.drip === 20000 };
 
-  /* 切档记忆：lean 滑杆值独立 */
+  /* 切档：花费强制同步该档真实台账（monthlySpend 置 null），drip 保留记忆 */
   document.querySelector('[data-act="setFireTier"][data-v="lean"]').click();
   await sleep(140);
   out.tierSwitch = {
     activeTier: XJ.store.state.settings.fire.activeTier,
-    regularKept: XJ.store.state.settings.fire.tierSims.regular.drip === 20000,
-    leanDefault: XJ.store.state.settings.fire.tierSims.lean.drip === 5000,
+    regularDripKept: XJ.store.state.settings.fire.tierSims.regular.drip === 20000,
+    leanDripDefault: XJ.store.state.settings.fire.tierSims.lean.drip === 5000,
+    leanSpendNull: XJ.store.state.settings.fire.tierSims.lean.monthlySpend === null,
     bigNow: (document.getElementById('fire-big-num')||{}).textContent,
   };
 
-  /* 口径切换 */
-  document.querySelector('[data-act="setFireYieldBasis"][data-v="cost"]').click();
-  await sleep(140);
-  out.yieldBasis = { persisted: XJ.store.state.settings.fire.yieldBasis === 'cost',
-    label: (document.querySelector('.fs-head label')||{}).textContent };
+  /* 再投滑杆 */
+  var rs = document.querySelector('.fs-range[data-k="reinvest"]');
+  out.reinvest = { exists: !!rs, val: rs ? Number(rs.value) : null,
+    persisted: XJ.store.state.settings.fire.reinvestPct === 100 };
 
-  /* 场景添加（通过 sheet 表单） */
-  XJ.store.setUI({ tab: 'find' });
-  document.querySelector('[data-act="addFireScene"]').click();
-  await sleep(320);
-  var sheet = document.querySelector('.sheet');
-  if (sheet) {
-    sheet.querySelector('[data-k="name"]').value = '换个城市';
-    sheet.querySelector('[data-k="spendPct"]').value = '-20';
-    sheet.querySelector('[data-k="dripPct"]').value = '100';
-    sheet.querySelector('[data-act="saveFireScene"]').click();
-    await sleep(160);
-  }
-  out.scene = { saved: XJ.store.state.settings.fire.scenes.length === 1,
-    name: (XJ.store.state.settings.fire.scenes[0]||{}).name,
-    rowShown: txt.indexOf('换个城市') >= 0 || (document.getElementById('view-body').textContent||'').indexOf('换个城市') >= 0 };
+  /* FI 曲线时间尺度切换（近三月 → 近半年） */
+  var pr3 = document.querySelector('[data-act="setFirePrRange"][data-v="3m"]');
+  if (pr3) { pr3.click(); await sleep(140); }
+  out.prRange = { ui: XJ.store.ui.firePrRange,
+    svg: document.querySelectorAll('svg[data-chart]').length };
+
+  /* 覆盖率尺度切换（近三月） */
+  var cv3 = document.querySelector('[data-act="setFireCovRange"][data-v="3m"]');
+  if (cv3) { cv3.click(); await sleep(140); }
+  out.covRange = { ui: XJ.store.ui.fireCovRange };
 
   /* 支出编辑器分类 segmented */
   XJ.store.setUI({ tab: 'find' });
@@ -224,24 +222,31 @@ try {
   if (out.fatal) bad(out.fatal);
   else {
     const rd = out.render || {};
-    if (rd.bigNum) ok('FIRE 视图渲染，大数字 = ' + rd.bigNum); else bad('大数字缺失');
-    if (rd.sliders === 3) ok('三根滑杆在位'); else bad('滑杆数量 ' + rd.sliders);
-    if (rd.chips === 3) ok('三档 chips 在位'); else bad('chips ' + rd.chips);
-    if (rd.hasCoverage && rd.hasProgress && rd.hasScene) ok('三张分析卡都在'); else bad('卡片缺失 ' + JSON.stringify([rd.hasCoverage, rd.hasProgress, rd.hasScene]));
+    if (rd.bigIsYm) ok('① 大数字 = 具体年月（' + rd.bigNum + '）'); else bad('大数字非年月格式: ' + rd.bigNum);
+    if (rd.sliders === 4) ok('③ 四根滑杆在位（含再投）'); else bad('滑杆数量 ' + rd.sliders);
+    if (rd.tierChips === 6) ok('② 档位 chips 两处共 6 枚（大数字卡+覆盖率卡）'); else bad('档位 chips ' + rd.tierChips);
+    if (rd.hasCoverage && rd.hasProgress) ok('两张分析卡都在'); else bad('卡片缺失');
+    if (rd.noScene) ok('⑪ 场景模拟卡已删除'); else bad('场景卡仍存在');
     if (rd.hasGrouped) ok('支出已分组（生存/品质）'); else bad('支出未分组');
     if (rd.hasEntry) ok('分红汇总入口保留'); else bad('汇总入口缺失');
     if (rd.svgCount >= 1) ok('图表 SVG ' + rd.svgCount + ' 张'); else bad('无图表');
     if (rd.hline >= 1) ok('100% 基准虚线在位'); else bad('无 100% 虚线');
     if (rd.tabLabel && rd.tabLabel.indexOf('FIRE') >= 0) ok('Tab 已改名 FIRE'); else bad('Tab 未改名: ' + rd.tabLabel);
+    if (rd.prRangeChips === 7) ok('⑦ FI 曲线七档尺度 chips'); else bad('FI 尺度 chips ' + rd.prRangeChips);
+    if (rd.covRangeChips === 5) ok('⑨ 覆盖率五档尺度 chips'); else bad('覆盖率尺度 chips ' + rd.covRangeChips);
+    if (rd.glassActive >= 1) ok('⑫ 液态玻璃选中态生效（' + rd.glassActive + ' 枚 active）'); else bad('液态玻璃选中态缺失');
 
     const sl = out.sliderLink || {};
     if (sl.changed) ok('滑杆 input 联动大数字（' + sl.beforeBig + ' → ' + sl.afterBig + '）'); else bad('滑杆联动失效');
     if (out.sliderCommit && out.sliderCommit.persisted) ok('松手 commit 持久化'); else bad('commit 未落');
     const ts = out.tierSwitch || {};
-    if (ts.activeTier === 'lean' && ts.regularKept && ts.leanDefault) ok('切档记忆互不干扰'); else bad('切档记忆异常 ' + JSON.stringify(ts));
-    if (out.yieldBasis && out.yieldBasis.persisted) ok('口径切换持久化'); else bad('口径切换失效');
-    const sc = out.scene || {};
-    if (sc.saved && sc.rowShown) ok('场景添加并展示'); else bad('场景异常 ' + JSON.stringify(sc));
+    if (ts.activeTier === 'lean' && ts.regularDripKept && ts.leanDripDefault && ts.leanSpendNull) ok('④ 切档：花费强制同步（置 null）+ 攒股/息率各自记忆'); else bad('切档同步异常 ' + JSON.stringify(ts));
+    const rv = out.reinvest || {};
+    if (rv.exists) ok('③ 再投滑杆在位（值 ' + rv.val + '%）'); else bad('再投滑杆缺失');
+    const pr = out.prRange || {};
+    if (pr.ui === '3m' && pr.svg >= 1) ok('⑦ FI 曲线切到近三月仍渲染'); else bad('FI 尺度切换异常 ' + JSON.stringify(pr));
+    const cv = out.covRange || {};
+    if (cv.ui === '3m') ok('⑨ 覆盖率切到近三月'); else bad('覆盖率尺度切换异常 ' + JSON.stringify(cv));
     const ex = out.expenseEditor || {};
     if (ex.catButtons === 2 && ex.hiddenCat) ok('支出编辑器含分类选择'); else bad('支出分类缺失 ' + JSON.stringify(ex));
   }
