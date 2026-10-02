@@ -2,7 +2,7 @@
   "refToday": "2026-09-10",
   "state": {
     "app": "自由",
-    "version": 5,
+    "version": 6,
     "exportedAt": "2026-09-10T07:00:00.000Z",
     "note": "verify fixtures",
     "accounts": [
@@ -170,7 +170,8 @@
         "iconAuto": true,
         "monthlyAmount": 60,
         "enabled": true,
-        "sortOrder": 1
+        "sortOrder": 1,
+        "category": "essential"
       },
       {
         "expenseId": "exp_insurance",
@@ -180,7 +181,8 @@
         "iconAuto": true,
         "monthlyAmount": 200,
         "enabled": true,
-        "sortOrder": 2
+        "sortOrder": 2,
+        "category": "essential"
       },
       {
         "expenseId": "exp_fruit",
@@ -190,7 +192,8 @@
         "iconAuto": true,
         "monthlyAmount": 150,
         "enabled": true,
-        "sortOrder": 3
+        "sortOrder": 3,
+        "category": "essential"
       },
       {
         "expenseId": "exp_utility",
@@ -200,7 +203,8 @@
         "iconAuto": true,
         "monthlyAmount": 100,
         "enabled": true,
-        "sortOrder": 4
+        "sortOrder": 4,
+        "category": "essential"
       },
       {
         "expenseId": "exp_meals",
@@ -210,7 +214,8 @@
         "iconAuto": true,
         "monthlyAmount": 600,
         "enabled": true,
-        "sortOrder": 5
+        "sortOrder": 5,
+        "category": "essential"
       },
       {
         "expenseId": "exp_mortgage",
@@ -220,7 +225,8 @@
         "iconAuto": true,
         "monthlyAmount": 700,
         "enabled": true,
-        "sortOrder": 6
+        "sortOrder": 6,
+        "category": "essential"
       }
     ],
     "projection": {
@@ -277,6 +283,30 @@
       "dividendFun": {
         "name": "视频会员",
         "monthly": 25
+      },
+      "fire": {
+        "v": 1,
+        "yieldBasis": "market",
+        "activeTier": "regular",
+        "tierSims": {
+          "lean": {
+            "monthlySpend": null,
+            "drip": 5000,
+            "dripYieldPct": null
+          },
+          "regular": {
+            "monthlySpend": 2000,
+            "drip": 3000,
+            "dripYieldPct": 6
+          },
+          "fat": {
+            "monthlySpend": null,
+            "drip": 5000,
+            "dripYieldPct": null
+          }
+        },
+        "reinvestPct": 100,
+        "scenes": []
       }
     },
     "quoteCache": {
