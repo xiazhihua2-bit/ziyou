@@ -3,10 +3,13 @@
  * 优先 IndexedDB；在 file:// 等场景被浏览器禁用时自动降级 localStorage。
  */
 XJ.storage = (function () {
-  var DB_NAME = 'xiji_app';
+  /* ★ 存储标识用产品名命名（ziyou_*）：浏览器存储只按 origin 隔离、不看路径，
+     旧标识（xiji_app / xiji_state_v1）会让同域的旧版与新版共用一份数据。
+     改名后新版从空开始；旧数据可在旧版「我的 → 数据管理」导出 JSON 后导入。 */
+  var DB_NAME = 'ziyou_app';
   var STORE = 'kv';
   var KEY = 'state';
-  var LS_KEY = 'xiji_state_v1';
+  var LS_KEY = 'ziyou_state_v1';
 
   var mode = null;      // 'idb' | 'ls'
   var db = null;
