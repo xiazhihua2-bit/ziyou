@@ -148,7 +148,7 @@ XJ.views.overview = (function () {
   function todayPnlLine(s) {
     if (s.todayPnl === null || s.todayPnl === undefined) return '';
     var up = s.todayPnl >= 0;
-    return '<div class="hd-today"><span class="' + (up ? 'c-up' : 'c-down') + '">' +
+    return '<div class="hd-today" data-anim="A"><span class="' + (up ? 'c-up' : 'c-down') + '">' +
       (up ? '▲' : '▼') + ' 当日参考盈亏 ' + U.signMoney(s.todayPnl, 0) +
       (s.todayPnlPct === null ? '' : ' · ' + U.signPct(s.todayPnlPct)) + '</span>' +
       '<span class="hd-today-note">较昨收 · 跨币种已折算</span></div>';
@@ -175,7 +175,7 @@ XJ.views.overview = (function () {
       if (!m) return '';
       return '<div class="hd-metric' + (accent[key] ? ' accent' : '') + '">' +
         '<div class="k">' + U.esc(m.label) + C.qmark(m.hint) + '</div>' +
-        '<div class="v">' + U.esc(vals[key] || '—') + '</div>' +
+        '<div class="v" data-anim="A" data-anim-key="' + U.esc(key) + '">' + U.esc(vals[key] || '—') + '</div>' +
         '</div>';
     }).join('');
 
@@ -199,7 +199,7 @@ XJ.views.overview = (function () {
       '<div class="hd-row">' +
       '<div>' +
       '<div class="lbl">预测年度分红</div>' +
-      '<div class="hd-amount"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
+      '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
       '</div>' +
       '<div class="hd-badge">基于 <b>' + s.count + '</b> 只持仓<br>' + mult + '</div>' +
       '</div>' +
@@ -241,7 +241,7 @@ XJ.views.overview = (function () {
     var solveFor = cfg.solveFor === 'invest' ? 'invest' : 'years';
 
     function numBtn(k, text) {
-      return '<button class="hf-num" data-act="editForecast" data-k="' + k + '">' + U.esc(text) + '</button>';
+      return '<button class="hf-num" data-anim="A" data-anim-key="' + U.esc(k) + '" data-act="editForecast" data-k="' + k + '">' + U.esc(text) + '</button>';
     }
 
     return '<div class="hd-forecast">' +
@@ -367,8 +367,8 @@ XJ.views.overview = (function () {
       intra = '<div class="hc-intra">' +
         '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' +
         '<div class="hc-px">' +
-        '<b class="' + U.dirClass(chg) + '">' + (h.price === null ? '—' : U.money(h.price, 2)) + '</b>' +
-        '<span class="' + U.dirClass(chgAmt) + '">' +
+        '<b data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':px" class="' + U.dirClass(chg) + '">' + (h.price === null ? '—' : U.money(h.price, 2)) + '</b>' +
+        '<span data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':pxamt" class="' + U.dirClass(chgAmt) + '">' +
         (chgAmt === null ? '' : (chgAmt > 0 ? '+' : '') + U.money(chgAmt, 2)) + '</span>' +
         (minToday ? '' : '<i class="hc-at">' + U.esc(U.mdShort(min.date)) + '</i>') +
         '</div>' +
@@ -387,21 +387,21 @@ XJ.views.overview = (function () {
       /* 名字独占第一行（涨跌幅徽章已移到下一行的代码旁），窄屏也能完整显示 */
       '<div class="hc-name"><span class="nm">' + U.esc(h.name) + '</span>' + tag + '</div>' +
       '<div class="hc-code">' + U.esc(XJ.market.displayCode(h.symbol)) +
-      (chg === null || chg === undefined ? '' : '<span class="chg ' + dir + '">' + U.signPct(chg) + '</span>') +
+      (chg === null || chg === undefined ? '' : '<span class="chg ' + dir + '" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':chg">' + U.signPct(chg) + '</span>') +
       sig +
       '</div>' +
       '</div>' +
       '<div class="hc-right">' +
-      '<div class="hc-div">' + U.moneySign(h.predictedDividendCny) + '</div>' +
+      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':div">' + U.moneySign(h.predictedDividendCny) + '</div>' +
       '<div class="hc-div-lbl">预测分红</div>' +
       '</div>' +
       '</div>' +
       intra +
       '<div class="hc-grid">' +
-      '<div class="hc-cell"><div class="k">持仓</div><div class="v">' + U.thousands(h.qty) + '股</div></div>' +
-      '<div class="hc-cell"><div class="k">市值</div><div class="v">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
-      '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '">' + U.money(h.avgCost, 4) + '</div></div>' +
-      '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.thousands(h.qty) + '股</div></div>' +
+      '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + '</div></div>' +
       '</div>' +
       '</button>' +
       '<button class="hc-del" data-act="deleteHolding" data-symbol="' + U.esc(h.symbol) + '" ' +
