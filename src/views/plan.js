@@ -133,7 +133,8 @@ XJ.views.plan = (function () {
       sliderHtml('monthlySpend', spendLabel, 0, X.FIRE.spendMax, X.FIRE.spendStep, cfg.monthlySpend, spendVal, spendSwitch) +
       sliderHtml('drip', '每月攒股', 0, X.FIRE.dripMax, X.FIRE.dripStep, cfg.drip, U.moneySign(cfg.drip, 0)) +
       sliderHtml('dripYieldPct', '攒股息率（市值口径）', 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1)) +
-      sliderHtml('reinvest', '分红再投', 0, 100, 10, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
+      /* 再投比例精确到 1%：每 10% 一档太粗，抵扣额对再投很敏感 */
+      sliderHtml('reinvest', '分红再投', 0, 100, 1, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
       effLine +
       tip +
       '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + capText +
