@@ -108,7 +108,9 @@ const pwaDir = path.join(distDir, 'pwa');
 fs.rmSync(pwaDir, { recursive: true, force: true });
 fs.mkdirSync(pwaDir, { recursive: true });
 
-const version = createHash('sha1').update(bundle).digest('hex').slice(0, 8);
+/* ★ 版本号必须把 CSS 一起算进去：CSS 不在 JS bundle 里，只改样式时 bundle 的 sha1 不变，
+   sw 版本号就不推进 —— 已安装 PWA 的设备会一直吃旧缓存，新样式永远到不了（实测踩过）。 */
+const version = createHash('sha1').update(bundle + css).digest('hex').slice(0, 8);
 const head = [
   '<link rel="manifest" href="./manifest.webmanifest">',
   '<link rel="apple-touch-icon" href="./apple-touch-icon.png">',
