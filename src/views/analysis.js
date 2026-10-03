@@ -28,7 +28,7 @@ XJ.views.analysis = (function () {
     var unrealized = s.totalUnrealized;
     html += '<div class="hero-dark" style="margin-bottom:12px">' +
       '<div class="hd-status">当前总资产（基于 ' + U.esc(priceDate) + ' 价格）</div>' +
-      '<div class="hd-amount"><span class="cur">¥</span>' + U.money(s.totalMarketValue) + '</div>' +
+      '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalMarketValue) + '</div>' +
       (delta
         ? '<div class="hd-status" style="margin-top:6px">较上次记录 <b>' + U.signMoney(delta.mv, 0) + '</b>' +
         '<span style="opacity:.6"> · ' + U.esc(delta.prevDate) + '</span></div>'
@@ -44,9 +44,9 @@ XJ.views.analysis = (function () {
 
     /* ③ 概览三列 */
     html += '<div class="metric-grid">' +
-      '<div class="metric"><div class="k">持仓只数</div><div class="v">' + s.count + '</div><div class="s">只</div></div>' +
-      '<div class="metric"><div class="k">单只平均市值</div><div class="v">¥' + U.moneyCompact(s.avgMarketValue) + '</div><div class="s">元</div></div>' +
-      '<div class="metric"><div class="k">综合股息率</div><div class="v c-div">' +
+      '<div class="metric"><div class="k">持仓只数</div><div class="v" data-anim="B">' + s.count + '</div><div class="s">只</div></div>' +
+      '<div class="metric"><div class="k">单只平均市值</div><div class="v" data-anim="B">¥' + U.moneyCompact(s.avgMarketValue) + '</div><div class="s">元</div></div>' +
+      '<div class="metric"><div class="k">综合股息率</div><div class="v c-div" data-anim="B">' +
       (s.marketYield === null ? '—' : U.pct(s.marketYield)) + '</div><div class="s">预测分红/市值</div></div>' +
       '</div>';
 
@@ -72,7 +72,7 @@ XJ.views.analysis = (function () {
           '</div>' +
           '<div class="row-right">' +
           '<div class="row-v ' + U.dirClass(h.unrealizedCny) + '">' + U.signMoney(h.unrealizedCny, 0) + '</div>' +
-          '<div class="row-v2 ' + U.dirClass(h.unrealizedPct) + '">' + U.signPct(h.unrealizedPct) + '</div>' +
+          '<div class="row-v2 ' + U.dirClass(h.unrealizedPct) + '" data-anim="A">' + U.signPct(h.unrealizedPct) + '</div>' +
           '</div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
@@ -136,9 +136,9 @@ XJ.views.analysis = (function () {
     html += '<div class="card">' +
       '<div class="card-head" style="margin-bottom:8px"><h2 style="font-size:14px">' + U.esc(cc.level) + '</h2>' +
       '<div class="spacer"></div><span class="hint">HHI ' + (cc.hhi === null ? '—' : cc.hhi.toFixed(3)) + '</span></div>' +
-      '<div class="kv"><span class="k">第一大持仓占比</span><span class="v">' + U.pct(cc.top1, 1) + '</span></div>' +
-      '<div class="kv"><span class="k">前三大占比</span><span class="v">' + U.pct(cc.top3, 1) + '</span></div>' +
-      '<div class="kv"><span class="k">前五大占比</span><span class="v">' + U.pct(cc.top5, 1) + '</span></div>';
+      '<div class="kv"><span class="k">第一大持仓占比</span><span class="v" data-anim="A">' + U.pct(cc.top1, 1) + '</span></div>' +
+      '<div class="kv"><span class="k">前三大占比</span><span class="v" data-anim="A">' + U.pct(cc.top3, 1) + '</span></div>' +
+      '<div class="kv"><span class="k">前五大占比</span><span class="v" data-anim="A">' + U.pct(cc.top5, 1) + '</span></div>';
 
     /* 逐只明细 */
     var cl = cc.holdings || [];
@@ -150,8 +150,8 @@ XJ.views.analysis = (function () {
         return '<button class="conc-row" data-act="openSymbol" data-symbol="' + U.esc(x.symbol) + '">' +
           '<span class="conc-rank' + (isTop3 ? ' top' : '') + '">' + x.rank + '</span>' +
           '<span class="conc-name">' + U.esc(x.name) + '</span>' +
-          '<span class="conc-val">' + U.pct(x.weight, 1) + '</span>' +
-          '<span class="conc-cum" title="累计占比">Σ ' + U.pct(x.cumWeight, 1) + '</span>' +
+          '<span class="conc-val" data-anim="A">' + U.pct(x.weight, 1) + '</span>' +
+          '<span class="conc-cum" data-anim="A" title="累计占比">Σ ' + U.pct(x.cumWeight, 1) + '</span>' +
           '<span class="conc-bar"><i style="width:' + (x.weight / maxW * 100).toFixed(1) + '%"></i></span>' +
           '</button>';
       }).join('');
