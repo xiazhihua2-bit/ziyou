@@ -308,20 +308,20 @@ XJ.views.symbol = (function () {
       '<div style="flex:1;min-width:0">' +
       '<div class="row-t"><span class="nm">' + U.esc(name) + '</span>' +
       (h && h.changePct !== null && h.changePct !== undefined
-        ? '<span class="chg ' + (U.direction(h.changePct) === 'flat' ? 'flat' : U.direction(h.changePct)) + '">' + U.signPct(h.changePct) + '</span>' : '') +
+        ? '<span class="chg ' + (U.direction(h.changePct) === 'flat' ? 'flat' : U.direction(h.changePct)) + '" data-anim="A">' + U.signPct(h.changePct) + '</span>' : '') +
       '</div>' +
       '<div class="row-s">' + U.esc(XJ.market.displayCode(symbol)) + sig + '</div>' +
       '</div>' +
       '<div style="text-align:right">' +
-      '<div class="row-v ' + U.dirClass(h ? h.changePct : null) + '">' +
+      '<div class="row-v ' + U.dirClass(h ? h.changePct : null) + '" data-anim="S">' +
       (price === null ? '—' : U.money(price, price >= 100 ? 2 : 3)) + '</div>' +
-      '<div class="row-v2">' + U.esc(XJ.market.currency(symbol)) + '</div>' +
+      '<div class="row-v2" data-anim="S">' + U.esc(XJ.market.currency(symbol)) + '</div>' +
       '</div></div>';
 
     if (h) {
       html += '<div class="hc-grid">' +
-        '<div class="hc-cell"><div class="k">当前市值</div><div class="v">' + U.moneySign(h.marketValueCny) + '</div></div>' +
-        '<div class="hc-cell"><div class="k">收盘价 × 股数</div><div class="v">' +
+        '<div class="hc-cell" data-anim="B"><div class="k">当前市值</div><div class="v">' + U.moneySign(h.marketValueCny) + '</div></div>' +
+        '<div class="hc-cell" data-anim="B"><div class="k">收盘价 × 股数</div><div class="v">' +
         (price === null ? '—' : U.money(price) + ' × ' + U.thousands(h.qty)) + '</div></div>' +
         '</div>';
     } else {
@@ -365,7 +365,7 @@ XJ.views.symbol = (function () {
         (h.costMethod === 'weighted' ? U.signMoney(h.realizedCny) : '摊薄口径下不适用') + '</span></div>' +
         '<div class="kv"><span class="k">持股天数' + C.qmark('自首笔买入日起算') + '</span>' +
         '<span class="v">' + h.holdDays + ' 天' + (h.holdSince ? '（' + U.esc(h.holdSince) + ' 起）' : '') + '</span></div>' +
-        '<div class="kv"><span class="k">累计已获分红</span><span class="v c-div">' + U.moneySign(h.receivedTotalCny) + '</span></div>' +
+        '<div class="kv"><span class="k">累计已获分红</span><span class="v c-div" data-anim="A">' + U.moneySign(h.receivedTotalCny) + '</span></div>' +
         (h.costMethod === 'dividendDiluted'
           ? (h.receivedTotalCny > 0
             ? '<div class="note-line" style="margin-top:8px">' + UI.icon('check', 13) +
@@ -454,11 +454,11 @@ XJ.views.symbol = (function () {
         '<div class="bar' + (h.recoveryPct >= 100 ? ' green' : '') + '"><i style="width:' +
         U.clamp(h.recoveryPct, 0, 100).toFixed(1) + '%"></i></div>' +
         '<div class="recover-grid">' +
-        '<div class="rc"><div class="k">净投入</div><div class="v">' + U.moneySign(h.netInvestedCny, 0) + '</div></div>' +
-        '<div class="rc accent"><div class="k">已收回分红</div><div class="v">' + U.moneySign(h.receivedTotalCny, 0) + '</div></div>' +
-        '<div class="rc"><div class="k">剩余待回收</div><div class="v">' + U.moneySign(h.remainingCny, 0) + '</div></div>' +
+        '<div class="rc"><div class="k">净投入</div><div class="v" data-anim="A">' + U.moneySign(h.netInvestedCny, 0) + '</div></div>' +
+        '<div class="rc accent"><div class="k">已收回分红</div><div class="v" data-anim="A">' + U.moneySign(h.receivedTotalCny, 0) + '</div></div>' +
+        '<div class="rc"><div class="k">剩余待回收</div><div class="v" data-anim="A">' + U.moneySign(h.remainingCny, 0) + '</div></div>' +
         '</div>' +
-        '<div class="kv" style="margin-top:6px"><span class="k">预计回本</span><span class="v">' +
+        '<div class="kv" style="margin-top:6px"><span class="k">预计回本</span><span class="v" data-anim="A">' +
         (h.remainingCny <= 0 ? '已回本' : (h.expectedYears === null ? '—' : h.expectedYears.toFixed(1) + ' 年')) +
         '</span></div>' +
         '<div class="note-line" style="margin-top:8px">' + UI.icon('info', 13) +
