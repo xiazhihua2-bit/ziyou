@@ -122,19 +122,41 @@ const PROBE = `
   };
   var e100 = effParse(effEl ? effEl.textContent : null);
   var persisted50 = false;
+  var ms = document.querySelector('.fs-range[data-k="monthlySpend"]');
   if (rs) {
     rs.value = 50; rs.dispatchEvent(new Event('input', { bubbles: true })); await sleep(220);
     var e50 = effParse(effEl ? effEl.textContent : null);
+    /* ①b 视觉联动：拖再投后,每月花费滑杆应同步显示抵扣后目标(程序设值,不持久化)
+       ★ 采集必须【现取】元素：整页重渲染会让此前持有的节点脱离文档,
+         读到的 computed/textContent 就成了空或旧值（实测踩过）。 */
+    var tierNow = XJ.store.state.settings.fire.activeTier;
+    var msNow = document.querySelector('.fs-range[data-k="monthlySpend"]');
+    var msValNow = document.getElementById('fs-val-monthlySpend');
+    var rsNow = document.querySelector('.fs-range[data-k="reinvest"]');
+    var msVal50 = msNow ? Number(msNow.value) : null;
+    var msSimNull = XJ.store.state.settings.fire.tierSims[tierNow].monthlySpend === null;
     rs.dispatchEvent(new Event('change', { bubbles: true })); await sleep(120);
     persisted50 = XJ.store.state.settings.fire.reinvestPct === 50;
     out.reinvest = { exists: true, val: 50, persisted: persisted50,
+      step: rsNow ? rsNow.step : null,
+      inDoc: !!(rsNow && document.contains(rsNow)),
+      peRaw: rsNow ? getComputedStyle(rsNow).pointerEvents : null,
+      thumbOnly: !!(rsNow && getComputedStyle(rsNow).pointerEvents === 'none'),
+      msValueAt50: msVal50, msSimUnchanged: msSimNull,
+      msTextAt50: (function () {
+        var m = msValNow ? (msValNow.textContent || '').match(/¥([\\d,\\.]+)/) : null;
+        return m ? Number(m[1].replace(/,/g, '')) : null;
+      })(),
       effLineExists: !!effEl, effAt100: e100, effAt50: e50,
       offsetUp: e100.offset === 0 && e50.offset !== null && e50.offset >= 300 && e50.offset <= 350,
       targetDown: e50.target !== null && e100.target !== null && e50.target < e100.target,
       bigAfter: (document.getElementById('fire-big-num')||{}).textContent };
-    /* 还原 100%（默认口径，后续截图不受影响） */
-    rs.value = 100; rs.dispatchEvent(new Event('input', { bubbles: true })); await sleep(220);
-    rs.dispatchEvent(new Event('change', { bubbles: true })); await sleep(120);
+    /* 还原 100%（默认口径，后续截图不受影响）—— 同样要现取元素 */
+    var rsBack = document.querySelector('.fs-range[data-k="reinvest"]');
+    if (rsBack) {
+      rsBack.value = 100; rsBack.dispatchEvent(new Event('input', { bubbles: true })); await sleep(220);
+      rsBack.dispatchEvent(new Event('change', { bubbles: true })); await sleep(160);
+    }
   } else {
     out.reinvest = { exists: false, effLineExists: !!effEl, effAt100: e100 };
   }
@@ -273,6 +295,35 @@ try {
       ok('联动：再投 100→50 → 抵扣 −¥' + (rv.effAt50 || {}).offset + '，目标 ¥' + (rv.effAt50 || {}).target + '（变小）');
     else bad('抵扣联动失效 ' + JSON.stringify(rv));
     if (rv.persisted) ok('再投 commit 持久化'); else bad('再投 commit 未落');
+    if (rv.step === '1') ok('①a 再投滑杆步进 1%（可精确到个位）'); else bad('再投步进 ' + rv.step);
+    /* ③ 行为断言（比读 computed 更硬）：在轨道左侧 15% 处真实点击一次，
+       值不应跳变 —— headless 下 getComputedStyle 读 pointer-events 会给出空值，不可靠。 */
+    const rb = await browser.send('Runtime.evaluate', {
+      expression: `JSON.stringify((function(){var r=document.querySelector('.fs-range[data-k="reinvest"]');if(!r)return null;var b=r.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,val:Number(r.value)};})())`,
+      returnByValue: true,
+    }, sessionId);
+    const rect = rb && rb.result && rb.result.value ? JSON.parse(rb.result.value) : null;
+    if (rect) {
+      const px = Math.round(rect.x + rect.w * 0.15);
+      const py = Math.round(rect.y + rect.h / 2);
+      await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: px, y: py, button: 'left', clickCount: 1 }, sessionId);
+      await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px, y: py, button: 'left', clickCount: 1 }, sessionId);
+      await sleep(220);
+      const after = await browser.send('Runtime.evaluate', {
+        expression: `Number(document.querySelector('.fs-range[data-k="reinvest"]').value)`,
+        returnByValue: true,
+      }, sessionId);
+      if (after && after.result && after.result.value === rect.val) {
+        ok('③ 点击轨道不跳值（只有按住把手拖才动，当前 ' + rect.val + '%）');
+      } else {
+        bad('③ 点轨道仍跳值：' + rect.val + ' → ' + (after && after.result ? after.result.value : '?'));
+      }
+    } else bad('③ 取不到再投滑杆位置');
+    if (rv.msTextAt50 !== null && rv.msTextAt50 === rv.effAt50.target && rv.msSimUnchanged
+        && Math.abs(rv.msValueAt50 - rv.effAt50.target) <= 20)
+      ok('①b 拖再投 → 花费滑杆同步到抵扣后目标 ¥' + rv.msTextAt50 + '（把手按 step 吸附，不持久化）');
+    else bad('①b 花费滑杆联动异常 text=' + rv.msTextAt50 + ' val=' + rv.msValueAt50 +
+      ' eff=' + (rv.effAt50 || {}).target + ' simNull=' + rv.msSimUnchanged);
     const pr = out.prRange || {};
     if (pr.ui === '3m' && pr.svg >= 1) ok('⑦ FI 曲线切到近三月仍渲染'); else bad('FI 尺度切换异常 ' + JSON.stringify(pr));
     const cv = out.covRange || {};
