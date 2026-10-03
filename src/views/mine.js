@@ -69,8 +69,8 @@ XJ.views.mine = (function () {
           U.esc(st.accountName(t.accountId)) +
           (isAdj ? '' : ' · ' + U.thousands(t.quantity) + '股 @ ' + U.money(t.price, 3)) + '</div>' +
           '</div>' +
-          '<div class="row-right"><div class="row-v' + (isAdj ? ' ' + U.dirClass(amt) : '') + '">' + U.signMoney(amt) + '</div>' +
-          (!isAdj && U.n0(t.fee) ? '<div class="row-v2">费 ' + U.money(t.fee) + '</div>' : '') +
+          '<div class="row-right"><div class="row-v' + (isAdj ? ' ' + U.dirClass(amt) : '') + '" data-anim="A">' + U.signMoney(amt) + '</div>' +
+          (!isAdj && U.n0(t.fee) ? '<div class="row-v2" data-anim="A">费 ' + U.money(t.fee) + '</div>' : '') +
           '</div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
