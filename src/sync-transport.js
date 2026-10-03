@@ -69,7 +69,11 @@ XJ.syncTransport = (function () {
     var remaining = headers.get('x-ratelimit-remaining');
     var reset = U.n0(headers.get('x-ratelimit-reset'));      // 秒级 epoch
     var retry = U.n0(headers.get('retry-after'));            // 相对秒数
-    var limited = status === 429 || remaining === '0' || (status === 403 && reset > 0);
+    /* ★ 判定必须看 remaining，而不是「403 且带 reset 头」——
+         GitHub 的【每一个】响应都带 X-RateLimit-Reset，所以那种写法会把
+         每一个 403（尤其是「权限不足」）都误判成限流，界面只会显示
+         「稍后自动恢复」，用户就一直等一个不会发生的自愈（实测踩过）。 */
+    var limited = status === 429 || remaining === '0';
     if (!limited) return { limited: false, waitMs: 0, resetAt: null };
     var waitMs = reset > 0
       ? Math.max(0, reset * 1000 - Date.now())
@@ -126,10 +130,21 @@ XJ.syncTransport = (function () {
           });
       },
 
-      /** 写入：etag 为空时不发 If-Match（无条件覆盖），由上层强制先 pull 再写 */
+      /**
+       * 写入。
+       * ★★ 这里【绝不】发 If-Match —— 实测（2026-10-03）GitHub Gist API 不支持它：
+       *   · 弱 ETag（W/"…"）→ 400 Bad Request
+       *   · 去掉 W/ 的强 ETag → 同样 400
+       *   · 随便一个错的 ETag → 也 400
+       *   也就是说不管传什么，If-Match 都是 400 —— 这正是当年同步「一直失败并报错」的
+       *   真正根因（旧实现把 GitHub 的弱 ETag 原样塞进 If-Match，首推就 400）。
+       *   乐观锁因此改由上层用「version 号 + 写后回读校验」实现（见 sync.js 的 pushWithRetry）：
+       *   写入成功后回读一次云端 version，若发现期间被别人推进过，就拉回合并再重试。
+       *   代价：极窄的并发窗口（拉取与写入之间的毫秒级）无法在服务端被原子拒绝，
+       *   但能在下一轮被【检测到并自动修复】，不会静默丢数据。
+       */
       push: function (cfg) {
         var headers = ghHeaders(cfg.token, { 'Content-Type': 'application/json' });
-        if (cfg.etag) headers['If-Match'] = cfg.etag;
         return fetchJson(API + '/gists/' + encodeURIComponent(cfg.gistId), {
           method: 'PATCH', headers: headers,
           body: JSON.stringify({ description: GIST_DESC, files: buildFiles(cfg.data) }),
