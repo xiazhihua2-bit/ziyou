@@ -26,6 +26,7 @@ const JS_FILES = [
   'src/chart.js',
   'src/calc.js',
   'src/store.js',
+  'src/anim.js',           // 全局数字动效（值比对 → 模糊→清晰 + count-up），render 与 firePatchDom 共用
   'src/sync-transport.js', // 传输层（换后端只改这个文件）
   'src/sync.js',           // 编排层（依赖 store / storage / sync-core）
   'src/ui.js',
@@ -49,7 +50,36 @@ const SHORT_NAME = '自由';
 const THEME = '#F2F2F7';
 const ICON_FILES = ['icon-192.png', 'icon-512.png', 'icon-maskable-512.png', 'apple-touch-icon.png'];
 
-const css = read('src/style.css');
+/* ---------------- 手动主题通道（构建期派生，源码零漂移） ----------------
+ * 源码只维护两份变量：「浅色 :root」与「@media (prefers-color-scheme: dark) 里的 :root」。
+ * 这里把它们复制成带 data-theme 的属性选择器版本追加到末尾：
+ *   :root[data-theme="light"]  —— 系统深色时手动选浅色
+ *   :root[data-theme="dark"]   —— 系统浅色时手动选深色
+ * 特异性 :root[data-theme=x] (0,1,1) > :root (0,1,0)，所以手动档能盖住系统偏好。
+ * 手写第二份必然漂移，交给构建派生。 */
+function grabBlock(text, fromIdx) {
+  const open = text.indexOf('{', fromIdx);
+  let d = 0, close = -1;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === '{') d++;
+    else if (text[i] === '}') { d--; if (d === 0) { close = i; break; } }
+  }
+  return text.slice(open + 1, close);
+}
+function deriveThemeChannels(src) {
+  const lightIdx = src.search(/^:root\s*\{/m);
+  const mediaIdx = src.indexOf('@media (prefers-color-scheme: dark)');
+  if (lightIdx < 0 || mediaIdx < 0) return src;
+  const lightBody = grabBlock(src, lightIdx);
+  const darkBody = grabBlock(src, src.indexOf(':root', mediaIdx));
+  return src + '\n\n/* ==================== 手动主题（build 自动派生，勿手改） ====================\n'
+    + ' * 由「浅色 :root」与「@media (prefers-color-scheme: dark) 里的 :root」各复制一份，\n'
+    + ' * 换成带 data-theme 的属性选择器：特异性 (0,1,1) > (0,1,0)，故手动档盖得住系统偏好。\n'
+    + ' ============================================================================ */\n'
+    + ':root[data-theme="light"]{' + lightBody + '}\n'
+    + ':root[data-theme="dark"]{' + darkBody + '}\n';
+}
+const css = deriveThemeChannels(read('src/style.css'));
 const body = JS_FILES.map((f) => `\n/* ==================== ${f} ==================== */\n${read(f)}`).join('\n');
 const bundle = `(function(){\n'use strict';\n${body}\n})();`;
 const tpl = read('template.html');
