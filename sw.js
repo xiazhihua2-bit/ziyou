@@ -1,5 +1,5 @@
 /* ==================== Service Worker 模板 ====================
- * build.mjs 会把 45fa6e89 替换成产物内容的短 hash 后写入 dist/pwa/sw.js。
+ * build.mjs 会把 625aa04d 替换成产物内容的短 hash 后写入 dist/pwa/sw.js。
  *
  * 策略：
  *   · 导航请求（HTML）→ network-first，3 秒内网络没回来就用缓存（弱网不白屏）
@@ -7,7 +7,7 @@
  *   · 跨域请求一律不拦截（行情/分红/搜索/OCR 必须实时，缓存它们只会给出过期数据）
  * 注意：SW 缓存的是**应用外壳**，与 IndexedDB 里的持仓数据无关，不会影响记录。
  */
-const VERSION = '45fa6e89';
+const VERSION = '625aa04d';
 const CACHE = 'ziyou-' + VERSION;
 const SHELL = [
   './', './index.html', './manifest.webmanifest',
