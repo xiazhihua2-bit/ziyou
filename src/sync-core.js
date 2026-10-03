@@ -646,7 +646,13 @@ XJ.syncCore = (function () {
         res.skipped++; continue;
       }
 
-      var nowRec = (op.t === 'set' || op.t === 'proj') ? null : def.get(state, op.id);
+      /* ★ 账本登记的 hash 必须取【应用后的本机记录】，不能取远端载荷 ——
+         set/proj 是单例原地改（打底/补丁后的 local 与 slim 的白名单内容可能因
+         序列化形状差异而不一致，如实测过的 fire.scenes 数组/对象形态），若这里
+         记 remoteRec 的 hash，下一轮 diff 用本机记录算出的 hash 必然对不上，
+         于是每轮都多出一条 set op（回声）。实体类的 nowRec 本来就是本机记录，
+         统一取本机记录后，账本描述的永远是「本机现在的样子」。 */
+      var nowRec = def.get(state, op.id);
       note(key, st, nowRec ? contentHash(def, nowRec) : contentHash(def, remoteRec), true);
       res.applied++;
     }
@@ -744,6 +750,18 @@ XJ.syncCore = (function () {
       state.expenses = [];
       state.symbols = {};
       state.snapshots = {};
+      /* ★ 覆盖式对齐也要作废 set/proj 的【本机戳】——实测踩过：
+         tick 开头的 diffToOps(noQueue) 会给「账本里还没有」的 settings 盖本地 seed 戳，
+         随后 applyOps 的 newer() 认为「本机不比云端旧」而跳过 set —— 表现就是
+         B 设备永远拉不到 A 的 FIRE 参数与场景（skipped:2 恰好是 set+proj）。
+         tx/exp 等实体因容器刚被清空（local=null）天然不受影响，唯独这两条单例会中招。 */
+      ['settings', 'projection'].forEach(function (k) {
+        var o = state[k];
+        if (o && typeof o === 'object') { delete o.rev; delete o.rt; delete o.rd; }
+      });
+      /* ★ 同时清空 outbox：覆盖之后本机刚入队的增量（可能是默认模板数据）全部作废，
+         否则下一步 needPush 会把「以云端为准」前的旧本机数据再推上云端。 */
+      m.outbox = [];
       /* 清空 versions，但【保留 tombstones 与连接信息】——
          否则下一步会认为「我把所有东西都删了」并到处发墓碑。 */
       m.versions = {};
