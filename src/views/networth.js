@@ -154,8 +154,8 @@ XJ.views.networth = (function () {
       var mini = '';
       if (lastC) {
         mini = (isPct && b.twr.length)
-          ? '<span class="nw-mini-v">' + U.signPct(b.twr[b.twr.length - 1].idx * 100 - 100) + '</span>'
-          : '<span class="nw-mini-v">' + U.moneySign(lastC[metric]) + '</span>';
+          ? '<span class="nw-mini-v" data-anim="B">' + U.signPct(b.twr[b.twr.length - 1].idx * 100 - 100) + '</span>'
+          : '<span class="nw-mini-v" data-anim="B">' + U.moneySign(lastC[metric]) + '</span>';
       }
       html += '<div class="nw-mini">' + mini +
         '<span class="nw-mini-l">' + U.esc(metricLabel) +
@@ -343,7 +343,7 @@ XJ.views.networth = (function () {
       /* 成本收益率：大数字就是当前水平值（不是相对起点的变化） */
       var crLast = b.costRet.length ? b.costRet[b.costRet.length - 1] : null;
       var crv = crLast && crLast.idx !== null ? crLast.idx * 100 : null;
-      html += '<div class="nw-amount' + (crv !== null && crv < 0 ? ' down' : '') + '">' +
+      html += '<div class="nw-amount' + (crv !== null && crv < 0 ? ' down' : '') + '" data-anim="S">' +
         (crv === null ? '—' : U.signPct(crv)) + '</div>';
       html += '<div class="tiny nw-sub">成本收益率 = 累计收益 ÷ 累计净投入（含股息）' +
         (crLast ? ' · 截至 ' + U.esc(crLast.date) : '') + '</div>';
@@ -355,7 +355,7 @@ XJ.views.networth = (function () {
       }
       var cur = lastIdx ? lastIdx.idx * 100 - 100 : null;
       var basePct = baseIdx ? baseIdx * 100 - 100 : 0;
-      html += '<div class="nw-amount' + (cur !== null && cur < 0 ? ' down' : '') + '">' +
+      html += '<div class="nw-amount' + (cur !== null && cur < 0 ? ' down' : '') + '" data-anim="S">' +
         (cur === null ? '—' : U.signPct(cur - basePct)) + '</div>';
       html += '<div class="tiny nw-sub">组合时间加权收益率（TWR，含股息）· 起点 ' +
         U.esc(common || '—') + '</div>';
@@ -368,7 +368,7 @@ XJ.views.networth = (function () {
         if (rows.length) {
           html += '<div class="nw-vs">' + rows.map(function (r) {
             var diff = r.pct === null ? null : cur - r.pct;
-            return '<span class="nw-vsitem"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
+            return '<span class="nw-vsitem" data-anim="A"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
               '<b>' + (r.pct === null ? '—' : U.signPct(r.pct)) + '</b>' +
               (diff === null ? '' : '<em class="' + (diff >= 0 ? 'c-up' : 'c-down') + '">' +
                 (diff >= 0 ? '领先 ' : '落后 ') + U.pct(Math.abs(diff)) + '</em>') + '</span>';
@@ -380,7 +380,7 @@ XJ.views.networth = (function () {
       var pv = chartSeries[0];
       var lastT = pv ? pv.points[pv.points.length - 1] : null;
       var curP = lastT ? lastT.pct : null;
-      html += '<div class="nw-amount' + (curP !== null && curP < 0 ? ' down' : '') + '">' +
+      html += '<div class="nw-amount' + (curP !== null && curP < 0 ? ' down' : '') + '" data-anim="S">' +
         (curP === null ? '—' : U.signPct(curP)) + '</div>';
       html += '<div class="tiny nw-sub">' +
         (retMode === 'cost' ? '成本收益率 = 当日参考盈亏 ÷ 累计净投入' : '组合收益率（TWR，含股息）') +
@@ -389,7 +389,7 @@ XJ.views.networth = (function () {
       /* 当日参考盈亏（金额）：相对昨收。用户明确要的就是这一行 */
       var tpR = buildIntraday.todayPnl;
       if (tpR) {
-        html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpR.amount >= 0 ? 'up' : 'down') + '">' +
+        html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpR.amount >= 0 ? 'up' : 'down') + '" data-anim="A">' +
           (tpR.amount >= 0 ? '▲' : '▼') + ' 当日参考盈亏 ' + U.signMoney(tpR.amount, 0) +
           '</span> <span class="tiny">较昨收，跨币种已折算</span></div>';
       }
@@ -400,7 +400,7 @@ XJ.views.networth = (function () {
       if (curP !== null && idxRows.length) {
         html += '<div class="nw-vs">' + idxRows.map(function (r) {
           var diff = r.pct === null ? null : curP - r.pct;
-          return '<span class="nw-vsitem"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
+          return '<span class="nw-vsitem" data-anim="A"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
             '<b>' + (r.pct === null ? '—' : U.signPct(r.pct)) + '</b>' +
             (diff === null ? '' : '<em class="' + (diff >= 0 ? 'c-up' : 'c-down') + '">' +
               (diff >= 0 ? '领先 ' : '落后 ') + U.pct(Math.abs(diff)) + '</em>') + '</span>';
@@ -410,7 +410,7 @@ XJ.views.networth = (function () {
       var curV = (isToday && chartSeries.length)
         ? chartSeries[0].points[chartSeries[0].points.length - 1].pct
         : (series.length ? series[series.length - 1][metric] : null);
-      html += '<div class="nw-amount">' + (curV === null ? '—' : U.moneySign(curV)) + '</div>';
+      html += '<div class="nw-amount" data-anim="S">' + (curV === null ? '—' : U.moneySign(curV)) + '</div>';
       html += '<div class="tiny nw-sub">' + U.esc(metricLabel) +
         (isToday && chartSeries.length
           ? ' · 当日' + dayHint + '盘中 · 截至 ' + U.esc(chartSeries[0].points[chartSeries[0].points.length - 1].date)
@@ -420,21 +420,21 @@ XJ.views.networth = (function () {
            早先这里用「曲线首末点相减」，等于把隔夜跳空整段算漏了（9:30 开盘就跳空的话它记不到）。 */
         var tpM = buildIntraday.todayPnl;
         if (tpM) {
-          html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpM.amount >= 0 ? 'up' : 'down') + '">' +
+          html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpM.amount >= 0 ? 'up' : 'down') + '" data-anim="A">' +
             (tpM.amount >= 0 ? '▲' : '▼') + ' 当日参考盈亏 ' + U.signMoney(tpM.amount, 0) +
             '</span> <span class="tiny">较昨收，跨币种已折算</span></div>';
         } else {
           var firstP = chartSeries[0].points[0].pct;
           var lastP = chartSeries[0].points[chartSeries[0].points.length - 1].pct;
           var dToday = lastP - firstP;
-          html += '<div style="margin-top:7px"><span class="nw-delta ' + (dToday >= 0 ? 'up' : 'down') + '">' +
+          html += '<div style="margin-top:7px"><span class="nw-delta ' + (dToday >= 0 ? 'up' : 'down') + '" data-anim="A">' +
             (dToday >= 0 ? '▲' : '▼') + ' 今日 ' + U.signMoney(dToday, 0) + '</span></div>';
         }
       } else if (series.length >= 2) {
         delta = XJ.calc.seriesDelta(series, metric);
         if (delta) {
           var up = delta.diff >= 0;
-          html += '<div style="margin-top:7px"><span class="nw-delta ' + (up ? 'up' : 'down') + '">' +
+          html += '<div style="margin-top:7px"><span class="nw-delta ' + (up ? 'up' : 'down') + '" data-anim="A">' +
             (up ? '▲' : '▼') + ' 较区间起点 ' + U.signMoney(delta.diff, 0) +
             (delta.pct === null ? '' : ' · ' + U.pct(delta.pct, 1)) + '</span></div>';
         }
