@@ -261,6 +261,19 @@ XJ.views.mine = (function () {
     var s = st.state.settings;
     var html = '<div class="card flush">' +
       '<div style="padding:14px 16px 10px"><div class="card-head" style="margin:0"><h2>提醒与设置</h2></div></div>';
+
+    /* 外观：跟随系统 / 浅色 / 深色（本机偏好，不参与跨设备同步） */
+    var theme = (s.theme === 'light' || s.theme === 'dark') ? s.theme : 'auto';
+    var THEMES = [['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
+    var themeLabel = THEMES.filter(function (t) { return t[0] === theme; })[0][1];
+    html += '<div class="list-row" style="pointer-events:none"><div class="row-main">' +
+      '<div class="row-t">🎨 外观</div>' +
+      '<div class="row-s">当前 ' + U.esc(themeLabel) + ' · 只影响这台设备（不参与同步）</div></div></div>';
+    html += '<div class="chips" style="padding:0 16px 12px">' + THEMES.map(function (t) {
+      return '<button type="button" class="chip' + (theme === t[0] ? ' active' : '') +
+        '" data-act="setTheme" data-v="' + t[0] + '">' + t[1] + '</button>';
+    }).join('') + '</div>';
+
     html += '<button class="list-row" data-act="openOcrSettings">' +
       '<div class="row-main"><div class="row-t">📷 截图识别设置</div>' +
       '<div class="row-s">智谱 GLM-4V 多模态识别 · 模型与 API Key（截图会上传到智谱服务器）</div></div>' +
