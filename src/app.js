@@ -3181,6 +3181,28 @@
         }
       }
       node.style.setProperty('--p', ((v - Number(node.min)) / (Number(node.max) - Number(node.min)) * 100) + '%');
+      /* 再投 → 每月花费视觉联动：把「抵扣后目标」同步显示到花费滑杆。
+         ★ 程序设 value 不会触发 change，也就不会持久化 —— 「每月花费」滑杆的语义
+           始终是「总目标支出（抵扣前）」，抵扣永远只减一次，不存在双重扣减。
+           松手后整页重渲染会显示回台账值，抵扣行与自由日仍按抵扣后口径（那才是真相）。 */
+      if (k === 'reinvest') {
+        var cfgR = fireCfgWithOverride('reinvest', v);
+        var effR = C.fireEffectiveSpend(cfgR);
+        var msEl = document.querySelector('.fs-range[data-k="monthlySpend"]');
+        var msVal = document.getElementById('fs-val-monthlySpend');
+        if (msEl) {
+          var lo = Number(msEl.min), hi = Number(msEl.max);
+          /* value 会被浏览器按 step 网格吸附（如 3066.67 → 3070），这是把手位置的正常行为；
+             显示文本与填充仍用未吸附的抵扣后目标，保证与抵扣行逐位一致。 */
+          msEl.value = effR.effective;
+          msEl.style.setProperty('--p', ((effR.effective - lo) / (hi - lo) * 100) + '%');
+        }
+        if (msVal) {
+          msVal.textContent = S.ui.fireSpendMode === 'day'
+            ? '¥' + (effR.effective / C.FIRE.daysPerMonth).toFixed(2) + '/日'
+            : U.moneySign(effR.effective, 0);
+        }
+      }
       firePatchDom(fireCfgWithOverride(k, v));
     });
   });
@@ -3220,6 +3242,23 @@
 
   UI.on('fireSpendMode', function (node) {
     S.setUI({ fireSpendMode: node.getAttribute('data-v') === 'day' ? 'day' : 'month' });
+  });
+
+  /* ---- 外观：跟随系统 / 浅色 / 深色 ---- */
+  /** 把 settings.theme 落到 <html data-theme>：auto 时去掉属性（交回系统偏好）。
+      CSS 侧的手动通道由 build.mjs 从「浅色 :root + @media dark :root」派生。 */
+  function applyTheme() {
+    var t = (S.state.settings && S.state.settings.theme) || 'auto';
+    var el = document.documentElement;
+    if (t === 'light' || t === 'dark') el.setAttribute('data-theme', t);
+    else el.removeAttribute('data-theme');
+  }
+
+  UI.on('setTheme', function (node) {
+    var v = node.getAttribute('data-v');
+    if (v !== 'light' && v !== 'dark' && v !== 'auto') return;
+    S.commit(function (s) { s.settings.theme = v; });
+    applyTheme();
   });
 
   UI.on('fireReset', function () {
@@ -3843,6 +3882,7 @@
       }
       S.ui.accountId = C.ALL;
       UI.installDelegation();
+      applyTheme();          // 外观（跟随系统 / 浅 / 深）必须在首屏渲染前落地，否则会闪一下
       S.subscribe(render);
       injectManifest();
       registerSW();
