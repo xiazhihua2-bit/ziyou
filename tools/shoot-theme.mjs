@@ -56,7 +56,7 @@ SYMS.forEach((sym, i) => {
 const VIEWS = {
   overview: "XJ.store.setUI({tab:'overview',subPage:null,floatOpen:false});",
   calendar: "XJ.store.setUI({tab:'calendar',calView:'calendar',subPage:null,floatOpen:false});",
-  plan: "XJ.store.setUI({tab:'plan',subPage:null,floatOpen:false});",
+  fire: "XJ.store.setUI({tab:'find',subPage:null,floatOpen:false});",
   mine: "XJ.store.setUI({tab:'mine',subPage:null,floatOpen:false});",
   analysis: "XJ.store.setUI({tab:'overview',subPage:'analysis',floatOpen:false});",
   sheet: "XJ.store.setUI({tab:'overview',subPage:null,floatOpen:false});document.querySelector('[data-act=\"openAddHolding\"]').click();",
@@ -177,6 +177,34 @@ try {
     await browser.send('Runtime.evaluate', { expression: 'XJ.ui.closeSheet()' }, sessionId);
     ok(mode + ' 截图 x' + Object.keys(VIEWS).length + ' -> shots/theme/');
   }
+  /* ---- 手动主题三态：手动档必须盖住系统偏好（走真实点击链路） ---- */
+  for (const [scheme, forced, want] of [['light', 'dark', '#0E0E11'], ['dark', 'light', '#F2F2F7']]) {
+    await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, sessionId);
+    await sleep(200);
+    await browser.send('Runtime.evaluate', { expression: `XJ.store.setUI({ tab: 'mine' })` }, sessionId);
+    await sleep(320);
+    await browser.send('Runtime.evaluate', { expression: `!!document.querySelector('[data-act="setTheme"][data-v="${forced}"]') && (document.querySelector('[data-act="setTheme"][data-v="${forced}"]').click(), true)` }, sessionId);
+    await sleep(320);
+    const p = await browser.send('Runtime.evaluate', {
+      expression: `(function(){var r=getComputedStyle(document.documentElement);return {bg:r.getPropertyValue('--bg').trim(), attr:document.documentElement.getAttribute('data-theme'), theme:(XJ.store.state.settings||{}).theme};})()`,
+      returnByValue: true,
+    }, sessionId);
+    const got = (p && p.result && p.result.value) || {};
+    if (got.bg === want && got.attr === forced && got.theme === forced) {
+      ok('② 手动「' + forced + '」盖住系统「' + scheme + '」（--bg=' + got.bg + '）');
+    } else {
+      bad('② 手动主题未生效：系统' + scheme + ' 手动' + forced + ' → --bg=' + got.bg + ' attr=' + got.attr + ' theme=' + got.theme);
+    }
+  }
+  /* 还原：跟随系统（去掉手动档） */
+  await browser.send('Runtime.evaluate', { expression: `XJ.store.setUI({ tab: 'mine' })` }, sessionId);
+  await sleep(240);
+  await browser.send('Runtime.evaluate', { expression: `!!document.querySelector('[data-act="setTheme"][data-v="auto"]') && (document.querySelector('[data-act="setTheme"][data-v="auto"]').click(), true)` }, sessionId);
+  await sleep(240);
+  const pAuto = await browser.send('Runtime.evaluate', { expression: `document.documentElement.getAttribute('data-theme')`, returnByValue: true }, sessionId);
+  if ((pAuto && pAuto.result && pAuto.result.value) === null) ok('② 「跟随系统」还原后 data-theme 已移除');
+  else bad('② 还原失败，data-theme=' + (pAuto && pAuto.result ? pAuto.result.value : '?'));
+
   /* 控制台错误 */
   const errs = browser.events.filter((m) => (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') || m.method === 'Runtime.exceptionThrown');
   if (errs.length) bad('控制台错误 ' + errs.length + ' 条');
