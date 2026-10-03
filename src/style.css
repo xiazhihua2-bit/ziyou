@@ -1374,6 +1374,17 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .fs-ticks{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); padding:0 4px; }
 
+/* 提取抵扣行（再投滑杆下方，随滑杆实时联动） */
+.fs-offset{
+  margin-top:10px; padding:9px 13px; border-radius:11px;
+  font-size:13px; font-weight:550; line-height:1.55;
+  background:var(--dividend-soft); color:var(--text-2);
+  font-variant-numeric:tabular-nums;
+}
+.fs-offset b{ color:var(--dividend); font-weight:700; }
+.fs-off-amt{ font-size:12px; color:var(--text-2); font-weight:500; }
+.fs-off-done{ font-size:12px; color:var(--down); font-weight:650; }
+
 /* 试算提示行（相对基准 Δ） */
 .fire-tip{
   margin-top:12px; padding:9px 13px; border-radius:11px;
@@ -1382,6 +1393,20 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .fire-tip.good{ background:var(--down-soft); color:var(--down); }
 .fire-tip.warn{ background:var(--up-soft); color:var(--up); }
+
+/* ==================== 全局数字动效（anim.js 播放） ====================
+ * 模型：基础态常驻 transition（负责「模糊→清晰」的回稳，时长由 JS 按档 inline 覆盖）；
+ *       .na-X 只承载模糊态属性值（无 transition → 加上即瞬间模糊，符合「先糊后清」）。
+ * JS 端职责：值比对过滤、节流（400ms/微 150ms）、count-up 插值、will-change 只在播放期。 */
+[data-anim]{
+  transition-property: filter, opacity, transform;
+  transition-timing-function: cubic-bezier(.25,.8,.3,1);
+  transition-duration: .24s;
+}
+.na-S{ filter:blur(6px); opacity:.35; transform:scale(.985); }
+.na-A{ filter:blur(3px); opacity:.6; }
+.na-B{ opacity:.8; transform:scale(.995); }
+.na-M{ filter:blur(2px); opacity:.85; }
 
 /* FI 进度卡 */
 .fi-row{ margin:10px 0 2px; }
@@ -1438,6 +1463,66 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   .fire-big{ transition:none; }
   .fire-big.blur{ filter:none; opacity:.6; transform:none; }
   .fs-range::-webkit-slider-thumb{ transition:none; }
+  /* 全局数字动效降级：无模糊、无位移，一律直出 */
+  [data-anim]{ transition:none; }
+  .na-S, .na-A, .na-B, .na-M{ filter:none; opacity:1; transform:none; }
+}
+
+/* ==================== 交互反馈补齐（阶段 10） ====================
+ * 原则：按压 = scale 微缩；状态切换 = pop 入场（节点重建后播一次）；出场与入场对称。 */
+
+/* chip / 图标按钮按压（chip 已有 transition:all .16s，这里补 active 终态） */
+.chip:active{ transform:scale(.94); }
+.cover-icon:active, .metric:active{ transform:scale(.97); }
+.ds-entry:active{ transform:scale(.99); }
+.exp-item:active{ transform:scale(.96); }
+
+/* iOS 开关：原生 checkbox → 贴底滑块开关（开启 = 正向语义，用涨红体系里的正向色） */
+.switch{ position:relative; display:inline-flex; align-items:center; cursor:pointer; }
+.switch input{
+  appearance:none; -webkit-appearance:none;
+  width:51px; height:31px; border-radius:16px; margin:0;
+  background:var(--fill-2); position:relative; outline:none; cursor:pointer;
+  transition:background .26s cubic-bezier(.25,.8,.3,1);
+}
+.switch input::after{
+  content:''; position:absolute; top:2px; left:2px;
+  width:27px; height:27px; border-radius:50%; background:#fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.22);
+  transition:transform .26s cubic-bezier(.25,.8,.3,1);
+}
+.switch input:checked{ background:var(--up); }
+.switch input:checked::after{ transform:translateX(20px); }
+
+/* Tab 切换：主体交叉淡入（iOS 是淡入不是横滑，横向位移会被误解为层级导航） */
+@keyframes viewIn{ from{ opacity:0; transform:scale(.995); } to{ opacity:1; transform:scale(1); } }
+.view-enter{ animation:viewIn .18s cubic-bezier(.25,.8,.3,1); }
+/* 底栏 active 图标同步 pop 一次（节点重建后 active 是新节点，animation 正好播一次） */
+@keyframes segPop{ 0%{ transform:scale(.92); } 55%{ transform:scale(1.06); } 100%{ transform:scale(1); } }
+.tab.active{ animation:segPop .26s cubic-bezier(.25,.8,.3,1); }
+.fi-glass .chip.active{ animation:segPop .26s cubic-bezier(.25,.8,.3,1); }
+.segmented button.on{ animation:segPop .22s cubic-bezier(.25,.8,.3,1); }
+
+/* 弹层出场（与入场 slideUp 对称）：mask 淡出 + 面板下滑 */
+@keyframes maskOut{ from{ opacity:1; } to{ opacity:0; } }
+@keyframes sheetOut{ from{ transform:translateY(0); opacity:1; } to{ transform:translateY(28px); opacity:0; } }
+.mask.closing{ animation:maskOut .22s ease forwards; }
+.mask.closing .sheet{ animation:sheetOut .22s cubic-bezier(.4,.1,.6,1) forwards; }
+
+/* 进度条宽度过渡（进度类复活；占比类不加 data-anim="bar" 即维持原样） */
+.bar > i{ transition:width .5s cubic-bezier(.25,.8,.3,1); }
+
+/* 折叠指示箭头：展开态旋转（配合 fold 展开） */
+.fold-caret{ transition:transform .2s cubic-bezier(.25,.8,.3,1); }
+.is-open .fold-caret, .fold-open .fold-caret{ transform:rotate(90deg); }
+
+@media (prefers-reduced-motion: reduce){
+  .chip:active, .cover-icon:active, .metric:active, .ds-entry:active, .exp-item:active{ transform:none; }
+  .switch input, .switch input::after{ transition:none; }
+  .view-enter, .tab.active, .fi-glass .chip.active, .segmented button.on{ animation:none; }
+  .mask.closing, .mask.closing .sheet{ animation:none; }
+  .bar > i{ transition:none; }
+  .fold-caret{ transition:none; }
 }
 
 /* ==================== 跨设备同步（精简面板） ==================== */
