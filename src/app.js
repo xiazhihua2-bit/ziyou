@@ -3571,7 +3571,10 @@
     UI.toast('正在连接云端…');
     return XJ.sync.preflightPair(payload).then(function (pre) {
       if (!pre.ok) { UI.toast('配对失败：' + (pre.msg || pre.reason)); return null; }
-      var applied = XJ.sync.applyPair(payload, { installMode: 'merge' });
+      /* 不传 installMode：由 applyPair 自行判定首次对齐方式 ——
+         新设备（本机只有默认支出项）以云端为准，已有数据则合并。
+         写死 merge 会让新手机的默认支出项顶掉云端里的真实数据。 */
+      var applied = XJ.sync.applyPair(payload);
       if (!applied.ok) { UI.toast('配对失败：' + (applied.msg || applied.reason)); return null; }
       if (XJ.storage && XJ.storage.save) XJ.storage.save(S.state);
       return XJ.sync.verifyPair().then(function (v) {
