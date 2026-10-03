@@ -111,10 +111,33 @@ const PROBE = `
     bigNow: (document.getElementById('fire-big-num')||{}).textContent,
   };
 
-  /* 再投滑杆 */
+  /* 再投滑杆 + 提取抵扣行联动（r=100 回归 → r=50 抵扣生效 → 还原） */
   var rs = document.querySelector('.fs-range[data-k="reinvest"]');
-  out.reinvest = { exists: !!rs, val: rs ? Number(rs.value) : null,
-    persisted: XJ.store.state.settings.fire.reinvestPct === 100 };
+  var effEl = document.getElementById('fire-spend-eff');
+  var effParse = function (txt) {
+    var t = (txt || '').match(/抵扣后目标\\s*¥([\\d,\\.]+)/);
+    var o = (txt || '').match(/抵扣\\s*−¥([\\d,\\.]+)/);
+    var n = function (m) { return m ? Number(m[1].replace(/,/g, '')) : null; };
+    return { target: n(t), offset: n(o) };
+  };
+  var e100 = effParse(effEl ? effEl.textContent : null);
+  var persisted50 = false;
+  if (rs) {
+    rs.value = 50; rs.dispatchEvent(new Event('input', { bubbles: true })); await sleep(220);
+    var e50 = effParse(effEl ? effEl.textContent : null);
+    rs.dispatchEvent(new Event('change', { bubbles: true })); await sleep(120);
+    persisted50 = XJ.store.state.settings.fire.reinvestPct === 50;
+    out.reinvest = { exists: true, val: 50, persisted: persisted50,
+      effLineExists: !!effEl, effAt100: e100, effAt50: e50,
+      offsetUp: e100.offset === 0 && e50.offset !== null && e50.offset >= 300 && e50.offset <= 350,
+      targetDown: e50.target !== null && e100.target !== null && e50.target < e100.target,
+      bigAfter: (document.getElementById('fire-big-num')||{}).textContent };
+    /* 还原 100%（默认口径，后续截图不受影响） */
+    rs.value = 100; rs.dispatchEvent(new Event('input', { bubbles: true })); await sleep(220);
+    rs.dispatchEvent(new Event('change', { bubbles: true })); await sleep(120);
+  } else {
+    out.reinvest = { exists: false, effLineExists: !!effEl, effAt100: e100 };
+  }
 
   /* FI 曲线时间尺度切换（近三月 → 近半年） */
   var pr3 = document.querySelector('[data-act="setFirePrRange"][data-v="3m"]');
@@ -242,7 +265,14 @@ try {
     const ts = out.tierSwitch || {};
     if (ts.activeTier === 'lean' && ts.regularDripKept && ts.leanDripDefault && ts.leanSpendNull) ok('④ 切档：花费强制同步（置 null）+ 攒股/息率各自记忆'); else bad('切档同步异常 ' + JSON.stringify(ts));
     const rv = out.reinvest || {};
-    if (rv.exists) ok('③ 再投滑杆在位（值 ' + rv.val + '%）'); else bad('再投滑杆缺失');
+    if (rv.exists && rv.effLineExists) ok('③ 再投滑杆 + 抵扣行在位'); else bad('再投滑杆/抵扣行缺失 ' + JSON.stringify(rv));
+    if (rv.effAt100 && rv.effAt100.offset === 0 && rv.effAt100.target === 3400)
+      ok('r=100% 回归：抵扣行显示零抵扣（目标 ¥' + rv.effAt100.target + '）');
+    else bad('r=100% 抵扣行异常 ' + JSON.stringify(rv.effAt100));
+    if (rv.offsetUp && rv.targetDown)
+      ok('联动：再投 100→50 → 抵扣 −¥' + (rv.effAt50 || {}).offset + '，目标 ¥' + (rv.effAt50 || {}).target + '（变小）');
+    else bad('抵扣联动失效 ' + JSON.stringify(rv));
+    if (rv.persisted) ok('再投 commit 持久化'); else bad('再投 commit 未落');
     const pr = out.prRange || {};
     if (pr.ui === '3m' && pr.svg >= 1) ok('⑦ FI 曲线切到近三月仍渲染'); else bad('FI 尺度切换异常 ' + JSON.stringify(pr));
     const cv = out.covRange || {};
