@@ -1116,31 +1116,64 @@ XJ.calc = (function () {
   }
 
   /**
+   * 提取抵扣：把「不再投的那份分红」当作可直接支配的现金流，从该档月支出里扣掉。
+   *   offset    = P0/12 × (1 − r/100)      持仓月均分红中不再投的部分
+   *   effective = max(0, base − offset)     抵扣后目标支出（全站统一口径）
+   *   covered   = 抵扣额已够覆盖整档支出 → effective = 0，界面判「已达成」
+   * ★ r = 100%（默认）时 offset 恰为 0、effective === base —— 与改造前逐位一致。
+   * ★ offset 是【持仓级】的（分红与档位无关），三档只差分母 base。
+   */
+  function fireEffectiveSpend(cfg) {
+    cfg = cfg || {};
+    var base = Math.max(0, U.n0(cfg.monthlySpend));
+    var divNow = Math.max(0, U.n0(cfg.P0)) / 12;
+    var rRaw = (cfg.r === undefined || cfg.r === null) ? cfg.reinvestPct : cfg.r;
+    var r = U.clamp(U.n0(rRaw), 0, 100) / 100;
+    var offset = divNow * (1 - r);
+    return {
+      base: base,
+      offset: offset,
+      effective: Math.max(0, base - offset),
+      covered: base > 0 && offset >= base,
+    };
+  }
+
+  /**
    * 三档 FIRE 目标与 FI 进度。
    * fireNumber = 档位年支出 ÷ 真实持仓息率（口径 yieldBasis：'cost'|'market'）；
+   *   ★ 年支出口径 = fireEffectiveSpend 的 effective（抵扣后支出）× 12，
+   *     所以三档 fireNumber 都会被「不再投分红」同额拉低，FI 进度相应提前。
    * 息率 ≤ 0 / 成本非正 → fireNumber = null（界面如实显示「暂无法测算」）。
-   * capitalAt4 = 年支出 ÷ 4%（4% 法则参考值，仅提示条文案用）。
+   * capitalAt4 = 真实台账年支出 ÷ 4%（4% 法则参考值；FIRE number 才是主口径）。
+   * monthly/annual 保留【真实台账】口径不动，抵扣后的数看 effective/baseMonthly。
    */
   function fireTargets(state, acc, yieldBasis) {
     var s = summary(state, acc);
     var basis = yieldBasis === 'cost' ? 'cost' : 'market';
     var yieldPct = (basis === 'cost') ? s.costYield : s.compositeYield;
     if (yieldPct !== null && !isFinite(yieldPct)) yieldPct = null;
+    var fire = (state.settings && state.settings.fire) || {};
+    var r = U.clamp(U.n0(fire.reinvestPct), 0, 100);
     var tiers = {};
     ['lean', 'regular', 'fat'].forEach(function (t) {
       var monthly = tierMonthlySpend(state.expenses, t);
       var annual = monthly * 12;
-      var fireNumber = (yieldPct !== null && yieldPct > 0) ? annual / (yieldPct / 100) : null;
+      var eff = fireEffectiveSpend({ monthlySpend: monthly, P0: s.totalPredicted, r: r });
+      var fireNumber = (yieldPct !== null && yieldPct > 0) ? eff.effective * 12 / (yieldPct / 100) : null;
       tiers[t] = {
         monthly: monthly,
         annual: annual,
+        offset: eff.offset,
+        effective: eff.effective,
+        covered: eff.covered,
         fireNumber: fireNumber,
         fiRatio: (fireNumber !== null && fireNumber > 0 && s.totalMarketValue > 0)
           ? s.totalMarketValue / fireNumber * 100 : null,
         capitalAt4: annual / FIRE.capitalRule4,
       };
     });
-    return { tiers: tiers, yieldPct: yieldPct, yieldBasis: basis, fiPrincipal: s.totalMarketValue };
+    return { tiers: tiers, yieldPct: yieldPct, yieldBasis: basis, fiPrincipal: s.totalMarketValue,
+      offsetMonthly: Math.max(0, U.n0(s.totalPredicted)) / 12 * (1 - r / 100) };
   }
 
   /**
@@ -1186,28 +1219,39 @@ XJ.calc = (function () {
   }
 
   /**
-   * 距离财务自由的时间：解「被动收入(t) ≥ 目标月支出」。
+   * 距离财务自由的时间：解「被动收入(t) ≥ 抵扣后目标月支出」。
+   * ★ 目标取 fireEffectiveSpend(cfg).effective —— 「不再投的分红」已从支出里扣掉，
+   *   所以再投比例越低、当期目标越小、自由日越近（代价是积累变慢，见 calc 内注释）。
+   *   effective ≤ 0（抵扣额已覆盖整档支出）→ reached，months=0。
    * reached（目标 ≤ 当前被动收入）→ months=0；
    * reason ∈ 'no-growth' | 'beyond-limit' 原样透出（调用方不得改参数）。
    */
   function fireTimeline(state, acc, cfg) {
-    var solved = forecastSolveYears(fireAsForecast(cfg), cfg.P0, cfg.monthlySpend);
+    var eff = fireEffectiveSpend(cfg);
+    var target = eff.effective;
+    var solved = forecastSolveYears(fireAsForecast(cfg), cfg.P0, target);
     var todayYm = U.ymOf(U.today());
+    var extra = {
+      targetMonthly: target,
+      baseMonthly: eff.base,
+      offsetMonthly: eff.offset,
+      coveredByOffset: eff.covered,
+      monthlyPassive0: cfg.P0 / 12,
+    };
     if (solved.ok && solved.reached) {
-      return { solvable: true, reached: true, exact: 0, months: 0, date: todayYm,
-        fromNow: { y: 0, m: 0 }, targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+      return Object.assign({ solvable: true, reached: true, exact: 0, months: 0, date: todayYm,
+        fromNow: { y: 0, m: 0 } }, extra);
     }
     if (!solved.ok) {
-      return { solvable: false, reason: solved.reason, exact: solved.exact || null, months: null,
-        date: null, fromNow: null, targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+      return Object.assign({ solvable: false, reason: solved.reason, exact: solved.exact || null,
+        months: null, date: null, fromNow: null }, extra);
     }
     var months = solved.exact * 12;
     var yy = Math.floor(months / 12);
     var mm = Math.round(months - yy * 12);
     if (mm === 12) { yy += 1; mm = 0; }
-    return { solvable: true, reached: false, exact: solved.exact, months: months,
-      date: ymAdd(todayYm, Math.round(months)), fromNow: { y: yy, m: mm },
-      targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+    return Object.assign({ solvable: true, reached: false, exact: solved.exact, months: months,
+      date: ymAdd(todayYm, Math.round(months)), fromNow: { y: yy, m: mm } }, extra);
   }
 
   /** 小数月 t（t/12=年）的月被动收入；t=0 → P0/12（与「当前」对齐）。年内线性插值。 */
@@ -1225,11 +1269,14 @@ XJ.calc = (function () {
    * 被动收入覆盖率月度序列（图 2 曲线数据）。
    * ★ 历史段自行遍历 received 并按标的币种折 CNY —— stats().byMonth 是原币合计，
    *   跨币种直接加总会把港币当人民币（踩过：summary 的 recvCny 范式，calc.js 同款）。
+   * ★ 分母 = fireEffectiveSpend(cfg).effective（抵扣后目标支出），不是台账原始支出。
    * 历史段缺月填 0（连续填月不断线）；未来段从当月起按月外推，≥100% 即停或 600 个月封顶。
+   * effective ≤ 0（抵扣额已覆盖整档支出）→ 全部 pct = null，由视图翻译成「已完全覆盖 🎉」。
    */
   function fireCoverageHistory(state, acc, tier, cfg) {
     var fxNow = (state.settings && state.settings.fx) || {};
-    var target = cfg.monthlySpend;
+    var eff = fireEffectiveSpend(cfg);
+    var target = eff.effective;
     var byMonth = {};
     state.received.forEach(function (r) {
       if (acc !== ALL && r.accountId !== acc) return;
@@ -1262,7 +1309,8 @@ XJ.calc = (function () {
     } else if (future.length) {
       currentPct = future[0].pct;
     }
-    return { history: history, future: future, currentPct: currentPct, targetMonthly: target };
+    return { history: history, future: future, currentPct: currentPct, targetMonthly: target,
+      baseMonthly: eff.base, offsetMonthly: eff.offset, coveredByOffset: eff.covered };
   }
 
   /**
@@ -2930,6 +2978,7 @@ XJ.calc = (function () {
     /* FIRE 视图（v6）：财务自由试算 */
     FIRE: FIRE,
     tierMonthlySpend: tierMonthlySpend,
+    fireEffectiveSpend: fireEffectiveSpend,
     fireTargets: fireTargets,
     fireCfg: fireCfg,
     fireTimeline: fireTimeline,
