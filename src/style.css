@@ -1348,10 +1348,15 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .fs-mini button{ padding:3px 10px; font-size:12px; border-radius:6px; color:var(--text-2); }
 .fs-mini-seg{ display:inline-flex; gap:4px; }
 .fs-mini-seg .chip{ padding:3px 10px; font-size:12px; }
+/* ★ 只允许【按住圆形把手拖动】：轨道不接收指针事件（点一下就跳到那个位置的误触太伤），
+   把手单独放行。轨道的 --p 填充仍然实时跟随拖动。 */
 .fs-range{
   -webkit-appearance:none; appearance:none;
-  width:100%; height:44px; background:transparent; margin:0; display:block; cursor:pointer;
+  width:100%; height:44px; background:transparent; margin:0; display:block;
+  cursor:pointer; pointer-events:none;
 }
+.fs-range::-webkit-slider-thumb{ pointer-events:auto; }
+.fs-range::-moz-range-thumb{ pointer-events:auto; }
 .fs-range::-webkit-slider-runnable-track{
   height:4px; border-radius:2px;
   background:linear-gradient(to right, var(--dividend) var(--p, 0%), var(--fill) var(--p, 0%));
