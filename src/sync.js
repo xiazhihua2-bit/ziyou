@@ -262,18 +262,53 @@ XJ.sync = (function () {
       .then(function (r) { running = false; return r; });
   }
 
-  function doPush(s, m, tr, result) {
+  /**
+   * 推送，并在成功后【回读校验】：确认云端 version 就是我们刚写的那个。
+   * 目的：GitHub Gist 不支持 If-Match（实测任何 ETag 都 400），所以没法在服务端原子拒绝
+   * 并发写；改成「写完确认」—— 若云端 version 比我们写的更大，说明期间有另一台设备写过，
+   * 这时拉回合并再重试，把「静默覆盖」变成「自动修复」。
+   */
+  function verifyPushed(s, m, tr, attempt, myVersion) {
+    return tr.pull({ token: m.token, gistId: m.gistId, force: true }).then(function (r) {
+      if (r.status !== 200 || !r.data) return { ok: true, skip: true };   // 回读失败不阻塞主流程
+      var cloudVer = U.n0(r.data.version);
+      /* 判定标准是「云端现在是不是我写的那一版」，而不是「云端版本是否更大」——
+         后者会误判：早先的实现把本机记录的版本原样写回云端，版本号并不单调，
+         于是「云端更大」经常成立 → 误以为有并发 → 反复合并重推，
+         最终把云端版本写回旧值、另一台设备按旧快照覆盖（实测踩过：B 的数据被清空）。 */
+      if (cloudVer === U.n0(myVersion)) return { ok: true, cloudVer: cloudVer };
+      /* 云端比本机新 → 有人并发写：合并后重试 */
+      if (attempt >= RETRY_MAX) return { ok: false, reason: 'conflict' };
+      log('warn', '写入后校验发现云端已被其他设备推进（第 ' + (attempt + 1) + ' 次重新对齐）');
+      applyingRemote = true;
+      try { CORE.mergeRemote(s, r.data, 'merge'); } finally { applyingRemote = false; }
+      m.version = U.n0(r.data.version);
+      if (r.etag) m.etag = r.etag;
+      return doPush(s, m, tr, {}, attempt + 1);
+    }).catch(function () { return { ok: true, skip: true }; });
+  }
+
+  function doPush(s, m, tr, result, attempt) {
     /* ★ snapshot 每次都带全量：云端那份是「全量 + 增量尾巴」，新设备只靠它就够。
        早先为了省流量在增量推送时写 snapshot:null，把全量段抹掉了 ——
        新设备再也无法一次拉完。几十 KB 量级下，正确性远比省流量重要。 */
-    var next = CORE.buildRemote(s, { version: U.n0(m.version) });
+    /* ★ 版本号单调递增：云端里存的是「本机上一次看到的版本 + 1」。
+       写回本机记录的旧值会让版本号倒退，进而让别端的「版本相同就跳过合并」判断失效。 */
+    var myVersion = U.n0(m.version) + 1;
+    var next = CORE.buildRemote(s, { version: myVersion });
     var outboxLen = (m.outbox || []).length;
     return pushWithRetry(s, m, next, tr, 0).then(function (pr) {
       if (!pr.ok) throw mkStop(pr.reason || 'push');
       m.outbox = m.outbox.slice(outboxLen);       // ★ 只有确认成功才清
+      m.version = myVersion;
       if (pr.etag) m.etag = pr.etag;
       result.pushed = outboxLen;
-      log('push', '已推送 ' + outboxLen + ' 条变更（云端第 ' + U.n0(m.version) + ' 版）');
+      log('push', '已推送 ' + outboxLen + ' 条变更（云端第 ' + myVersion + ' 版）');
+      return verifyPushed(s, m, tr, attempt || 0, myVersion);
+    }).then(function (v) {
+      if (v && v.ok === false) {
+        throw mkStop('conflict', '写入冲突，重试多次仍未成功（云端可能被另一台设备频繁修改）');
+      }
     });
   }
 
@@ -358,24 +393,68 @@ XJ.sync = (function () {
     });
   }
 
-  /** 落地：把令牌与位置写进本机 syncMeta（令牌只存本机，绝不进 Gist / 导出文件） */
+  /**
+   * 落地：把令牌与位置写进本机 syncMeta（令牌只存本机，绝不进 Gist / 导出文件）。
+   *
+   * ★ 首次接入的对齐方式在这里判定，判错的后果很具体（两条都是实测踩出来的）：
+   *   · 本机【实质空白】（新买的手机：只有应用自带的默认支出项，没有交易与到账）
+   *     → overwrite：直接采用云端那一份。否则那 6 个默认支出项会被 diff 当成
+   *       「用户新增的记录」推上云端，把另一台设备的真实数据顶掉。
+   *   · 本机【已有真实数据】→ merge：让 diff 把本机数据全量推上去。
+   *     ★ 这里【不能】先调 seedVersions：它会把本地数据登记成「已见过」，
+   *       diff 于是产出 0 条 op —— 而首次接入时云端往往还是空的，数据就永远
+   *       推不上去（症状：A 首轮同步显示成功，云端仍是空的，另一台拉不到任何东西）。
+   *       「别把已在云端的数据再推一遍」这件事由后续每轮的 versions 账本负责。
+   */
   function applyPair(payload, opts) {
     var s = state();
     if (!s) return { ok: false, reason: 'no-state' };
     var m = CORE.meta(s);
-    m.token = payload.token;
-    m.gistId = payload.gistId;
-    m.enabled = true;
+    /* 指纹先验：链接被改动过 / 来自另一个盒子时立即拒绝，不写任何东西 */
     if (payload.boxFingerprint && payload.boxFingerprint !== CORE.boxFingerprintOf(payload.gistId)) {
       return { ok: false, reason: 'boxmismatch', msg: '链接里的位置指纹与云端不匹配，可能是链接被改动过' };
     }
+    m.token = payload.token;
+    m.gistId = payload.gistId;
+    m.enabled = true;
     m.forcePull = true;                 // 一次性放行：否则 version 相同会短路整次拉取
     if (opts && opts.resetMemory) {
       m.version = 0; m.etag = null; m.outbox = []; m.versions = {};
     }
     if (opts && opts.installMode) m.installMode = opts.installMode;
-    log('pair', '已写入连接信息（位置 ' + CORE.boxFingerprintOf(m.gistId) + '）');
-    return { ok: true };
+    else m.installMode = isBlankDevice(s) ? 'overwrite' : 'merge';
+    if (m.installMode === 'merge') {
+      /* ★ 首次接入且本机有真实数据 → 把本机数据全量入队。
+         背景：云端盒子是【外部预建】的（设备端没有建盒入口，那是防「盒子分裂」的根本办法），
+         所以首次接入时云端往往是空的；而落盘钩子在此之前从未跑过，outbox 是空的
+         —— 于是 needPush 恒为 false，数据永远推不上去（症状：首轮同步显示成功、
+         云端仍是空的、另一台设备拉不到任何东西）。
+         enqueueAll 正是为这个场景准备的：把云端没有的全部入队。
+         「别把已在云端的数据重复推一遍」由后续每轮的 versions 账本负责。 */
+      try { CORE.enqueueAll(s); } catch (e) { console.error('[sync] enqueueAll', e); }
+    }
+    log('pair', '已写入连接信息（位置 ' + CORE.boxFingerprintOf(m.gistId) + ' · 首次对齐：' +
+      (m.installMode === 'overwrite' ? '以云端为准' : '把本机数据推上云端') + '）');
+    return { ok: true, mode: m.installMode };
+  }
+
+  /** 本机是否「实质空白」：没有交易、没有到账、支出项就是应用自带的默认模板 */
+  function isBlankDevice(s) {
+    if (!s) return true;
+    if ((s.transactions || []).length) return false;
+    if ((s.received || []).length) return false;
+    var tpl = (XJ.model && XJ.model.EXPENSE_TEMPLATE) || [];
+    var exp = s.expenses || [];
+    if (!tpl.length || exp.length !== tpl.length) return false;
+    /* 逐项比 key + 金额：用户改过任何一项就算「有自己的数据」 */
+    for (var i = 0; i < tpl.length; i++) {
+      var hit = null;
+      for (var j = 0; j < exp.length; j++) {
+        if (exp[j].key === tpl[i].key) { hit = exp[j]; break; }
+      }
+      if (!hit || U.n0(hit.monthlyAmount) !== U.n0(tpl[i].monthlyAmount)) return false;
+    }
+    return true;
   }
 
   /**
@@ -445,6 +524,7 @@ XJ.sync = (function () {
     setEnabled: setEnabled, onVisible: onVisible, flushNow: flushNow,
     tick: tick, isFirstPaintSynced: isFirstPaintSynced,
     preflightPair: preflightPair, applyPair: applyPair, verifyPair: verifyPair,
+    isBlankDevice: isBlankDevice,   // 导出供联调脚本直接断言
     logAll: logAll,
     setTransport: function (t) {
       /* 换传输实现 = 换环境：此前的限流退避时刻不再有意义（也便于测试复位） */
