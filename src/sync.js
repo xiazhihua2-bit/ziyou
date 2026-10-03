@@ -166,7 +166,13 @@ XJ.sync = (function () {
     lastAttemptAt = Date.now();
     var tr = TR.get();
     var cfg = { token: m.token, gistId: m.gistId, etag: m.etag };
-    if (!applyingRemote) { try { CORE.diffToOps(s, { noQueue: true }); } catch (e) { /* 忽略 */ } }
+    /* ★ 入队模式（不是 noQueue）：这一步要把「落盘防抖还没触发」的本机变更算出来。
+       曾经写 noQueue——它照样盖戳、照样写墓碑，唯独不入队，后果有两个（都是实测）：
+       ① 首次拉取前它给 settings 盖了本地 seed 戳，随后的覆盖对齐被 newer() 判等跳过；
+       ② 删除后 250ms 落盘前若来了一个 tick，墓碑 op 被 noQueue 丢弃且墓碑已冻结，
+         之后落盘钩子再算就「账本里没了」→ 0 op → 删除永远推不出去。
+       入队是安全的：幂等（戳相同被 newer 挡）+ applyOps 的 note 双重防回声。 */
+    if (!applyingRemote) { try { CORE.diffToOps(s); } catch (e) { /* 忽略 */ } }
 
     var result = { ok: false, pulled: 0, applied: 0, pushed: 0, deletions: 0 };
 
