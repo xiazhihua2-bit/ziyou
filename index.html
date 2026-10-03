@@ -1392,6 +1392,17 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .fs-ticks{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); padding:0 4px; }
 
+/* 提取抵扣行（再投滑杆下方，随滑杆实时联动） */
+.fs-offset{
+  margin-top:10px; padding:9px 13px; border-radius:11px;
+  font-size:13px; font-weight:550; line-height:1.55;
+  background:var(--dividend-soft); color:var(--text-2);
+  font-variant-numeric:tabular-nums;
+}
+.fs-offset b{ color:var(--dividend); font-weight:700; }
+.fs-off-amt{ font-size:12px; color:var(--text-2); font-weight:500; }
+.fs-off-done{ font-size:12px; color:var(--down); font-weight:650; }
+
 /* 试算提示行（相对基准 Δ） */
 .fire-tip{
   margin-top:12px; padding:9px 13px; border-radius:11px;
@@ -1400,6 +1411,20 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .fire-tip.good{ background:var(--down-soft); color:var(--down); }
 .fire-tip.warn{ background:var(--up-soft); color:var(--up); }
+
+/* ==================== 全局数字动效（anim.js 播放） ====================
+ * 模型：基础态常驻 transition（负责「模糊→清晰」的回稳，时长由 JS 按档 inline 覆盖）；
+ *       .na-X 只承载模糊态属性值（无 transition → 加上即瞬间模糊，符合「先糊后清」）。
+ * JS 端职责：值比对过滤、节流（400ms/微 150ms）、count-up 插值、will-change 只在播放期。 */
+[data-anim]{
+  transition-property: filter, opacity, transform;
+  transition-timing-function: cubic-bezier(.25,.8,.3,1);
+  transition-duration: .24s;
+}
+.na-S{ filter:blur(6px); opacity:.35; transform:scale(.985); }
+.na-A{ filter:blur(3px); opacity:.6; }
+.na-B{ opacity:.8; transform:scale(.995); }
+.na-M{ filter:blur(2px); opacity:.85; }
 
 /* FI 进度卡 */
 .fi-row{ margin:10px 0 2px; }
@@ -1456,6 +1481,66 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   .fire-big{ transition:none; }
   .fire-big.blur{ filter:none; opacity:.6; transform:none; }
   .fs-range::-webkit-slider-thumb{ transition:none; }
+  /* 全局数字动效降级：无模糊、无位移，一律直出 */
+  [data-anim]{ transition:none; }
+  .na-S, .na-A, .na-B, .na-M{ filter:none; opacity:1; transform:none; }
+}
+
+/* ==================== 交互反馈补齐（阶段 10） ====================
+ * 原则：按压 = scale 微缩；状态切换 = pop 入场（节点重建后播一次）；出场与入场对称。 */
+
+/* chip / 图标按钮按压（chip 已有 transition:all .16s，这里补 active 终态） */
+.chip:active{ transform:scale(.94); }
+.cover-icon:active, .metric:active{ transform:scale(.97); }
+.ds-entry:active{ transform:scale(.99); }
+.exp-item:active{ transform:scale(.96); }
+
+/* iOS 开关：原生 checkbox → 贴底滑块开关（开启 = 正向语义，用涨红体系里的正向色） */
+.switch{ position:relative; display:inline-flex; align-items:center; cursor:pointer; }
+.switch input{
+  appearance:none; -webkit-appearance:none;
+  width:51px; height:31px; border-radius:16px; margin:0;
+  background:var(--fill-2); position:relative; outline:none; cursor:pointer;
+  transition:background .26s cubic-bezier(.25,.8,.3,1);
+}
+.switch input::after{
+  content:''; position:absolute; top:2px; left:2px;
+  width:27px; height:27px; border-radius:50%; background:#fff;
+  box-shadow:0 2px 6px rgba(0,0,0,.22);
+  transition:transform .26s cubic-bezier(.25,.8,.3,1);
+}
+.switch input:checked{ background:var(--up); }
+.switch input:checked::after{ transform:translateX(20px); }
+
+/* Tab 切换：主体交叉淡入（iOS 是淡入不是横滑，横向位移会被误解为层级导航） */
+@keyframes viewIn{ from{ opacity:0; transform:scale(.995); } to{ opacity:1; transform:scale(1); } }
+.view-enter{ animation:viewIn .18s cubic-bezier(.25,.8,.3,1); }
+/* 底栏 active 图标同步 pop 一次（节点重建后 active 是新节点，animation 正好播一次） */
+@keyframes segPop{ 0%{ transform:scale(.92); } 55%{ transform:scale(1.06); } 100%{ transform:scale(1); } }
+.tab.active{ animation:segPop .26s cubic-bezier(.25,.8,.3,1); }
+.fi-glass .chip.active{ animation:segPop .26s cubic-bezier(.25,.8,.3,1); }
+.segmented button.on{ animation:segPop .22s cubic-bezier(.25,.8,.3,1); }
+
+/* 弹层出场（与入场 slideUp 对称）：mask 淡出 + 面板下滑 */
+@keyframes maskOut{ from{ opacity:1; } to{ opacity:0; } }
+@keyframes sheetOut{ from{ transform:translateY(0); opacity:1; } to{ transform:translateY(28px); opacity:0; } }
+.mask.closing{ animation:maskOut .22s ease forwards; }
+.mask.closing .sheet{ animation:sheetOut .22s cubic-bezier(.4,.1,.6,1) forwards; }
+
+/* 进度条宽度过渡（进度类复活；占比类不加 data-anim="bar" 即维持原样） */
+.bar > i{ transition:width .5s cubic-bezier(.25,.8,.3,1); }
+
+/* 折叠指示箭头：展开态旋转（配合 fold 展开） */
+.fold-caret{ transition:transform .2s cubic-bezier(.25,.8,.3,1); }
+.is-open .fold-caret, .fold-open .fold-caret{ transform:rotate(90deg); }
+
+@media (prefers-reduced-motion: reduce){
+  .chip:active, .cover-icon:active, .metric:active, .ds-entry:active, .exp-item:active{ transform:none; }
+  .switch input, .switch input::after{ transition:none; }
+  .view-enter, .tab.active, .fi-glass .chip.active, .segmented button.on{ animation:none; }
+  .mask.closing, .mask.closing .sheet{ animation:none; }
+  .bar > i{ transition:none; }
+  .fold-caret{ transition:none; }
 }
 
 /* ==================== 跨设备同步（精简面板） ==================== */
@@ -4227,7 +4312,13 @@ XJ.syncCore = (function () {
         res.skipped++; continue;
       }
 
-      var nowRec = (op.t === 'set' || op.t === 'proj') ? null : def.get(state, op.id);
+      /* ★ 账本登记的 hash 必须取【应用后的本机记录】，不能取远端载荷 ——
+         set/proj 是单例原地改（打底/补丁后的 local 与 slim 的白名单内容可能因
+         序列化形状差异而不一致，如实测过的 fire.scenes 数组/对象形态），若这里
+         记 remoteRec 的 hash，下一轮 diff 用本机记录算出的 hash 必然对不上，
+         于是每轮都多出一条 set op（回声）。实体类的 nowRec 本来就是本机记录，
+         统一取本机记录后，账本描述的永远是「本机现在的样子」。 */
+      var nowRec = def.get(state, op.id);
       note(key, st, nowRec ? contentHash(def, nowRec) : contentHash(def, remoteRec), true);
       res.applied++;
     }
@@ -4325,6 +4416,18 @@ XJ.syncCore = (function () {
       state.expenses = [];
       state.symbols = {};
       state.snapshots = {};
+      /* ★ 覆盖式对齐也要作废 set/proj 的【本机戳】——实测踩过：
+         tick 开头的 diffToOps(noQueue) 会给「账本里还没有」的 settings 盖本地 seed 戳，
+         随后 applyOps 的 newer() 认为「本机不比云端旧」而跳过 set —— 表现就是
+         B 设备永远拉不到 A 的 FIRE 参数与场景（skipped:2 恰好是 set+proj）。
+         tx/exp 等实体因容器刚被清空（local=null）天然不受影响，唯独这两条单例会中招。 */
+      ['settings', 'projection'].forEach(function (k) {
+        var o = state[k];
+        if (o && typeof o === 'object') { delete o.rev; delete o.rt; delete o.rd; }
+      });
+      /* ★ 同时清空 outbox：覆盖之后本机刚入队的增量（可能是默认模板数据）全部作废，
+         否则下一步 needPush 会把「以云端为准」前的旧本机数据再推上云端。 */
+      m.outbox = [];
       /* 清空 versions，但【保留 tombstones 与连接信息】——
          否则下一步会认为「我把所有东西都删了」并到处发墓碑。 */
       m.versions = {};
@@ -8842,31 +8945,64 @@ XJ.calc = (function () {
   }
 
   /**
+   * 提取抵扣：把「不再投的那份分红」当作可直接支配的现金流，从该档月支出里扣掉。
+   *   offset    = P0/12 × (1 − r/100)      持仓月均分红中不再投的部分
+   *   effective = max(0, base − offset)     抵扣后目标支出（全站统一口径）
+   *   covered   = 抵扣额已够覆盖整档支出 → effective = 0，界面判「已达成」
+   * ★ r = 100%（默认）时 offset 恰为 0、effective === base —— 与改造前逐位一致。
+   * ★ offset 是【持仓级】的（分红与档位无关），三档只差分母 base。
+   */
+  function fireEffectiveSpend(cfg) {
+    cfg = cfg || {};
+    var base = Math.max(0, U.n0(cfg.monthlySpend));
+    var divNow = Math.max(0, U.n0(cfg.P0)) / 12;
+    var rRaw = (cfg.r === undefined || cfg.r === null) ? cfg.reinvestPct : cfg.r;
+    var r = U.clamp(U.n0(rRaw), 0, 100) / 100;
+    var offset = divNow * (1 - r);
+    return {
+      base: base,
+      offset: offset,
+      effective: Math.max(0, base - offset),
+      covered: base > 0 && offset >= base,
+    };
+  }
+
+  /**
    * 三档 FIRE 目标与 FI 进度。
    * fireNumber = 档位年支出 ÷ 真实持仓息率（口径 yieldBasis：'cost'|'market'）；
+   *   ★ 年支出口径 = fireEffectiveSpend 的 effective（抵扣后支出）× 12，
+   *     所以三档 fireNumber 都会被「不再投分红」同额拉低，FI 进度相应提前。
    * 息率 ≤ 0 / 成本非正 → fireNumber = null（界面如实显示「暂无法测算」）。
-   * capitalAt4 = 年支出 ÷ 4%（4% 法则参考值，仅提示条文案用）。
+   * capitalAt4 = 真实台账年支出 ÷ 4%（4% 法则参考值；FIRE number 才是主口径）。
+   * monthly/annual 保留【真实台账】口径不动，抵扣后的数看 effective/baseMonthly。
    */
   function fireTargets(state, acc, yieldBasis) {
     var s = summary(state, acc);
     var basis = yieldBasis === 'cost' ? 'cost' : 'market';
     var yieldPct = (basis === 'cost') ? s.costYield : s.compositeYield;
     if (yieldPct !== null && !isFinite(yieldPct)) yieldPct = null;
+    var fire = (state.settings && state.settings.fire) || {};
+    var r = U.clamp(U.n0(fire.reinvestPct), 0, 100);
     var tiers = {};
     ['lean', 'regular', 'fat'].forEach(function (t) {
       var monthly = tierMonthlySpend(state.expenses, t);
       var annual = monthly * 12;
-      var fireNumber = (yieldPct !== null && yieldPct > 0) ? annual / (yieldPct / 100) : null;
+      var eff = fireEffectiveSpend({ monthlySpend: monthly, P0: s.totalPredicted, r: r });
+      var fireNumber = (yieldPct !== null && yieldPct > 0) ? eff.effective * 12 / (yieldPct / 100) : null;
       tiers[t] = {
         monthly: monthly,
         annual: annual,
+        offset: eff.offset,
+        effective: eff.effective,
+        covered: eff.covered,
         fireNumber: fireNumber,
         fiRatio: (fireNumber !== null && fireNumber > 0 && s.totalMarketValue > 0)
           ? s.totalMarketValue / fireNumber * 100 : null,
         capitalAt4: annual / FIRE.capitalRule4,
       };
     });
-    return { tiers: tiers, yieldPct: yieldPct, yieldBasis: basis, fiPrincipal: s.totalMarketValue };
+    return { tiers: tiers, yieldPct: yieldPct, yieldBasis: basis, fiPrincipal: s.totalMarketValue,
+      offsetMonthly: Math.max(0, U.n0(s.totalPredicted)) / 12 * (1 - r / 100) };
   }
 
   /**
@@ -8912,28 +9048,39 @@ XJ.calc = (function () {
   }
 
   /**
-   * 距离财务自由的时间：解「被动收入(t) ≥ 目标月支出」。
+   * 距离财务自由的时间：解「被动收入(t) ≥ 抵扣后目标月支出」。
+   * ★ 目标取 fireEffectiveSpend(cfg).effective —— 「不再投的分红」已从支出里扣掉，
+   *   所以再投比例越低、当期目标越小、自由日越近（代价是积累变慢，见 calc 内注释）。
+   *   effective ≤ 0（抵扣额已覆盖整档支出）→ reached，months=0。
    * reached（目标 ≤ 当前被动收入）→ months=0；
    * reason ∈ 'no-growth' | 'beyond-limit' 原样透出（调用方不得改参数）。
    */
   function fireTimeline(state, acc, cfg) {
-    var solved = forecastSolveYears(fireAsForecast(cfg), cfg.P0, cfg.monthlySpend);
+    var eff = fireEffectiveSpend(cfg);
+    var target = eff.effective;
+    var solved = forecastSolveYears(fireAsForecast(cfg), cfg.P0, target);
     var todayYm = U.ymOf(U.today());
+    var extra = {
+      targetMonthly: target,
+      baseMonthly: eff.base,
+      offsetMonthly: eff.offset,
+      coveredByOffset: eff.covered,
+      monthlyPassive0: cfg.P0 / 12,
+    };
     if (solved.ok && solved.reached) {
-      return { solvable: true, reached: true, exact: 0, months: 0, date: todayYm,
-        fromNow: { y: 0, m: 0 }, targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+      return Object.assign({ solvable: true, reached: true, exact: 0, months: 0, date: todayYm,
+        fromNow: { y: 0, m: 0 } }, extra);
     }
     if (!solved.ok) {
-      return { solvable: false, reason: solved.reason, exact: solved.exact || null, months: null,
-        date: null, fromNow: null, targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+      return Object.assign({ solvable: false, reason: solved.reason, exact: solved.exact || null,
+        months: null, date: null, fromNow: null }, extra);
     }
     var months = solved.exact * 12;
     var yy = Math.floor(months / 12);
     var mm = Math.round(months - yy * 12);
     if (mm === 12) { yy += 1; mm = 0; }
-    return { solvable: true, reached: false, exact: solved.exact, months: months,
-      date: ymAdd(todayYm, Math.round(months)), fromNow: { y: yy, m: mm },
-      targetMonthly: cfg.monthlySpend, monthlyPassive0: cfg.P0 / 12 };
+    return Object.assign({ solvable: true, reached: false, exact: solved.exact, months: months,
+      date: ymAdd(todayYm, Math.round(months)), fromNow: { y: yy, m: mm } }, extra);
   }
 
   /** 小数月 t（t/12=年）的月被动收入；t=0 → P0/12（与「当前」对齐）。年内线性插值。 */
@@ -8951,11 +9098,14 @@ XJ.calc = (function () {
    * 被动收入覆盖率月度序列（图 2 曲线数据）。
    * ★ 历史段自行遍历 received 并按标的币种折 CNY —— stats().byMonth 是原币合计，
    *   跨币种直接加总会把港币当人民币（踩过：summary 的 recvCny 范式，calc.js 同款）。
+   * ★ 分母 = fireEffectiveSpend(cfg).effective（抵扣后目标支出），不是台账原始支出。
    * 历史段缺月填 0（连续填月不断线）；未来段从当月起按月外推，≥100% 即停或 600 个月封顶。
+   * effective ≤ 0（抵扣额已覆盖整档支出）→ 全部 pct = null，由视图翻译成「已完全覆盖 🎉」。
    */
   function fireCoverageHistory(state, acc, tier, cfg) {
     var fxNow = (state.settings && state.settings.fx) || {};
-    var target = cfg.monthlySpend;
+    var eff = fireEffectiveSpend(cfg);
+    var target = eff.effective;
     var byMonth = {};
     state.received.forEach(function (r) {
       if (acc !== ALL && r.accountId !== acc) return;
@@ -8988,7 +9138,8 @@ XJ.calc = (function () {
     } else if (future.length) {
       currentPct = future[0].pct;
     }
-    return { history: history, future: future, currentPct: currentPct, targetMonthly: target };
+    return { history: history, future: future, currentPct: currentPct, targetMonthly: target,
+      baseMonthly: eff.base, offsetMonthly: eff.offset, coveredByOffset: eff.covered };
   }
 
   /**
@@ -10656,6 +10807,7 @@ XJ.calc = (function () {
     /* FIRE 视图（v6）：财务自由试算 */
     FIRE: FIRE,
     tierMonthlySpend: tierMonthlySpend,
+    fireEffectiveSpend: fireEffectiveSpend,
     fireTargets: fireTargets,
     fireCfg: fireCfg,
     fireTimeline: fireTimeline,
@@ -10897,6 +11049,214 @@ XJ.store = (function () {
   };
 
   return app;
+})();
+
+
+/* ==================== src/anim.js ==================== */
+/* ==================== 全局数字动效（值比对 → 模糊→清晰 + 数字滚动） ====================
+ * 为什么不能用纯 CSS：app.render() 是全量 innerHTML 重建，一轮行情刷新触发 5–7 次重建，
+ * CSS 入场动画无法区分「数据真变了」与「只是重渲染」—— 同一个大数字会连续闪 5–7 次。
+ * 值比对天然过滤无效抖动：只有 textContent 真的变了的元素才起播。
+ *
+ * 用法（app.js render 内两步）：
+ *   var prev = XJ.anim.snapshot();   // ① innerHTML 重建【前】快照
+ *   ...重建...
+ *   XJ.anim.diffAndPlay(prev);       // ③ 重建【后】比对并分档播放
+ *
+ * 标记（视图层纯属性，不动计算逻辑）：
+ *   data-anim="S|A|B|M"      档位：S 大焦点 / A 卡片主指标 / B 网格小数字 / M 微（滑杆实时值）
+ *   data-anim-key="锚"       列表内显式锚（可选；缺省用文档序号，同名元素按顺序对位）
+ *
+ * 播放形态：
+ *   · 两端文本都能拆成「前缀 + 数字 + 后缀」且前后缀一致 → 数字滚动（rAF + easeOutCubic）
+ *   · 否则只做模糊→清晰（如「2037 年 1 月」「已达成」——年月滚动会错乱，只闪不滚）
+ *   · M 档永远不滚动（拖动中每帧都变，滚动跟不上；只要呼吸感）
+ *
+ * 节流：同一元素 400ms 内不重复起播（M 档 150ms）—— 一轮刷新重建 5–7 次只播一次。
+ * 降级：prefers-reduced-motion → 全部直接定值；hardwareConcurrency ≤ 4 → S/A 降为 B。
+ */
+XJ.anim = (function () {
+  var U = XJ.util;
+
+  var REDUCED = false;
+  var LOWEND = false;
+  try {
+    REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    LOWEND = (navigator.hardwareConcurrency || 8) <= 4;
+  } catch (e) { /* 老浏览器：按可动效处理，CSS 端还有 @media 兜底 */ }
+
+  var THROTTLE_MS = 400;      // 常规节流窗口
+  var M_THROTTLE_MS = 150;    // 微档（滑杆拖动中）节流窗口
+  var MAX_DELTA = 1e9;        // 数字差值超过它就不滚动（避免无意义的漫长插值）
+
+  var lastPlay = {};          // key → 上次起播时间戳
+  var rafId = {};             // key → 进行中的 count-up rAF id
+
+  /* ---------------- 快照 / 比对 ---------------- */
+
+  function keyOf(el, idx) {
+    var own = el.getAttribute('data-anim-key');
+    return (own !== null && own !== undefined && own !== '')
+      ? el.getAttribute('data-anim') + '|' + own
+      : el.getAttribute('data-anim') + '|' + idx;
+  }
+
+  /** 进度条档：比对目标是 data-w(百分比数字)，不是文本 */
+  function snapVal(el) {
+    var w = el.getAttribute('data-w');
+    return w !== null && w !== undefined ? w : el.textContent;
+  }
+
+  /** 重建前调用：记下每个动效元素的当前值 */
+  function snapshot() {
+    if (REDUCED) return null;
+    var map = {};
+    var els = document.querySelectorAll('[data-anim]');
+    for (var i = 0; i < els.length; i++) map[keyOf(els[i], i)] = snapVal(els[i]);
+    return map;
+  }
+
+  /** 重建后调用：与新 DOM 对位，值变了的元素分档播放 */
+  function diffAndPlay(prev) {
+    if (REDUCED || !prev) return;
+    var els = document.querySelectorAll('[data-anim]');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var key = keyOf(el, i);
+      var oldTxt = prev[key];
+      if (oldTxt === undefined || oldTxt === null) continue;   // 新出现的元素不播（防首屏闪烁）
+      var tier = el.getAttribute('data-anim') || 'A';
+      var newTxt = snapVal(el);
+      if (oldTxt === newTxt) continue;                          // ★ 值没变不起播——过滤重渲染抖动的核心
+      if (tier === 'bar') playBar(el, oldTxt, newTxt, key);
+      else play(el, tier, oldTxt, newTxt, key);
+    }
+  }
+
+  /* ---------------- 播放 ---------------- */
+
+  var TIER_MS = { S: 280, A: 200, B: 140, M: 100 };            // 各档「模糊→清晰」回稳时长
+
+  /** 进度条档（data-anim="bar"）：width 从旧值过渡到新值（CSS transition 接管）。
+      元素每次重建都是新节点，直接写 width 不会有过渡 —— 先写旧宽度、reflow、再写新宽度。 */
+  function playBar(el, oldW, newW, key) {
+    var now = U.nowMs ? U.nowMs() : Date.now();
+    if (lastPlay[key] && now - lastPlay[key] < THROTTLE_MS) return;
+    lastPlay[key] = now;
+    stop(key);
+    var a = parseFloat(String(oldW).replace('%', ''));
+    var b = parseFloat(String(newW).replace('%', ''));
+    if (!isFinite(a) || !isFinite(b)) { el.style.width = newW; return; }
+    el.style.transition = 'none';
+    el.style.width = a + '%';
+    void el.offsetWidth;                                        // reflow：把旧宽度固定为过渡起点
+    el.style.transition = '';
+    rafId[key] = requestAnimationFrame(function () {
+      if (!document.contains(el)) { delete rafId[key]; return; }
+      el.style.width = b + '%';
+      setTimeout(function () { delete rafId[key]; }, 520);
+    });
+  }
+
+  function play(el, tier, oldTxt, newTxt, key) {
+    if (tier === 'S' || tier === 'A') { if (LOWEND) tier = 'B'; }  // 低端机：重模糊档降为轻档
+    var isM = tier === 'M';
+    var now = U.nowMs ? U.nowMs() : Date.now();
+    if (lastPlay[key] && now - lastPlay[key] < (isM ? M_THROTTLE_MS : THROTTLE_MS)) return;
+    lastPlay[key] = now;
+
+    var pair = isM ? null : parsePair(oldTxt, newTxt);           // 微档禁滚动
+    stop(key);
+    el.style.willChange = 'filter, opacity, transform';
+    el.style.transitionDuration = (TIER_MS[tier] / 1000) + 's';
+
+    if (pair) {
+      var dur = Math.min(560, Math.max(320, 320 + Math.abs(pair.b - pair.a) / (Math.abs(pair.b) + 1) * 240));
+      countUp(el, tier, pair, dur, key);
+    } else {
+      el.classList.add('na-' + tier);
+      void el.offsetWidth;                                       // 强制 reflow：让「瞬间模糊」生效
+      el.textContent = newTxt;
+      settle(el, tier, key, 2);                                  // 双 rAF：确保模糊帧已绘制再回清晰
+    }
+  }
+
+  /** 单元素便捷入口（滑杆高频路径 firePatchDom 用）：值变才播，等价 snapshot+diff 的单元素版 */
+  function patch(el, newTxt, tier) {
+    if (!el) return;
+    if (REDUCED) { if (el.textContent !== newTxt) el.textContent = newTxt; return; }
+    var oldTxt = el.textContent;
+    if (oldTxt === newTxt) return;
+    var key = 'patch|' + (el.id || el.getAttribute('data-anim-key') || 'anon');
+    play(el, tier || 'M', oldTxt, newTxt, key);
+  }
+
+  function countUp(el, tier, pair, dur, key) {
+    el.classList.add('na-' + tier);
+    void el.offsetWidth;
+    var t0 = null;
+    var step = function (ts) {
+      if (!document.contains(el)) { delete rafId[key]; return; } // 元素已被下一轮重建顶掉 → 停
+      if (t0 === null) t0 = ts;
+      var p = Math.min(1, (ts - t0) / dur);
+      var e = 1 - Math.pow(1 - p, 3);                            // easeOutCubic：苹果的减速手感
+      el.textContent = pair.pre + fmtNum(pair.a + (pair.b - pair.a) * e, pair.dec) + pair.post;
+      if (p < 1) { rafId[key] = requestAnimationFrame(step); return; }
+      el.textContent = pair.raw;                                 // 末帧回到新值原样（保证格式逐位一致）
+      settle(el, tier, key, 1);
+    };
+    rafId[key] = requestAnimationFrame(step);
+  }
+
+  /** 播完收尾：撤模糊 class → 基础态 transition 接管「模糊→清晰」→ 清理 will-change */
+  function settle(el, tier, key, rafCount) {
+    var done = function () {
+      el.classList.remove('na-' + tier);
+      el.style.willChange = '';
+      el.style.transitionDuration = '';
+      delete rafId[key];
+    };
+    if (rafCount === 2) {
+      requestAnimationFrame(function () { requestAnimationFrame(done); });
+    } else done();
+  }
+
+  function stop(key) {
+    if (rafId[key]) { cancelAnimationFrame(rafId[key]); delete rafId[key]; }
+  }
+
+  /* ---------------- 文本解析（「前缀 + 数字 + 后缀」） ---------------- */
+
+  var NUM_RE = /^(.*?)(-?[0-9][0-9,]*(?:\.[0-9]+)?)(.*)$/;
+
+  /**
+   * 两端文本可滚动 ⇔ 前缀、后缀完全一致，且后缀里不再含数字。
+   * 「¥1.2万 → ¥3,500」后缀不同 → 拒绝（防单位跳变）；「2037 年 1 月」后缀含数字 → 拒绝（防错位滚动）。
+   * 小数位数取新值的（旧值 8 → 新值 8.40，中间帧按两位小数滚）。
+   */
+  function parsePair(oldTxt, newTxt) {
+    var a = NUM_RE.exec(String(oldTxt == null ? '' : oldTxt));
+    var b = NUM_RE.exec(String(newTxt == null ? '' : newTxt));
+    if (!a || !b) return null;
+    if (a[1] !== b[1] || a[3] !== b[3]) return null;
+    if (/[0-9]/.test(b[3])) return null;
+    var av = Number(a[2].replace(/,/g, ''));
+    var bv = Number(b[2].replace(/,/g, ''));
+    if (!isFinite(av) || !isFinite(bv)) return null;
+    if (Math.abs(bv - av) <= 1e-9 || Math.abs(bv - av) > MAX_DELTA) return null;
+    var dm = /\.[0-9]+$/.exec(b[2]);
+    return { pre: b[1], post: b[3], a: av, b: bv, dec: dm ? dm[0].length - 1 : 0, raw: newTxt };
+  }
+
+  function fmtNum(v, dec) {
+    var s = v.toFixed(dec);
+    var parts = s.split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return parts.join('.');
+  }
+
+  return { snapshot: snapshot, diffAndPlay: diffAndPlay, patch: patch,
+    parsePair: parsePair, fmtNum: fmtNum, reduced: function () { return REDUCED; } };
 })();
 
 
@@ -11249,7 +11609,13 @@ XJ.sync = (function () {
     lastAttemptAt = Date.now();
     var tr = TR.get();
     var cfg = { token: m.token, gistId: m.gistId, etag: m.etag };
-    if (!applyingRemote) { try { CORE.diffToOps(s, { noQueue: true }); } catch (e) { /* 忽略 */ } }
+    /* ★ 入队模式（不是 noQueue）：这一步要把「落盘防抖还没触发」的本机变更算出来。
+       曾经写 noQueue——它照样盖戳、照样写墓碑，唯独不入队，后果有两个（都是实测）：
+       ① 首次拉取前它给 settings 盖了本地 seed 戳，随后的覆盖对齐被 newer() 判等跳过；
+       ② 删除后 250ms 落盘前若来了一个 tick，墓碑 op 被 noQueue 丢弃且墓碑已冻结，
+         之后落盘钩子再算就「账本里没了」→ 0 op → 删除永远推不出去。
+       入队是安全的：幂等（戳相同被 newer 挡）+ applyOps 的 note 双重防回声。 */
+    if (!applyingRemote) { try { CORE.diffToOps(s); } catch (e) { /* 忽略 */ } }
 
     var result = { ok: false, pulled: 0, applied: 0, pushed: 0, deletions: 0 };
 
@@ -11713,9 +12079,28 @@ XJ.ui = (function () {
   }
 
   /* ---------------- 弹层 ---------------- */
-  function closeSheet() {
+  /** 关闭弹层：同步清空（语义与旧版完全一致，uitest 等调用方零感知），
+      出场动画由【克隆节点】播放 —— 原节点立即消失，ghost 挂 body 播 220ms 后移除。
+      为什么不用「先加 closing 类再延时移除」：那会把 closeSheet 变成异步语义，
+      开 A→关 A→开 B 的流程里 B 会被挂起的清场定时器一起删掉（实测 uitest 全线挂）。
+      immediate=true 或 reduced-motion：不播动画。 */
+  function closeSheet(immediate) {
     var root = document.getElementById('modal-root');
-    if (root) root.innerHTML = '';
+    if (!root) return;
+    var mask = root.querySelector('.mask');
+    if (!mask) return;
+    var animate = !immediate && !(XJ.anim && XJ.anim.reduced());
+    var ghost = animate ? mask.cloneNode(true) : null;
+    root.innerHTML = '';
+    if (ghost) {
+      ghost.classList.add('closing');
+      var host = document.createElement('div');
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = 'position:fixed;inset:0;z-index:999;pointer-events:none;';
+      host.appendChild(ghost);
+      document.body.appendChild(host);
+      setTimeout(function () { if (host.parentNode) host.parentNode.removeChild(host); }, 240);
+    }
   }
 
   function openSheet(opts) {
@@ -11975,7 +12360,7 @@ XJ.views.overview = (function () {
   function todayPnlLine(s) {
     if (s.todayPnl === null || s.todayPnl === undefined) return '';
     var up = s.todayPnl >= 0;
-    return '<div class="hd-today"><span class="' + (up ? 'c-up' : 'c-down') + '">' +
+    return '<div class="hd-today" data-anim="A"><span class="' + (up ? 'c-up' : 'c-down') + '">' +
       (up ? '▲' : '▼') + ' 当日参考盈亏 ' + U.signMoney(s.todayPnl, 0) +
       (s.todayPnlPct === null ? '' : ' · ' + U.signPct(s.todayPnlPct)) + '</span>' +
       '<span class="hd-today-note">较昨收 · 跨币种已折算</span></div>';
@@ -12002,7 +12387,7 @@ XJ.views.overview = (function () {
       if (!m) return '';
       return '<div class="hd-metric' + (accent[key] ? ' accent' : '') + '">' +
         '<div class="k">' + U.esc(m.label) + C.qmark(m.hint) + '</div>' +
-        '<div class="v">' + U.esc(vals[key] || '—') + '</div>' +
+        '<div class="v" data-anim="A" data-anim-key="' + U.esc(key) + '">' + U.esc(vals[key] || '—') + '</div>' +
         '</div>';
     }).join('');
 
@@ -12026,7 +12411,7 @@ XJ.views.overview = (function () {
       '<div class="hd-row">' +
       '<div>' +
       '<div class="lbl">预测年度分红</div>' +
-      '<div class="hd-amount"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
+      '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
       '</div>' +
       '<div class="hd-badge">基于 <b>' + s.count + '</b> 只持仓<br>' + mult + '</div>' +
       '</div>' +
@@ -12068,7 +12453,7 @@ XJ.views.overview = (function () {
     var solveFor = cfg.solveFor === 'invest' ? 'invest' : 'years';
 
     function numBtn(k, text) {
-      return '<button class="hf-num" data-act="editForecast" data-k="' + k + '">' + U.esc(text) + '</button>';
+      return '<button class="hf-num" data-anim="A" data-anim-key="' + U.esc(k) + '" data-act="editForecast" data-k="' + k + '">' + U.esc(text) + '</button>';
     }
 
     return '<div class="hd-forecast">' +
@@ -12194,8 +12579,8 @@ XJ.views.overview = (function () {
       intra = '<div class="hc-intra">' +
         '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' +
         '<div class="hc-px">' +
-        '<b class="' + U.dirClass(chg) + '">' + (h.price === null ? '—' : U.money(h.price, 2)) + '</b>' +
-        '<span class="' + U.dirClass(chgAmt) + '">' +
+        '<b data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':px" class="' + U.dirClass(chg) + '">' + (h.price === null ? '—' : U.money(h.price, 2)) + '</b>' +
+        '<span data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':pxamt" class="' + U.dirClass(chgAmt) + '">' +
         (chgAmt === null ? '' : (chgAmt > 0 ? '+' : '') + U.money(chgAmt, 2)) + '</span>' +
         (minToday ? '' : '<i class="hc-at">' + U.esc(U.mdShort(min.date)) + '</i>') +
         '</div>' +
@@ -12214,21 +12599,21 @@ XJ.views.overview = (function () {
       /* 名字独占第一行（涨跌幅徽章已移到下一行的代码旁），窄屏也能完整显示 */
       '<div class="hc-name"><span class="nm">' + U.esc(h.name) + '</span>' + tag + '</div>' +
       '<div class="hc-code">' + U.esc(XJ.market.displayCode(h.symbol)) +
-      (chg === null || chg === undefined ? '' : '<span class="chg ' + dir + '">' + U.signPct(chg) + '</span>') +
+      (chg === null || chg === undefined ? '' : '<span class="chg ' + dir + '" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':chg">' + U.signPct(chg) + '</span>') +
       sig +
       '</div>' +
       '</div>' +
       '<div class="hc-right">' +
-      '<div class="hc-div">' + U.moneySign(h.predictedDividendCny) + '</div>' +
+      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':div">' + U.moneySign(h.predictedDividendCny) + '</div>' +
       '<div class="hc-div-lbl">预测分红</div>' +
       '</div>' +
       '</div>' +
       intra +
       '<div class="hc-grid">' +
-      '<div class="hc-cell"><div class="k">持仓</div><div class="v">' + U.thousands(h.qty) + '股</div></div>' +
-      '<div class="hc-cell"><div class="k">市值</div><div class="v">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
-      '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '">' + U.money(h.avgCost, 4) + '</div></div>' +
-      '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.thousands(h.qty) + '股</div></div>' +
+      '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + '</div></div>' +
       '</div>' +
       '</button>' +
       '<button class="hc-del" data-act="deleteHolding" data-symbol="' + U.esc(h.symbol) + '" ' +
@@ -12494,8 +12879,8 @@ XJ.views.networth = (function () {
       var mini = '';
       if (lastC) {
         mini = (isPct && b.twr.length)
-          ? '<span class="nw-mini-v">' + U.signPct(b.twr[b.twr.length - 1].idx * 100 - 100) + '</span>'
-          : '<span class="nw-mini-v">' + U.moneySign(lastC[metric]) + '</span>';
+          ? '<span class="nw-mini-v" data-anim="B">' + U.signPct(b.twr[b.twr.length - 1].idx * 100 - 100) + '</span>'
+          : '<span class="nw-mini-v" data-anim="B">' + U.moneySign(lastC[metric]) + '</span>';
       }
       html += '<div class="nw-mini">' + mini +
         '<span class="nw-mini-l">' + U.esc(metricLabel) +
@@ -12683,7 +13068,7 @@ XJ.views.networth = (function () {
       /* 成本收益率：大数字就是当前水平值（不是相对起点的变化） */
       var crLast = b.costRet.length ? b.costRet[b.costRet.length - 1] : null;
       var crv = crLast && crLast.idx !== null ? crLast.idx * 100 : null;
-      html += '<div class="nw-amount' + (crv !== null && crv < 0 ? ' down' : '') + '">' +
+      html += '<div class="nw-amount' + (crv !== null && crv < 0 ? ' down' : '') + '" data-anim="S">' +
         (crv === null ? '—' : U.signPct(crv)) + '</div>';
       html += '<div class="tiny nw-sub">成本收益率 = 累计收益 ÷ 累计净投入（含股息）' +
         (crLast ? ' · 截至 ' + U.esc(crLast.date) : '') + '</div>';
@@ -12695,7 +13080,7 @@ XJ.views.networth = (function () {
       }
       var cur = lastIdx ? lastIdx.idx * 100 - 100 : null;
       var basePct = baseIdx ? baseIdx * 100 - 100 : 0;
-      html += '<div class="nw-amount' + (cur !== null && cur < 0 ? ' down' : '') + '">' +
+      html += '<div class="nw-amount' + (cur !== null && cur < 0 ? ' down' : '') + '" data-anim="S">' +
         (cur === null ? '—' : U.signPct(cur - basePct)) + '</div>';
       html += '<div class="tiny nw-sub">组合时间加权收益率（TWR，含股息）· 起点 ' +
         U.esc(common || '—') + '</div>';
@@ -12708,7 +13093,7 @@ XJ.views.networth = (function () {
         if (rows.length) {
           html += '<div class="nw-vs">' + rows.map(function (r) {
             var diff = r.pct === null ? null : cur - r.pct;
-            return '<span class="nw-vsitem"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
+            return '<span class="nw-vsitem" data-anim="A"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
               '<b>' + (r.pct === null ? '—' : U.signPct(r.pct)) + '</b>' +
               (diff === null ? '' : '<em class="' + (diff >= 0 ? 'c-up' : 'c-down') + '">' +
                 (diff >= 0 ? '领先 ' : '落后 ') + U.pct(Math.abs(diff)) + '</em>') + '</span>';
@@ -12720,7 +13105,7 @@ XJ.views.networth = (function () {
       var pv = chartSeries[0];
       var lastT = pv ? pv.points[pv.points.length - 1] : null;
       var curP = lastT ? lastT.pct : null;
-      html += '<div class="nw-amount' + (curP !== null && curP < 0 ? ' down' : '') + '">' +
+      html += '<div class="nw-amount' + (curP !== null && curP < 0 ? ' down' : '') + '" data-anim="S">' +
         (curP === null ? '—' : U.signPct(curP)) + '</div>';
       html += '<div class="tiny nw-sub">' +
         (retMode === 'cost' ? '成本收益率 = 当日参考盈亏 ÷ 累计净投入' : '组合收益率（TWR，含股息）') +
@@ -12729,7 +13114,7 @@ XJ.views.networth = (function () {
       /* 当日参考盈亏（金额）：相对昨收。用户明确要的就是这一行 */
       var tpR = buildIntraday.todayPnl;
       if (tpR) {
-        html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpR.amount >= 0 ? 'up' : 'down') + '">' +
+        html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpR.amount >= 0 ? 'up' : 'down') + '" data-anim="A">' +
           (tpR.amount >= 0 ? '▲' : '▼') + ' 当日参考盈亏 ' + U.signMoney(tpR.amount, 0) +
           '</span> <span class="tiny">较昨收，跨币种已折算</span></div>';
       }
@@ -12740,7 +13125,7 @@ XJ.views.networth = (function () {
       if (curP !== null && idxRows.length) {
         html += '<div class="nw-vs">' + idxRows.map(function (r) {
           var diff = r.pct === null ? null : curP - r.pct;
-          return '<span class="nw-vsitem"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
+          return '<span class="nw-vsitem" data-anim="A"><i style="background:' + r.color + '"></i>' + U.esc(r.name) +
             '<b>' + (r.pct === null ? '—' : U.signPct(r.pct)) + '</b>' +
             (diff === null ? '' : '<em class="' + (diff >= 0 ? 'c-up' : 'c-down') + '">' +
               (diff >= 0 ? '领先 ' : '落后 ') + U.pct(Math.abs(diff)) + '</em>') + '</span>';
@@ -12750,7 +13135,7 @@ XJ.views.networth = (function () {
       var curV = (isToday && chartSeries.length)
         ? chartSeries[0].points[chartSeries[0].points.length - 1].pct
         : (series.length ? series[series.length - 1][metric] : null);
-      html += '<div class="nw-amount">' + (curV === null ? '—' : U.moneySign(curV)) + '</div>';
+      html += '<div class="nw-amount" data-anim="S">' + (curV === null ? '—' : U.moneySign(curV)) + '</div>';
       html += '<div class="tiny nw-sub">' + U.esc(metricLabel) +
         (isToday && chartSeries.length
           ? ' · 当日' + dayHint + '盘中 · 截至 ' + U.esc(chartSeries[0].points[chartSeries[0].points.length - 1].date)
@@ -12760,21 +13145,21 @@ XJ.views.networth = (function () {
            早先这里用「曲线首末点相减」，等于把隔夜跳空整段算漏了（9:30 开盘就跳空的话它记不到）。 */
         var tpM = buildIntraday.todayPnl;
         if (tpM) {
-          html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpM.amount >= 0 ? 'up' : 'down') + '">' +
+          html += '<div style="margin-top:7px"><span class="nw-delta ' + (tpM.amount >= 0 ? 'up' : 'down') + '" data-anim="A">' +
             (tpM.amount >= 0 ? '▲' : '▼') + ' 当日参考盈亏 ' + U.signMoney(tpM.amount, 0) +
             '</span> <span class="tiny">较昨收，跨币种已折算</span></div>';
         } else {
           var firstP = chartSeries[0].points[0].pct;
           var lastP = chartSeries[0].points[chartSeries[0].points.length - 1].pct;
           var dToday = lastP - firstP;
-          html += '<div style="margin-top:7px"><span class="nw-delta ' + (dToday >= 0 ? 'up' : 'down') + '">' +
+          html += '<div style="margin-top:7px"><span class="nw-delta ' + (dToday >= 0 ? 'up' : 'down') + '" data-anim="A">' +
             (dToday >= 0 ? '▲' : '▼') + ' 今日 ' + U.signMoney(dToday, 0) + '</span></div>';
         }
       } else if (series.length >= 2) {
         delta = XJ.calc.seriesDelta(series, metric);
         if (delta) {
           var up = delta.diff >= 0;
-          html += '<div style="margin-top:7px"><span class="nw-delta ' + (up ? 'up' : 'down') + '">' +
+          html += '<div style="margin-top:7px"><span class="nw-delta ' + (up ? 'up' : 'down') + '" data-anim="A">' +
             (up ? '▲' : '▼') + ' 较区间起点 ' + U.signMoney(delta.diff, 0) +
             (delta.pct === null ? '' : ' · ' + U.pct(delta.pct, 1)) + '</span></div>';
         }
@@ -13081,10 +13466,10 @@ XJ.views.calendar = (function () {
       '<span class="pend-ico">💌</span>' +
       '<span class="pend-hmain">' +
       '<span class="pend-title">你有 <b>' + pend.count + '</b> 只持仓已公布分红方案，等待除权日</span>' +
-      '<span class="pend-sub">预计共可得 <b>' + U.moneySign(pend.total) + '</b>' +
+      '<span class="pend-sub" data-anim="A">预计共可得 <b>' + U.moneySign(pend.total) + '</b>' +
       /* 除权日还没公告的那部分金额是估算，这里如实说明，不混进确定值里 */
       (pend.undatedTotal > 0
-        ? '<i class="pend-subnote">其中 ' + U.moneySign(pend.undatedTotal) + ' 除权日待定</i>'
+        ? '<i class="pend-subnote" data-anim="A">其中 ' + U.moneySign(pend.undatedTotal) + ' 除权日待定</i>'
         : '') +
       '</span>' +
       '</span>' +
@@ -13099,7 +13484,7 @@ XJ.views.calendar = (function () {
           '<span class="pi-row">' +
           '<span class="pi-name">' + U.esc(it.name) +
           '<i class="pi-tag">' + U.esc(XJ.market.displayCode(it.symbol)) + '</i></span>' +
-          '<span class="pi-amt">' + U.moneySign(it.amount) + '</span>' +
+          '<span class="pi-amt" data-anim="A">' + U.moneySign(it.amount) + '</span>' +
           '</span>' +
           '<span class="pi-row">' +
           '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.thousands(it.qty) + '股</span>' +
@@ -13186,10 +13571,10 @@ XJ.views.calendar = (function () {
     if (pend.count > 0) {
       html += pendingCard(st, pend);
     } else if (mv.receivedTotal > 0) {
-      html += '<div class="cal-banner" style="background:var(--payout-banner-grad);border-color:var(--payout-banner-line);color:var(--payout-banner-fg)">' +
+      html += '<div class="cal-banner" data-anim="A" style="background:var(--payout-banner-grad);border-color:var(--payout-banner-line);color:var(--payout-banner-fg)">' +
         '本月已到账分红 <b style="color:var(--down)">' + U.moneySign(mv.receivedTotal) + '</b>，当前没有等待除权的方案。</div>';
     } else {
-      html += '<div class="cal-banner" style="background:var(--card-2);border-color:var(--line);color:var(--text-2)">' +
+      html += '<div class="cal-banner" data-anim="A" style="background:var(--card-2);border-color:var(--line);color:var(--text-2)">' +
         '当前没有等待除权的分红方案。</div>';
     }
 
@@ -13417,7 +13802,10 @@ XJ.views.plan = (function () {
         : '投入与息率不足以增长——请调高攒股金额或息率';
     } else if (tl.reached) {
       big = '已达成';
-      sub = '🎉 当前被动收入已覆盖目标支出';
+      /* reached 有两种来路：纯被动收入覆盖 / 不再投分红把目标抵扣到 0 —— 文案如实区分 */
+      sub = tl.coveredByOffset
+        ? '🎉 不再投的分红已抵扣全部目标支出'
+        : '🎉 当前被动收入已覆盖目标支出';
     } else {
       var ym = tl.date || U.ymOf(U.today());
       big = Number(ym.slice(0, 4)) + ' 年 ' + Number(ym.slice(5, 7)) + ' 月';
@@ -13426,8 +13814,8 @@ XJ.views.plan = (function () {
     return '<div class="card fire-hero fi-glass">' +
       '<div class="fire-hero-row"><span class="fire-hero-title">' + title + '</span>' +
       '<span class="fs-mini-seg fi-glass" role="group">' + tierChipsHtml(tier) + '</span></div>' +
-      '<div class="fire-big" id="fire-big-num">' + big + '</div>' +
-      '<div class="fire-sub" id="fire-big-sub">' + sub + '</div>' +
+      '<div class="fire-big" id="fire-big-num" data-anim="S">' + big + '</div>' +
+      '<div class="fire-sub" id="fire-big-sub" data-anim="A">' + sub + '</div>' +
       '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红（再投 ' +
       U.n0(fire.reinvestPct) + '%，可在下方试算卡调节）</div>' +
       '</div>';
@@ -13471,6 +13859,15 @@ XJ.views.plan = (function () {
       ? '暂无法测算'
       : U.moneySign(tierTarget.fireNumber, 0) + '（按当前市值息率 ' + U.pct(targets.yieldPct === null ? 0 : targets.yieldPct, 2) + ' 折算）';
 
+    /* 提取抵扣行：随「分红再投」滑杆实时联动（firePatchDom 就地更新同一 id）。
+       base = 当前滑杆模拟支出（cfg.monthlySpend），offset = 持仓月均分红 ×（1−r） */
+    var eff = X.fireEffectiveSpend(cfg);
+    var effLine = '<div class="fs-offset" id="fire-spend-eff">' +
+      '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
+      '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+      (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '') +
+      '</div>';
+
     return '<div class="card fi-glass">' +
       '<div class="card-head"><h2>⚖ 试算</h2><span class="spacer"></span>' +
       '<button class="chip" data-act="fireReset">重置</button></div>' +
@@ -13478,6 +13875,7 @@ XJ.views.plan = (function () {
       sliderHtml('drip', '每月攒股', 0, X.FIRE.dripMax, X.FIRE.dripStep, cfg.drip, U.moneySign(cfg.drip, 0)) +
       sliderHtml('dripYieldPct', '攒股息率（市值口径）', 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1)) +
       sliderHtml('reinvest', '分红再投', 0, 100, 10, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
+      effLine +
       tip +
       '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + capText +
       ' 生息资产，随行情刷新自动更新。息率默认跟随当前组合（' +
@@ -13549,10 +13947,10 @@ XJ.views.plan = (function () {
       var pct = d.ratio === null ? 0 : Math.min(100, Math.max(0, d.ratio));
       var active = t === tier;
       return '<div class="fi-row' + (active ? ' active' : '') + '">' +
-        '<div class="fi-row-t"><b>' + tierName(t) + '</b><span class="fi-goal">' +
+        '<div class="fi-row-t"><b>' + tierName(t) + '</b><span class="fi-goal" data-anim="A" data-anim-key="' + t + ':goal">' +
         (d.fireNumber === null ? '暂无法测算' : tierTag(t) + ' · ' + U.moneyCompact(d.fireNumber)) + '</span>' +
-        '<span class="fi-pct">' + (d.ratio === null ? '—' : U.pct(d.ratio, 1)) + '</span></div>' +
-        '<div class="bar"><i style="width:' + pct + '%' + (active ? ';background:var(--dividend)' : '') + '"></i></div>' +
+        '<span class="fi-pct" data-anim="A" data-anim-key="' + t + ':pct">' + (d.ratio === null ? '—' : U.pct(d.ratio, 1)) + '</span></div>' +
+        '<div class="bar"><i data-anim="bar" data-anim-key="' + t + ':bar" style="width:' + pct + '%' + (active ? ';background:var(--dividend)' : '') + '"></i></div>' +
         '</div>';
     }).join('');
 
@@ -13603,7 +14001,7 @@ XJ.views.plan = (function () {
     }
     return '<div class="card fi-glass">' +
       '<div class="card-head"><h2>◎ FI 进度</h2><span class="spacer"></span>' +
-      '<span class="fi-principal">FI 本金 <b>' + U.moneyCompact(pr.fiPrincipal) + '</b></span></div>' +
+      '<span class="fi-principal">FI 本金 <b data-anim="B">' + U.moneyCompact(pr.fiPrincipal) + '</b></span></div>' +
       bars +
       '<div class="fs-mini-seg fi-range-row fi-glass">' + chips + '</div>' +
       (chartHtml ? '<div class="fi-chart">' + chartHtml + '</div>' : chartNote) +
@@ -13626,8 +14024,11 @@ XJ.views.plan = (function () {
     var avgPct = recent.length
       ? U.sum(recent, function (p) { return p.pct; }) / recent.length
       : (cov.future.length ? cov.future[0].pct : null);
-    var head = '<div class="cov-head"><span class="cov-num">' + (avgPct === null ? '—' : U.pct(avgPct, 1)) + '</span>' +
-      '<span class="cov-hint">近 12 个月平均 · 达到 100% 即 ' + tierName(tier) + ' 达成</span></div>';
+    var head = '<div class="cov-head"><span class="cov-num" data-anim="S">' +
+      (avgPct === null ? (cov.coveredByOffset ? '🎉' : '—') : U.pct(avgPct, 1)) + '</span>' +
+      '<span class="cov-hint">' + (cov.coveredByOffset
+        ? '抵扣后目标已归零——不再投的分红已完全覆盖'
+        : '近 12 个月平均 · 达到 100% 即 ' + tierName(tier) + ' 达成') + '</span></div>';
 
     var range = st.ui.fireCovRange || 'all';
     var histPts = slicePoints(hist, range, st.ui.fireCovBeg, st.ui.fireCovEnd, true);
@@ -13643,15 +14044,18 @@ XJ.views.plan = (function () {
     }
     var covChips = rangeChipsHtml(range, ['3m', '6m', 'ytd', 'all', 'custom'], 'setFireCovRange');
 
-    /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则） */
+    /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则）。
+       ★ 口径与曲线分母一致 = 抵扣后目标（effective），不是台账原始支出。 */
     var passiveNow = X.fireMonthlyPassive(cfg, 0);
-    var gapM = Math.max(0, cfg.monthlySpend - passiveNow);
+    var eff = X.fireEffectiveSpend(cfg);
+    var gapM = Math.max(0, eff.effective - passiveNow);
     var tierTarget = targets.tiers[tier];
     var sim = fire.tierSims[tier] || {};
     var drip = sim.drip === null ? 5000 : sim.drip;
     var yPct = targets.yieldPct;
     var newDivM = drip * (yPct === null ? 0 : yPct) / 1200;
-    var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，目标月支出 ' + U.moneySign(cfg.monthlySpend, 2) +
+    var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，抵扣后目标月支出 ' + U.moneySign(eff.effective, 2) +
+      (eff.offset > 0 ? '（原 ' + U.moneySign(eff.base, 2) + ' − 不再投分红抵扣 ' + U.moneySign(eff.offset, 2) + '）' : '') +
       (gapM > 0 ? '——每月再补 ' + U.moneySign(gapM, 2) + ' 被动现金流即可完全覆盖' : '——已完全覆盖 🎉') +
       '；每月攒股 ' + U.moneySign(drip, 0) + ' 按市值息率新增月分红 ' + U.moneySign(newDivM, 2) +
       (tierTarget && tierTarget.fireNumber !== null
@@ -13776,16 +14180,16 @@ XJ.views.divsummary = (function () {
     var n = XJ.calc.funEquivalent(sum.total, fun.monthly);
     return '<div class="card ds-hero">' +
       '<div class="ds-cap">分红总额</div>' +
-      '<div class="ds-total">' + U.moneySign(sum.total) + '</div>' +
+      '<div class="ds-total" data-anim="S">' + U.moneySign(sum.total) + '</div>' +
       '<div class="ds-rule"></div>' +
       '<div class="ds-kv"><span>到账笔数</span><span>' + sum.count + ' 笔</span></div>' +
       '<div class="ds-kv"><span>涉及标的</span><span>' + sum.bySymbolList.length + ' 只</span></div>' +
       (sum.pendingTotal > 0
-        ? '<div class="ds-kv ds-pend"><span>另有预计到账</span><span>' +
+        ? '<div class="ds-kv ds-pend" data-anim="A"><span>另有预计到账</span><span>' +
           U.moneySign(sum.pendingTotal) + '</span></div>'
         : '') +
       (n !== null
-        ? '<div class="ds-fun">这些分红相当于 ' + U.thousands(n) + ' 个月' +
+        ? '<div class="ds-fun" data-anim="A">这些分红相当于 ' + U.thousands(n) + ' 个月' +
           U.esc(fun.name) + ' 🎵</div>'
         : '') +
       '<div class="ds-quote">这些都是你的持仓为你赚来的被动收入 🫰</div>' +
@@ -13804,7 +14208,7 @@ XJ.views.divsummary = (function () {
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
             ' × ' + U.thousands(qty) + ' 股</span>' +
-            '<span class="ds-rec-a">' + U.moneySign(r.amount) + '</span>' +
+            '<span class="ds-rec-a" data-anim="B">' + U.moneySign(r.amount) + '</span>' +
             '</div>';
         }).join('');
         return '<div class="ds-sym' + (isOpen ? ' open' : '') + '">' +
@@ -13813,7 +14217,7 @@ XJ.views.divsummary = (function () {
           '<span class="ds-code">' + U.esc(XJ.model.codeOf(g.symbol)) + '</span>' +
           '<span class="ds-name">' + U.esc(st.symbolName(g.symbol)) + '</span>' +
           '<span class="ds-sp"></span>' +
-          '<span class="ds-amt">' + U.moneySign(g.amount) + '</span>' +
+          '<span class="ds-amt" data-anim="A">' + U.moneySign(g.amount) + '</span>' +
           '<span class="chev">' + UI.icon('chevron', 15, 2) + '</span>' +
           '</button>' +
           (isOpen ? '<div class="ds-detail">' + rows + '</div>' : '') +
@@ -13832,7 +14236,7 @@ XJ.views.divsummary = (function () {
         var w = Math.max(2, amt / max * 100);
         return '<div class="ds-year">' +
           '<div class="ds-year-top"><span>' + y + ' 年</span>' +
-          '<span class="c-div ds-year-amt">' + U.moneySign(amt) + '</span></div>' +
+          '<span class="c-div ds-year-amt" data-anim="B">' + U.moneySign(amt) + '</span></div>' +
           '<div class="bar"><i style="width:' + w.toFixed(1) + '%"></i></div>' +
           '</div>';
       }).join('') + '</div>';
@@ -13967,8 +14371,8 @@ XJ.views.mine = (function () {
           U.esc(st.accountName(t.accountId)) +
           (isAdj ? '' : ' · ' + U.thousands(t.quantity) + '股 @ ' + U.money(t.price, 3)) + '</div>' +
           '</div>' +
-          '<div class="row-right"><div class="row-v' + (isAdj ? ' ' + U.dirClass(amt) : '') + '">' + U.signMoney(amt) + '</div>' +
-          (!isAdj && U.n0(t.fee) ? '<div class="row-v2">费 ' + U.money(t.fee) + '</div>' : '') +
+          '<div class="row-right"><div class="row-v' + (isAdj ? ' ' + U.dirClass(amt) : '') + '" data-anim="A">' + U.signMoney(amt) + '</div>' +
+          (!isAdj && U.n0(t.fee) ? '<div class="row-v2" data-anim="A">费 ' + U.money(t.fee) + '</div>' : '') +
           '</div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
@@ -14258,7 +14662,7 @@ XJ.views.analysis = (function () {
     var unrealized = s.totalUnrealized;
     html += '<div class="hero-dark" style="margin-bottom:12px">' +
       '<div class="hd-status">当前总资产（基于 ' + U.esc(priceDate) + ' 价格）</div>' +
-      '<div class="hd-amount"><span class="cur">¥</span>' + U.money(s.totalMarketValue) + '</div>' +
+      '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalMarketValue) + '</div>' +
       (delta
         ? '<div class="hd-status" style="margin-top:6px">较上次记录 <b>' + U.signMoney(delta.mv, 0) + '</b>' +
         '<span style="opacity:.6"> · ' + U.esc(delta.prevDate) + '</span></div>'
@@ -14274,9 +14678,9 @@ XJ.views.analysis = (function () {
 
     /* ③ 概览三列 */
     html += '<div class="metric-grid">' +
-      '<div class="metric"><div class="k">持仓只数</div><div class="v">' + s.count + '</div><div class="s">只</div></div>' +
-      '<div class="metric"><div class="k">单只平均市值</div><div class="v">¥' + U.moneyCompact(s.avgMarketValue) + '</div><div class="s">元</div></div>' +
-      '<div class="metric"><div class="k">综合股息率</div><div class="v c-div">' +
+      '<div class="metric"><div class="k">持仓只数</div><div class="v" data-anim="B">' + s.count + '</div><div class="s">只</div></div>' +
+      '<div class="metric"><div class="k">单只平均市值</div><div class="v" data-anim="B">¥' + U.moneyCompact(s.avgMarketValue) + '</div><div class="s">元</div></div>' +
+      '<div class="metric"><div class="k">综合股息率</div><div class="v c-div" data-anim="B">' +
       (s.marketYield === null ? '—' : U.pct(s.marketYield)) + '</div><div class="s">预测分红/市值</div></div>' +
       '</div>';
 
@@ -14302,7 +14706,7 @@ XJ.views.analysis = (function () {
           '</div>' +
           '<div class="row-right">' +
           '<div class="row-v ' + U.dirClass(h.unrealizedCny) + '">' + U.signMoney(h.unrealizedCny, 0) + '</div>' +
-          '<div class="row-v2 ' + U.dirClass(h.unrealizedPct) + '">' + U.signPct(h.unrealizedPct) + '</div>' +
+          '<div class="row-v2 ' + U.dirClass(h.unrealizedPct) + '" data-anim="A">' + U.signPct(h.unrealizedPct) + '</div>' +
           '</div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
@@ -14366,9 +14770,9 @@ XJ.views.analysis = (function () {
     html += '<div class="card">' +
       '<div class="card-head" style="margin-bottom:8px"><h2 style="font-size:14px">' + U.esc(cc.level) + '</h2>' +
       '<div class="spacer"></div><span class="hint">HHI ' + (cc.hhi === null ? '—' : cc.hhi.toFixed(3)) + '</span></div>' +
-      '<div class="kv"><span class="k">第一大持仓占比</span><span class="v">' + U.pct(cc.top1, 1) + '</span></div>' +
-      '<div class="kv"><span class="k">前三大占比</span><span class="v">' + U.pct(cc.top3, 1) + '</span></div>' +
-      '<div class="kv"><span class="k">前五大占比</span><span class="v">' + U.pct(cc.top5, 1) + '</span></div>';
+      '<div class="kv"><span class="k">第一大持仓占比</span><span class="v" data-anim="A">' + U.pct(cc.top1, 1) + '</span></div>' +
+      '<div class="kv"><span class="k">前三大占比</span><span class="v" data-anim="A">' + U.pct(cc.top3, 1) + '</span></div>' +
+      '<div class="kv"><span class="k">前五大占比</span><span class="v" data-anim="A">' + U.pct(cc.top5, 1) + '</span></div>';
 
     /* 逐只明细 */
     var cl = cc.holdings || [];
@@ -14380,8 +14784,8 @@ XJ.views.analysis = (function () {
         return '<button class="conc-row" data-act="openSymbol" data-symbol="' + U.esc(x.symbol) + '">' +
           '<span class="conc-rank' + (isTop3 ? ' top' : '') + '">' + x.rank + '</span>' +
           '<span class="conc-name">' + U.esc(x.name) + '</span>' +
-          '<span class="conc-val">' + U.pct(x.weight, 1) + '</span>' +
-          '<span class="conc-cum" title="累计占比">Σ ' + U.pct(x.cumWeight, 1) + '</span>' +
+          '<span class="conc-val" data-anim="A">' + U.pct(x.weight, 1) + '</span>' +
+          '<span class="conc-cum" data-anim="A" title="累计占比">Σ ' + U.pct(x.cumWeight, 1) + '</span>' +
           '<span class="conc-bar"><i style="width:' + (x.weight / maxW * 100).toFixed(1) + '%"></i></span>' +
           '</button>';
       }).join('');
@@ -14716,20 +15120,20 @@ XJ.views.symbol = (function () {
       '<div style="flex:1;min-width:0">' +
       '<div class="row-t"><span class="nm">' + U.esc(name) + '</span>' +
       (h && h.changePct !== null && h.changePct !== undefined
-        ? '<span class="chg ' + (U.direction(h.changePct) === 'flat' ? 'flat' : U.direction(h.changePct)) + '">' + U.signPct(h.changePct) + '</span>' : '') +
+        ? '<span class="chg ' + (U.direction(h.changePct) === 'flat' ? 'flat' : U.direction(h.changePct)) + '" data-anim="A">' + U.signPct(h.changePct) + '</span>' : '') +
       '</div>' +
       '<div class="row-s">' + U.esc(XJ.market.displayCode(symbol)) + sig + '</div>' +
       '</div>' +
       '<div style="text-align:right">' +
-      '<div class="row-v ' + U.dirClass(h ? h.changePct : null) + '">' +
+      '<div class="row-v ' + U.dirClass(h ? h.changePct : null) + '" data-anim="S">' +
       (price === null ? '—' : U.money(price, price >= 100 ? 2 : 3)) + '</div>' +
-      '<div class="row-v2">' + U.esc(XJ.market.currency(symbol)) + '</div>' +
+      '<div class="row-v2" data-anim="S">' + U.esc(XJ.market.currency(symbol)) + '</div>' +
       '</div></div>';
 
     if (h) {
       html += '<div class="hc-grid">' +
-        '<div class="hc-cell"><div class="k">当前市值</div><div class="v">' + U.moneySign(h.marketValueCny) + '</div></div>' +
-        '<div class="hc-cell"><div class="k">收盘价 × 股数</div><div class="v">' +
+        '<div class="hc-cell" data-anim="B"><div class="k">当前市值</div><div class="v">' + U.moneySign(h.marketValueCny) + '</div></div>' +
+        '<div class="hc-cell" data-anim="B"><div class="k">收盘价 × 股数</div><div class="v">' +
         (price === null ? '—' : U.money(price) + ' × ' + U.thousands(h.qty)) + '</div></div>' +
         '</div>';
     } else {
@@ -14773,7 +15177,7 @@ XJ.views.symbol = (function () {
         (h.costMethod === 'weighted' ? U.signMoney(h.realizedCny) : '摊薄口径下不适用') + '</span></div>' +
         '<div class="kv"><span class="k">持股天数' + C.qmark('自首笔买入日起算') + '</span>' +
         '<span class="v">' + h.holdDays + ' 天' + (h.holdSince ? '（' + U.esc(h.holdSince) + ' 起）' : '') + '</span></div>' +
-        '<div class="kv"><span class="k">累计已获分红</span><span class="v c-div">' + U.moneySign(h.receivedTotalCny) + '</span></div>' +
+        '<div class="kv"><span class="k">累计已获分红</span><span class="v c-div" data-anim="A">' + U.moneySign(h.receivedTotalCny) + '</span></div>' +
         (h.costMethod === 'dividendDiluted'
           ? (h.receivedTotalCny > 0
             ? '<div class="note-line" style="margin-top:8px">' + UI.icon('check', 13) +
@@ -14862,11 +15266,11 @@ XJ.views.symbol = (function () {
         '<div class="bar' + (h.recoveryPct >= 100 ? ' green' : '') + '"><i style="width:' +
         U.clamp(h.recoveryPct, 0, 100).toFixed(1) + '%"></i></div>' +
         '<div class="recover-grid">' +
-        '<div class="rc"><div class="k">净投入</div><div class="v">' + U.moneySign(h.netInvestedCny, 0) + '</div></div>' +
-        '<div class="rc accent"><div class="k">已收回分红</div><div class="v">' + U.moneySign(h.receivedTotalCny, 0) + '</div></div>' +
-        '<div class="rc"><div class="k">剩余待回收</div><div class="v">' + U.moneySign(h.remainingCny, 0) + '</div></div>' +
+        '<div class="rc"><div class="k">净投入</div><div class="v" data-anim="A">' + U.moneySign(h.netInvestedCny, 0) + '</div></div>' +
+        '<div class="rc accent"><div class="k">已收回分红</div><div class="v" data-anim="A">' + U.moneySign(h.receivedTotalCny, 0) + '</div></div>' +
+        '<div class="rc"><div class="k">剩余待回收</div><div class="v" data-anim="A">' + U.moneySign(h.remainingCny, 0) + '</div></div>' +
         '</div>' +
-        '<div class="kv" style="margin-top:6px"><span class="k">预计回本</span><span class="v">' +
+        '<div class="kv" style="margin-top:6px"><span class="k">预计回本</span><span class="v" data-anim="A">' +
         (h.remainingCny <= 0 ? '已回本' : (h.expectedYears === null ? '—' : h.expectedYears.toFixed(1) + ' 年')) +
         '</span></div>' +
         '<div class="note-line" style="margin-top:8px">' + UI.icon('info', 13) +
@@ -15068,20 +15472,32 @@ XJ.views.symbol = (function () {
     }
   }
 
+  var prevRenderedTab = null;   // Tab 切换动效：记录上一次渲染的视图
+
   function render() {
     var top = document.getElementById('view-top');
     var body = document.getElementById('view-body');
     var tabs = document.getElementById('view-tabs');
     if (!top || !body || !tabs) { mountShell(); return render(); }
+    /* Tab 切换（非子页面、非首次渲染）→ 主体交叉淡入（iOS 是淡入不是横滑） */
+    var tabSwitched = prevRenderedTab !== null && !S.ui.subPage && prevRenderedTab !== S.ui.tab;
+    prevRenderedTab = S.ui.subPage ? null : S.ui.tab;
+    var prevAnim = XJ.anim ? XJ.anim.snapshot() : null;   // ① 重建前快照（值比对动效）
     top.innerHTML = topHtml();
     body.innerHTML = viewHtml();
     tabs.innerHTML = tabsHtml();
+    if (tabSwitched) {
+      body.classList.remove('view-enter');
+      void body.offsetWidth;
+      body.classList.add('view-enter');
+    }
     var nav = document.querySelector('.tabbar');
     if (nav) nav.style.display = S.ui.subPage ? 'none' : '';
     var shell = document.querySelector('.app-shell');
     if (shell) shell.style.paddingBottom = S.ui.subPage ? '24px' : '';
     renderFloat();
     if (XJ.chart) XJ.chart.bind();
+    if (prevAnim && XJ.anim) XJ.anim.diffAndPlay(prevAnim);   // ③④ 比对 → 分档播放
   }
 
   /* ---------------- 行情与分红数据刷新（与跨设备同步无关） ---------------- */
@@ -18063,14 +18479,7 @@ XJ.views.symbol = (function () {
     var sub = document.getElementById('fire-big-sub');
     var tip = document.getElementById('fire-tip-line');
     var txt = fireBigText(tl);
-    if (big) {
-      if (big.textContent !== txt) {
-        big.classList.add('blur');
-        void big.offsetWidth;                      // 强制 reflow，让 blur→clear 过渡触发
-        big.textContent = txt;
-        requestAnimationFrame(function () { big.classList.remove('blur'); });
-      }
-    }
+    if (big) XJ.anim.patch(big, txt, 'S');
     if (sub) sub.textContent = fireSubText(tl);
     if (tip) {
       var base = C.fireTimeline(S.state, S.acc(), C.fireCfg(S.state, S.acc(), S.state.settings.fire.activeTier,
@@ -18083,8 +18492,22 @@ XJ.views.symbol = (function () {
       }
       var t = S.state.settings.fire.activeTier;
       var cap4 = C.fireTargets(S.state, S.acc(), S.state.settings.fire.yieldBasis);
-      var cap = cap4.tiers[t] ? cap4.tiers[t].capitalAt4 : 0;
-      tip.textContent = seg + '完全覆盖约需 ' + U.moneySign(cap, 0) + ' 生息资产（按 4% 法则）';
+      var tt = cap4.tiers[t] || {};
+      var cap = tt.fireNumber;
+      var tipTxt = seg + (cap === null || cap === undefined
+        ? '完全覆盖所需生息资产暂无法测算'
+        : '完全覆盖约需 ' + U.moneySign(cap, 0) + ' 生息资产（按当前市值息率 ' +
+          U.pct(cap4.yieldPct === null ? 0 : cap4.yieldPct, 2) + ' 折算）');
+      if (tip.textContent !== tipTxt) tip.textContent = tipTxt;
+    }
+    /* 提取抵扣行：随再投/花费滑杆实时联动（与 plan.js 的 effLine 同结构，微档动效） */
+    var effEl = document.getElementById('fire-spend-eff');
+    if (effEl) {
+      var eff = C.fireEffectiveSpend(cfg);
+      var effTxt = '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
+        '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+        (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '');
+      if (effEl.__effTxt !== effTxt) { effEl.__effTxt = effTxt; effEl.innerHTML = effTxt; }
     }
     return tl;
   }
