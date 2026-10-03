@@ -1440,4 +1440,28 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   .fs-range::-webkit-slider-thumb{ transition:none; }
 }
 
+/* ==================== 跨设备同步（精简面板） ==================== */
+.sync-card .list-row{ pointer-events:none; }
+.sync-card .list-row .row-t{ font-size:14.5px; }
+.sync-err{ background:var(--up-soft); }
+.sync-err .row-t{ color:var(--up); font-weight:600; }
+.sync-err .row-s{ color:var(--text-3); }
+.sync-kv{ padding:2px 16px 12px; border-top:.5px solid var(--line-2); background:var(--card-2); }
+.sync-kv-r{ display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:5px 0; }
+.sync-kv-r .k{ color:var(--text-3); flex:0 0 auto; }
+.sync-kv-r .v{ color:var(--text); font-weight:550; text-align:right; word-break:break-all; }
+.sync-btns{ display:flex; flex-direction:column; gap:8px; margin:10px 0 8px; }
+.sync-btns .btn-block{ margin:0; }
+.sync-log{ padding:8px 16px 12px; border-top:.5px solid var(--line-2); background:var(--card-2);
+  max-height:220px; overflow-y:auto; }
+.sync-log-l{ display:flex; gap:6px; align-items:baseline; font-size:11.5px; line-height:1.7; }
+.sync-log-l .t{ color:var(--text-3); font-variant-numeric:tabular-nums; flex:0 0 auto; }
+.sync-log-l .k{ flex:0 0 auto; font-size:10px; padding:0 5px; border-radius:5px;
+  background:var(--fill); color:var(--text-2); }
+.sync-log-l .k.k-err{ background:var(--up-soft); color:var(--up); }
+.sync-log-l .k.k-ok{ background:var(--down-soft); color:var(--down); }
+.sync-log-l .k.k-warn{ background:var(--pend-tag-bg); color:var(--pend-text); }
+.sync-log-l .x{ color:var(--text-2); min-width:0; word-break:break-word; }
+.sync-card code{ font-size:11.5px; background:var(--fill); padding:1px 4px; border-radius:4px; }
+
 
