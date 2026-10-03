@@ -102,6 +102,106 @@ XJ.views.mine = (function () {
     return html;
   }
 
+  /* ---------------- 跨设备同步（精简面板） ----------------
+   * 一张卡只回答四件事：开没开 / 上次同步怎么样 / 怎么配对 / 出错怎么自救。
+   * 连接信息与详细日志收在折叠区里，需要时再展开。 */
+  function renderSync() {
+    var st = XJ.store;
+    var SY = XJ.sync;
+    if (!SY) return '';
+    var s = SY.status();
+    var available = false;
+    try { available = (location.protocol === 'http:' || location.protocol === 'https:'); } catch (e) { available = false; }
+
+    if (!available) {
+      return '<div class="card flush sync-card">' +
+        '<div style="padding:14px 16px 10px"><div class="card-head" style="margin:0"><h2>跨设备同步</h2></div></div>' +
+        '<div class="list-row" style="pointer-events:none"><div class="row-main">' +
+        '<div class="row-t">当前打开方式不支持同步</div>' +
+        '<div class="row-s">双击本地 HTML 打开时浏览器无法联网同步。用网址（http/https）打开即可；本地功能不受影响。</div>' +
+        '</div></div></div>';
+    }
+
+    var head = '<div class="card flush sync-card">' +
+      '<div style="padding:14px 16px 10px"><div class="card-head" style="margin:0"><h2>跨设备同步</h2>' +
+      '<label class="switch"><input type="checkbox" data-act="toggleSync"' + (s.enabled ? ' checked' : '') +
+      '><span></span></label></div></div>';
+
+    /* 状态一行：连没连上 / 上次同步 / 待推条数 */
+    var main = s.paired ? '已连接 · 位置 ' + (s.boxFingerprint || '—') : '未配对';
+    var sub = s.lastOkAt
+      ? '上次同步 ' + fmtWhen(s.lastOkAt) + ' · 待推 ' + s.pending + ' 条'
+      : (s.enabled ? '已开启，正在等待首次同步' : '打开开关并完成一次配对后生效');
+    if (s.rateResetAt) sub = '触发 GitHub 限流，将于 ' + new Date(s.rateResetAt).toLocaleTimeString() + ' 后自动继续';
+
+    var body = '<div class="list-row" style="pointer-events:none"><div class="row-main">' +
+      '<div class="row-t">' + U.esc(main) + '</div>' +
+      '<div class="row-s">' + U.esc(sub) + '</div></div></div>';
+
+    /* 错误行：只在真的出错时出现，并把「该做什么」说清楚 */
+    if (s.lastErr) {
+      var mins = s.failSince ? Math.max(1, Math.round((Date.now() - s.failSince) / 60000)) : 0;
+      body += '<div class="list-row sync-err" style="pointer-events:none"><div class="row-main">' +
+        '<div class="row-t">' + U.esc(s.lastErr.msg) + '</div>' +
+        '<div class="row-s">' + (mins > 1 ? '已连续失败 ' + mins + ' 分钟' : '本机数据完好无损') + '</div></div></div>';
+    }
+
+    /* 折叠区 1：连接信息（只读） */
+    body += '<button class="fold-head" data-act="syncFoldConn">连接信息' +
+      '<span class="fold-caret' + (st.ui.foldSyncConn ? '' : ' folded') + '"></span></button>';
+    if (st.ui.foldSyncConn) {
+      body += '<div class="sync-kv">' +
+        kvLine('云端位置', s.gistId || '—') +
+        kvLine('位置指纹', s.boxFingerprint || '—') +
+        kvLine('云端版本', s.version ? ('第 ' + s.version + ' 版') : '—') +
+        kvLine('本机设备', shortId(s.deviceId)) +
+        kvLine('修订账本', s.ledger + ' 条记录' + (s.tombstones ? ' · 墓碑 ' + s.tombstones : '')) +
+        kvLine('令牌权限', s.tokenScopes || '未知') +
+        kvLine('存储方式', s.storageMode === 'idb' ? 'IndexedDB' : (s.storageMode === 'ls' ? '浏览器本地存储' : '不可用')) +
+        '<div class="sync-btns">' +
+        '<button class="btn-block ghost" data-act="syncNow">立即同步</button>' +
+        '<button class="btn-block ghost" data-act="syncRepair">重新配对（粘贴口令）</button>' +
+        (s.paired ? '<button class="btn-block ghost" data-act="syncCopyCode">复制配对口令</button>' : '') +
+        '<button class="btn-block ghost" data-act="syncReset">重置连接</button>' +
+        '</div>' +
+        '<div class="tiny">配对口令等同云端钥匙，复制后 8 秒会自动清空剪贴板。' +
+        '多台设备各点一次配对链接即可，之后自动保持一致。</div>' +
+        '</div>';
+    }
+
+    /* 折叠区 2：详细日志（只在内存里，刷新即清） */
+    var logs = SY.logAll ? SY.logAll() : [];
+    body += '<button class="fold-head" data-act="syncFoldLog">详细日志' +
+      '<span class="fold-caret' + (st.ui.foldSyncLog ? '' : ' folded') + '"></span></button>';
+    if (st.ui.foldSyncLog) {
+      body += '<div class="sync-log">' + (logs.length
+        ? logs.slice().reverse().map(function (l) {
+            return '<div class="sync-log-l"><span class="t">' + U.esc(String(l.ts).slice(11, 19)) +
+              '</span><span class="k k-' + U.esc(l.kind) + '">' + U.esc(l.kind) + '</span>' +
+              '<span class="x">' + U.esc(l.text) + '</span></div>';
+          }).join('')
+        : '<div class="tiny">本次打开页面后暂无记录</div>') + '</div>';
+    }
+
+    return head + body + '</div>';
+  }
+  function kvLine(k, v) {
+    return '<div class="sync-kv-r"><span class="k">' + U.esc(k) + '</span><span class="v">' + U.esc(v) + '</span></div>';
+  }
+  function shortId(id) {
+    if (!id) return '—';
+    return String(id).length > 12 ? String(id).slice(0, 12) + '…' : String(id);
+  }
+  function fmtWhen(ts) {
+    try {
+      var d = new Date(ts);
+      var today = new Date();
+      var sameDay = d.toDateString() === today.toDateString();
+      return (sameDay ? '今天 ' : (d.getMonth() + 1) + '/' + d.getDate() + ' ') +
+        d.toTimeString().slice(0, 5);
+    } catch (e) { return '—'; }
+  }
+
   function renderData() {
     var st = XJ.store;
     var s = XJ.calc.summary(st.state, st.acc());
@@ -120,6 +220,9 @@ XJ.views.mine = (function () {
       '<div class="row-main"><div class="row-t">📱 跨设备搬运（手机 / 平板）</div>' +
       '<div class="row-s">生成一段文本或链接，用微信/QQ 发到另一台设备打开即可导入，不经过任何服务器</div></div>' +
       '<span class="chev">' + UI.icon('chevron', 16) + '</span></button>';
+
+    /* 同步卡片紧跟搬运入口：两者是「手动搬」与「自动同步」的关系 */
+    html += renderSync();
 
     html += '<button class="list-row" data-act="importJson">' +
       '<div class="row-main"><div class="row-t">' + UI.icon('upload', 17) + ' 导入数据（JSON）</div>' +
