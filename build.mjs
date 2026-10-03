@@ -20,11 +20,14 @@ const JS_FILES = [
   'src/model.js',
   'src/storage.js',
   'src/transfer.js',
+  'src/sync-core.js',      // 同步纯逻辑内核（依赖 transfer 的 base64url 工具）
   'src/fetcher.js',
   'src/ocr.js',
   'src/chart.js',
   'src/calc.js',
   'src/store.js',
+  'src/sync-transport.js', // 传输层（换后端只改这个文件）
+  'src/sync.js',           // 编排层（依赖 store / storage / sync-core）
   'src/ui.js',
   'src/views/overview.js',
   'src/views/networth.js',
