@@ -198,11 +198,30 @@ async function main() {
   console.log('  [A buildRemote] ' + remoteA);
 
   console.log('\n— 2) 设备 B 配对并拉取 A 的数据 —');
+  await B.js(`(function(){
+    window.__S_BEFORE = XJ.store.state;
+    window.__SCENES_WRITES = [];
+    var fire = XJ.store.state.settings.fire;
+    var _scenes = fire.scenes;
+    Object.defineProperty(fire, 'scenes', {
+      get: function(){ return _scenes; },
+      set: function(v){
+        window.__SCENES_WRITES.push({ v: JSON.stringify(v && v.length),
+          stack: (new Error().stack || '').split('\\n').slice(2, 6).join(' | ').slice(0, 400) });
+        _scenes = v;
+      },
+      configurable: true
+    });
+    return 1;
+  })()`);
   const blankB = await B.js('XJ.sync.isBlankDevice(XJ.store.state)');
   console.log('  [B isBlankDevice] ' + blankB);
   const preB = await B.js(`JSON.stringify({
     tx: XJ.store.state.transactions.length, exp: XJ.store.state.expenses.length,
     mode: XJ.store.state.syncMeta.installMode,
+    setRev: XJ.store.state.settings.rev,
+    fireScenes: ((XJ.store.state.settings.fire||{}).scenes||[]).length,
+    fireReinvest: (XJ.store.state.settings.fire||{}).reinvestPct,
     mine: XJ.store.state.expenses.map(function(e){ return e.key + ':' + e.monthlyAmount; }),
     tpl: XJ.model.EXPENSE_TEMPLATE.map(function(e){ return e.key + ':' + e.monthlyAmount; })
   })`);
@@ -233,6 +252,45 @@ async function main() {
   eq('B 的支出项含 TRAVEL 且归为品质', seen.exp.filter((e) => /^TRAVEL:.*:quality$/.test(e)).length, 1);
   eq('B 拉到 FIRE 试算参数', seen.activeTier, 'regular');
   eq('★ B 拉到 FIRE 场景数（与 A 一致）', seen.scenes, aFinal.scenes);
+  const bSetDiag = await B.js(`JSON.stringify({
+    sameStateRef: XJ.store.state === window.__S_BEFORE,
+    fireKeys: Object.keys(XJ.store.state.settings.fire||{}),
+    scenes: ((XJ.store.state.settings.fire||{}).scenes||[]).length,
+    setRev: XJ.store.state.settings.rev,
+    outbox: (XJ.store.state.syncMeta.outbox||[]).length,
+    txQ: Object.keys(XJ.store.state.syncMeta.versions||{}).filter(function(k){return k.indexOf('tx:')===0;}).map(function(k){ return k.split(':')[1] + ':q' + XJ.store.state.syncMeta.versions[k].q; }),
+    everPaired: XJ.store.state.syncMeta.everPaired,
+    scenesWrites: (window.__SCENES_WRITES || []).slice(0, 4)
+  })`);
+  console.log('  [B settings 诊断] ' + bSetDiag);
+  /* 手动对照实验（复刻【第一次】merge 的输入状态）：从云端取 raw →
+     把 B 的 settings 重置回无戳 + default fire → 手动 mergeRemote('overwrite') →
+     看 scenes 是否存活。若存活 ⇒ 首次 merge 时 settings 已被谁盖了戳（走了白名单分支）。 */
+  const manual = await B.js(`(function(token, gistId){
+    return fetch('https://api.github.com/gists/' + gistId, {
+      headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json' }
+    }).then(function(r){ return r.json(); }).then(function(g){
+      var data = JSON.parse(g.files['ziyou-sync.json'].content);
+      var rec = data.snapshot.settings || {};
+      var s = XJ.store.state;
+      /* —— 重置回「从未合并过」的形状 —— */
+      delete s.settings.rev; delete s.settings.rt; delete s.settings.rd;
+      s.settings.fire = { yieldBasis: 'market', activeTier: 'regular',
+        tierSims: { lean: { monthlySpend: null, drip: 5000, dripYieldPct: null },
+          regular: { monthlySpend: null, drip: 5000, dripYieldPct: null },
+          fat: { monthlySpend: null, drip: 5000, dripYieldPct: null } },
+        reinvestPct: 100, scenes: [] };
+      s.syncMeta.versions = {}; s.syncMeta.everPaired = false; s.syncMeta.installMode = 'overwrite';
+      var res = XJ.syncCore.mergeRemote(s, data, 'overwrite');
+      var after = ((s.settings.fire || {}).scenes || []).length;
+      return JSON.stringify({ cloudScenes: (rec.fire && rec.fire.scenes || []).length,
+        recRev: rec.rev, applied: res.applied, skipped: res.skipped,
+        after: after, afterStore: ((XJ.store.state.settings.fire || {}).scenes || []).length,
+        bRev: XJ.store.state.settings.rev,
+        bReinvest: (XJ.store.state.settings.fire || {}).reinvestPct });
+    });
+  })(${JSON.stringify(TOKEN)}, ${JSON.stringify(gistId())})`, true);
+  console.log('  [B 手动 merge 对照] ' + manual);
   const fpB = await B.js(`XJ.sync.status().boxFingerprint`);
   const fpA = JSON.parse(vA).fp;
   if (fpA && fpA === fpB) ok('★ 两台设备连的是同一个盒子（指纹一致: ' + fpA + '）');
@@ -278,9 +336,34 @@ async function main() {
     });
     return 1;
   })()`);
+  const bDelDiag = await B.js(`JSON.stringify({
+    outbox: (XJ.store.state.syncMeta.outbox||[]).map(function(o){ return o.t+':'+o.id+':d'+(o.d?1:0); }),
+    tombs: Object.keys(XJ.store.state.syncMeta.tombstones||{}),
+    enabled: XJ.store.state.syncMeta.enabled,
+    ver: XJ.store.state.syncMeta.version,
+    lastErr: XJ.store.state.syncMeta.lastErr,
+    txVisible: XJ.store.state.transactions.map(function(t){ return t.txId; })
+  })`);
+  console.log('  [B 删除后] ' + bDelDiag);
   await B.js('XJ.sync.schedulePush()');
   await sleep(2600);
-  await B.js(`XJ.sync.tick({ force:true })`, true);
+  const bTick = await B.js(`XJ.sync.tick({ force:true }).then(function(r){ return JSON.stringify(r); })`, true);
+  console.log('  [B tick] ' + bTick);
+  const bPushDiag = await B.js(`JSON.stringify({
+    outbox: (XJ.store.state.syncMeta.outbox||[]).length,
+    tombs: Object.keys(XJ.store.state.syncMeta.tombstones||{}),
+    ver: XJ.store.state.syncMeta.version,
+    txs: XJ.store.state.transactions.map(function(t){ return t.txId; }),
+    lastErr: XJ.store.state.syncMeta.lastErr
+  })`);
+  console.log('  [B push 后] ' + bPushDiag);
+  const aMergeDiag = await A.js(`JSON.stringify({
+    tombs: Object.keys(XJ.store.state.syncMeta.tombstones||{}),
+    txs: XJ.store.state.transactions.map(function(t){ return t.txId; }),
+    ver: XJ.store.state.syncMeta.version,
+    lastErr: XJ.store.state.syncMeta.lastErr
+  })`);
+  console.log('  [A merge 后] ' + aMergeDiag);
   const aTx = await A.js(`XJ.sync.tick({ force:true }).then(function(){ return XJ.store.state.transactions.map(function(t){return t.txId;}); })`, true);
   if (aTx.indexOf('a_tx_2') < 0) ok('A 端 a_tx_2 已随删除消失（墓碑生效）'); else bad('A 端没删掉 a_tx_2: ' + JSON.stringify(aTx));
 
@@ -295,7 +378,8 @@ async function main() {
   const cloudParsed = JSON.parse(cloud);
   const cf = (cloudParsed.snapshot || {}).settings || {};
   console.log('  [云端 settings.fire] ' + JSON.stringify({ hasFire: !!cf.fire, scenes: ((cf.fire||{}).scenes||[]).length,
-    snapTx: ((cloudParsed.snapshot||{}).transactions||[]).length, ops: (cloudParsed.ops||[]).length, ver: cloudParsed.version }));
+    snapTx: ((cloudParsed.snapshot||{}).transactions||[]).length, ops: (cloudParsed.ops||[]).length,
+    tombs: (cloudParsed.tombstones||[]).map(function(t){ return t.t+':'+t.id; }), ver: cloudParsed.version }));
   const aNoEcho = await A.js(`XJ.syncCore.diffToOps(XJ.store.state, { noQueue: true }).ops.length`);
   eq('★ A 对齐后不产生回声（diff 为 0 条 op）', aNoEcho, 0);
 
