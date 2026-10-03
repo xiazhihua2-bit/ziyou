@@ -71,11 +71,22 @@ const XJ = makeCore();
 const M = XJ.model, CORE = XJ.syncCore;
 
 async function main() {
+  const RESET = process.argv.indexOf('--reset') >= 0;
   console.log('[provision] 1/5 校验令牌');
   const who = await api('GET', '/user');
   if (who.status !== 200) { console.error('[provision] ✗ 令牌无效（HTTP ' + who.status + '）'); process.exit(1); }
   const scopes = who.data && who.data.login ? who.data.login : '?';
   console.log('        账号 ' + scopes);
+
+  if (RESET) {
+    /* --reset：把旧盒子删掉重建。e2e 联调每次都要从干净云端开始，
+       否则上一轮跑剩的数据会污染这一轮的断言（合并语义会被悄悄改变）。 */
+    const old = fs.existsSync(path.join(PROJ, '.gist-id')) ? fs.readFileSync(path.join(PROJ, '.gist-id'), 'utf8').trim() : '';
+    if (old) {
+      const del = await api('DELETE', '/gists/' + encodeURIComponent(old));
+      console.log('        已删除旧盒子 ' + old + '（HTTP ' + del.status + '）');
+    }
+  }
 
   console.log('[provision] 2/5 查重（按描述 + 文件名）');
   const list = await api('GET', '/gists?per_page=100');
