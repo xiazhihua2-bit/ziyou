@@ -18,14 +18,14 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
      顺带提醒自己「这个新文件也要接受同一套巡检」。 */
 const SRC_FILES = [
   'src/util.js', 'src/market.js', 'src/model.js', 'src/storage.js', 'src/store.js',
-  'src/transfer.js', 'src/fetcher.js', 'src/ocr.js',
+  'src/transfer.js', 'src/sync-core.js', 'src/fetcher.js', 'src/ocr.js',
   'src/chart.js', 'src/calc.js', 'src/ui.js', 'src/app.js',
   'src/views/overview.js', 'src/views/symbol.js', 'src/views/analysis.js',
   'src/views/plan.js', 'src/views/networth.js', 'src/views/divsummary.js', 'src/views/mine.js',
 ];
-/* ★ URL hash 键白名单：全仓只允许这一个。
+/* ★ URL hash 键白名单：全仓只允许这两个（#xjimport= 数据搬运 / #xjsync= 同步配对）。
    新增任何一条都要同时改这里，并且想清楚它会不会泄漏 / 会被转发。 */
-const HASH_KEYS = ['#xjimport='];
+const HASH_KEYS = ['#xjimport=', '#xjsync='];
 
 /* ---------------------------------------------------------------
  * 1. 冻结时间，保证结果确定
@@ -61,7 +61,7 @@ class FakeDate extends Date {
 sandbox.Date = FakeDate;
 
 vm.createContext(sandbox);
-for (const f of ['src/util.js', 'src/market.js', 'src/model.js', 'src/transfer.js', 'src/fetcher.js', 'src/ocr.js', 'src/chart.js', 'src/calc.js']) {
+for (const f of ['src/util.js', 'src/market.js', 'src/model.js', 'src/transfer.js', 'src/sync-core.js', 'src/fetcher.js', 'src/ocr.js', 'src/chart.js', 'src/calc.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 }
 const XJ = sandbox.window.XJ;
@@ -3599,31 +3599,146 @@ section('【36】历史 cost 只用「截至当日」已到账的分红（分红
 }
 
 /* -------------------------------------------------------------------------
- * 【32】同步架构预留（锚断言）
+ * 【32】同步架构（锚断言 · 加强版）
  *
- * 跨设备同步层（sync-core / sync / qr）已随精简版移除，但 state.syncMeta
- * 空壳、storage.setOnBeforeSave 钩子与 fromImport(keepSync) 全部保留，
- * 将来接回同步层时零核心改动。这几条断言就是预留结构的回归锚：
- *   ① 空壳默认关闭（应用一个同步请求都不会发）；
- *   ② 备份导出只带空壳、绝不含令牌/位置/设备身份；
- *   ③ 导入别人的备份默认丢弃 syncMeta（本机自加载 keepSync 除外）。
+ * 同步层已接回（sync-core / sync / sync-transport）。这一节锁住「接回来之后
+ * 绝不能被顺手优化坏」的那些约定 —— 历史事故全都出在「看起来多余的清理」上：
+ *   · keepSync 白名单漏一个字段 → 每次重开网页清空一次同步设置 → 版本号归零
+ *     → 全部记录被当成新增反复重推 → GitHub HTTP 400（提交 7d56131 的标题就是它）
+ *   · 墓碑不持久化 → 用户明确的「删除」在多设备下复活
+ *   · ocr 进了同步白名单 → API Key 随载荷上云
+ * 原 32.7 只查「是对象」，白名单被清空成 [] 也照样绿 —— 这就是当年的回归空洞。
  * ------------------------------------------------------------------------- */
 {
-  section('【32】同步架构预留（syncMeta 空壳语义不变）');
-  const sm0 = XJ.model.emptySyncMeta();
+  section('【32】同步架构锚断言（keepSync 逐字段 / 红线 / 墓碑）');
+  const M = XJ.model, SC = XJ.syncCore;
+  const sm0 = M.emptySyncMeta();
   eq('32.1 ★ 干净容器：默认关闭', sm0.enabled, false);
   eq('32.2 ★ 干净容器：配对密钥也为空（不随导出上路）', sm0.pairKey, null);
   eq('32.3 ★ 干净容器：自愈标记默认关闭', sm0.legacyHealed, false);
 
-  const st = XJ.model.ensureBootstrapped(XJ.model.defaultState());
-  const exp = XJ.model.toExport(st, '锚测试');
+  const st = M.ensureBootstrapped(M.defaultState());
+  const exp = M.toExport(st, '锚测试');
   eq('32.4 ★ toExport 带 syncMeta 空壳（结构在位）', !!exp.syncMeta && typeof exp.syncMeta === 'object', true);
   eq('32.5 ★ 空壳不含令牌/位置/设备身份', !exp.syncMeta.token && !exp.syncMeta.gistId && !exp.syncMeta.deviceId, true);
 
-  const imported = XJ.model.fromImport(exp);
+  const imported = M.fromImport(exp);
   eq('32.6 ★ fromImport 默认丢弃 syncMeta（备份导入不带来路不明的同步设置）', imported.syncMeta.enabled, false);
-  const kept = XJ.model.fromImport(exp, { keepSync: true });
-  eq('32.7 ★ keepSync 时结构仍在（将来接回即生效）', !!kept.syncMeta && typeof kept.syncMeta === 'object', true);
+  const kept = M.fromImport(exp, { keepSync: true });
+  eq('32.7 ★ keepSync 时结构仍在', !!kept.syncMeta && typeof kept.syncMeta === 'object', true);
+
+  /* ---- 32.8~32.16 逐字段：构造一份「已配对」的 syncMeta，keepSync 后必须逐项原样取回。
+     这一组是 32.7 空洞的正解：任何字段被白名单漏掉都会红。 ---- */
+  const paired = {
+    deviceId: 'dev_ABC', enabled: true, token: 'ghp_faketoken_for_test', gistId: 'a1b2c3d4e5f6a7b8',
+    version: 42, etag: 'W/"abc123"', lastOkAt: 1700000000000, failSince: null, lastErr: null,
+    everPaired: true, installMode: 'merge', pairKey: '0123456789abcdef0123456789abcdef',
+    legacyHealed: true, tokenScopes: 'gist', forcePull: false,
+    outbox: [{ t: 'tx', id: 'tx_1', s: { rev: 2, rt: 1, rd: 'dev_ABC' }, d: 0, r: {} }],
+    versions: { 'tx:tx_1': { rev: 2, rt: 1, rd: 'dev_ABC', h: 'hash1', q: 1 } },
+    tombstones: { 'tx:tx_gone': { rev: 3, rt: 5, rd: 'dev_ABC' } },
+  };
+  const back = M.fromImport({ version: M.DATA_VERSION, syncMeta: paired }, { keepSync: true }).syncMeta;
+  eq('32.8 ★ keepSync 取回开关', back.enabled, true);
+  eq('32.9 ★ 取回令牌', back.token, 'ghp_faketoken_for_test');
+  eq('32.10 ★ 取回云端位置', back.gistId, 'a1b2c3d4e5f6a7b8');
+  eq('32.11 ★ 取回设备号', back.deviceId, 'dev_ABC');
+  eq('32.12 ★ 取回版本号（不归零 —— 归零就是 400 事故的起点）', back.version, 42);
+  eq('32.13 ★ 取回 etag', back.etag, 'W/"abc123"');
+  eq('32.14 ★ 取回修订账本键数', Object.keys(back.versions).length, 1);
+  eq('32.15 ★ 取回 outbox 长度', back.outbox.length, 1);
+  eq('32.16 ★ 取回安装模式', back.installMode, 'merge');
+
+  /* ---- 32.17~32.19 边界：短令牌 / 带空白 / 纯空白 ---- */
+  eq('32.17 ★ 短令牌原样保留（不做长度校验，合法性交给 GitHub 判）',
+    M.normalizeSyncMeta({ token: 't' }).token, 't');
+  eq('32.18 ★ 带空白的令牌去空白后保留',
+    M.normalizeSyncMeta({ token: '  ghp_x  ' }).token, 'ghp_x');
+  eq('32.19 ★ 纯空白令牌归 null', M.normalizeSyncMeta({ token: '   ' }).token, null);
+
+  /* ---- 32.20~32.22 导入别人备份的红线 ---- */
+  const foreign = M.fromImport({ version: M.DATA_VERSION, syncMeta: paired });
+  eq('32.20 ★ 导入别人备份：开关强制关闭', foreign.syncMeta.enabled, false);
+  eq('32.21 ★ 导入别人备份：令牌不带来', foreign.syncMeta.token, null);
+  eq('32.22 ★ 导入别人备份：配对密钥不带来', foreign.syncMeta.pairKey, null);
+
+  /* ---- 32.23~32.28 白名单红线（防止将来「顺手」把红线删掉） ---- */
+  eq('32.23 ★ SYNC_META_KEYS 含 tombstones（墓碑跨重启，删除动作在多设备下才有效）',
+    M.SYNC_META_KEYS.indexOf('tombstones') >= 0, true);
+  const kept2 = M.normalizeSyncMeta({ tombstones: { 'tx:x': { rev: 1, rt: 1, rd: 'd' } } });
+  eq('32.24 ★ 墓碑内容原样保留', Object.keys(kept2.tombstones).length, 1);
+  eq('32.25 ★ 墓碑形状非法时归空对象', Object.keys(M.normalizeSyncMeta({ tombstones: 123 }).tombstones).length, 0);
+  eq('32.26 ★ SETTINGS_SYNC 白名单含 fire（FIRE 试算参数要跨设备一致）',
+    SC.SETTINGS_SYNC.indexOf('fire') >= 0, true);
+  eq('32.27 ★ SETTINGS_SYNC 白名单不含 ocr（API Key 绝不上路）',
+    SC.SETTINGS_SYNC.indexOf('ocr') >= 0, false);
+  eq('32.28 ★ SETTINGS_SYNC 不含 fx / lastQuoteAt（本机口径）',
+    SC.SETTINGS_SYNC.indexOf('fx') >= 0 || SC.SETTINGS_SYNC.indexOf('lastQuoteAt') >= 0, false);
+  /* 第 0 道防线：buildSnapshot 产出的 settings 键集合必须 ⊆ 白名单 ∪ 同步戳字段 */
+  const snap = SC.buildSnapshot(st);
+  const snapKeys = Object.keys(snap.settings || {});
+  const allow = SC.SETTINGS_SYNC.concat(['rev', 'rt', 'rd']);
+  const outside = snapKeys.filter((k) => allow.indexOf(k) < 0);
+  eq('32.29 ★ 快照 settings 的键全部在白名单内（多出来的: ' + JSON.stringify(outside) + '）', outside.length, 0);
+  eq('32.30 ★ 快照里没有 apiKey 字段', snapKeys.indexOf('apiKey') >= 0, false);
+}
+
+/* -------------------------------------------------------------------------
+ * 【38】同步语义（幂等 / 删除必胜 / 收敛性 / 互不干扰）
+ *
+ * 这些是「多设备能不能真的对上」的核心不变量，全部由 test-sync.mjs 的
+ * 纯逻辑用例逐条锁住（21 组，含 5 种乱序收敛、时钟回拨、墓碑冻结）。
+ * 这里只放最关键的三条交互式断言，作为 verify 的常驻回归。
+ * ------------------------------------------------------------------------- */
+if (XJ.syncCore) {
+  section('【38】同步语义：幂等 / 删除必胜 / 收敛性');
+  const SC = XJ.syncCore;
+  const base = XJ.model.ensureBootstrapped(XJ.model.defaultState());
+  base.accounts = [{ accountId: 'acc_1', name: '我的账户', type: 'BROKER', sortOrder: 1, createdAt: '2024-01-01T00:00:00Z' }];
+  base.transactions = [
+    { txId: 't1', accountId: 'acc_1', symbol: 'sh600023', action: 'BUY', date: '2024-01-10', quantity: 1000, price: 4, fee: 0, note: '', createdAt: '2024-01-10T00:00:00Z' },
+    { txId: 't2', accountId: 'acc_1', symbol: 'sh600023', action: 'BUY', date: '2024-02-10', quantity: 500, price: 4.2, fee: 0, note: '', createdAt: '2024-02-10T00:00:00Z' },
+  ];
+  base.expenses = [{ expenseId: 'e1', key: 'MEALS', label: '三餐', icon: '🍱', monthlyAmount: 600, enabled: true, sortOrder: 1, category: 'essential' }];
+  SC.meta(base).deviceId = 'dev_V1';
+  SC.seedVersions(base);
+
+  /* 幂等：再跑一次零 op */
+  eq('38.1 首次纳入只登记不推送', SC.diffToOps(base, { noQueue: true }).ops.length, 0);
+
+  /* 删除必胜：删 t1 → 产出墓碑；把墓碑并到 B，B 端也删掉 t1 */
+  base.transactions = base.transactions.filter((t) => t.txId !== 't1');
+  const delOps = SC.diffToOps(base).ops;   // 标准模式（与落盘钩子同路径）：墓碑会写进 meta
+  eq('38.2 ★ 删除产出墓碑 op', delOps.filter((o) => o.d === 1).length, 1);
+  eq('38.3 ★ 墓碑戳已冻结（再跑一次不产生新墓碑）', SC.diffToOps(base).ops.length, 0);
+
+  /* 删除必胜：B 端也持有 t1，走真实链路（buildRemote → mergeRemote），
+     B 必须把 t1 删掉 —— 这就是「在 A 删了、B 上也跟着消失」。 */
+  const B = XJ.model.ensureBootstrapped(XJ.model.defaultState());
+  SC.meta(B).deviceId = 'dev_V2';
+  B.transactions = [{ txId: 't1', accountId: 'acc_1', symbol: 'sh600023', action: 'BUY', date: '2024-01-10', quantity: 1000, price: 4, fee: 0, note: '', createdAt: '2024-01-10T00:00:00Z' }];
+  SC.seedVersions(B);
+  SC.mergeRemote(B, SC.buildRemote(base, { version: 3 }), 'merge');
+  eq('38.4 ★ 另一台设备合并后删掉了那条', B.transactions.filter((t) => t.txId === 't1').length, 0);
+  eq('38.5 ★ 墓碑被本机登记（记住「有过且已删」，不误当新增）',
+    SC.meta(B).tombstones['tx:t1'] ? true : false, true);
+  eq('38.6 ★ 未被删的 t2 还在（墓碑不误伤同批其它记录）',
+    B.transactions.filter((t) => t.txId === 't2').length, 1);
+
+  /* 收敛性：两个方向合并后账本一致 */
+  const A2 = XJ.model.ensureBootstrapped(M_defaultClone(base));
+  SC.meta(A2).deviceId = 'dev_V3';
+  SC.mergeRemote(A2, SC.buildRemote(base, { version: 7 }), 'merge');
+  const B2 = XJ.model.ensureBootstrapped(M_defaultClone(base));
+  SC.meta(B2).deviceId = 'dev_V4';
+  SC.mergeRemote(B2, SC.buildRemote(base, { version: 7 }), 'merge');
+  eq('38.7 ★ 两个方向合并后交易数一致（收敛）',
+    A2.transactions.length, B2.transactions.length);
+  eq('38.8 ★ 合并后版本号推进（≥ 云端版本，不会归零）', SC.meta(B2).version >= 7, true);
+  /* 合并完再 diff 必须零 op（回声抑制） */
+  eq('38.9 ★ 对齐后 diff 产出 0 条 op（不回声）',
+    SC.diffToOps(A2, { noQueue: true }).ops.length, 0);
+  function M_defaultClone(s) { return JSON.parse(JSON.stringify(s)); }
 }
 
 /* -------------------------------------------------------------------------
