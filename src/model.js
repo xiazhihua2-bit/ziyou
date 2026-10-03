@@ -544,6 +544,14 @@ XJ.model = (function () {
     'deviceId', 'enabled', 'token', 'gistId', 'version', 'etag',
     'lastOkAt', 'failSince', 'lastErr', 'everPaired', 'installMode',
     'pairKey', 'legacyHealed', 'tokenScopes', 'forcePull', 'outbox', 'versions',
+    /* ★ tombstones（删除凭证）必须在白名单里。
+       历史注释曾写「墓碑一律从空开始，方向是安全的」—— 那个判断只覆盖了
+       「墓碑从远端重新灌入」这一条路径，漏掉了更现实的一条：
+         设备 A 删除记录 t1 → 墓碑上云 → 设备 B 收到并应用 → B 关掉网页（墓碑被清空）
+         → A 之后又新建了同名 t1（合法的「删除后重建」）→ B 接受复活 → 删除被撤销。
+       也就是说：不持久化墓碑，用户明确的「删除」这个动作在多设备下会失效。
+       墓碑只压制同 key 的 upsert，不会误删云端数据 —— 丢失它的代价远大于保留它。 */
+    'tombstones',
   ];
 
   /** 按白名单还原 syncMeta（本机自加载专用；导入别人的备份【绝不】走这里） */
@@ -573,6 +581,8 @@ XJ.model = (function () {
     if (typeof out.deviceId !== 'string' || !out.deviceId) out.deviceId = null;
     if (!Array.isArray(out.outbox)) out.outbox = [];
     if (!out.versions || typeof out.versions !== 'object') out.versions = {};
+    /* 墓碑必须跨重启保留（见 SYNC_META_KEYS 处的注释）：否则「删除」在多设备下会失效 */
+    if (!out.tombstones || typeof out.tombstones !== 'object') out.tombstones = {};
     return out;
   }
 
@@ -722,6 +732,10 @@ XJ.model = (function () {
     validateAccount: validateAccount,
     toExport: toExport, fromImport: fromImport,
     emptySyncMeta: emptySyncMeta,
+    /* 同步层的两个白名单导出给测试断言用（test-sync / verify 靠它们钉住语义：
+       「墓碑必须在白名单里」「ocr 绝不在同步白名单里」这类约定光看代码容易漏）。 */
+    SYNC_META_KEYS: SYNC_META_KEYS,
+    normalizeSyncMeta: normalizeSyncMeta,
     normCloseSeries: normCloseSeries,
     transactionsCsv: transactionsCsv, receivedCsv: receivedCsv,
   };
