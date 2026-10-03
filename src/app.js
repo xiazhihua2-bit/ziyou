@@ -3522,6 +3522,176 @@
 
   UI.on('openTransfer', function () { showTransferSheet(); });
   UI.on('xferSnapshots', function (node) { XFER_SNAPSHOTS = !!node.checked; });
+
+  /* ==================== 跨设备同步 ====================
+   * 配对链接形如  <站点>/#xjsync=XJ2e.<密文>  或  #xjsync=XJ1p.<明文>
+   * 落地顺序：可用性门禁 → 解码 → 指纹校验 → 落地前 preflight → 写入 →
+   *          verifyPair 六项校验 → 立刻清地址栏。
+   * ★ 落地前先校验、落地后再验证，是这次重做时最关键的两道闸：
+   *   当年的头号故障正是「配对界面显示成功、但两台设备连的是不同的盒子，
+   *   数据永远不通」—— 只看「请求成功」是查不出这种失败的。 */
+
+  /** 同步是否可用：必须是有域名的 http(s) 页面。
+   *  双击打开 HTML（file://）时浏览器按 file:// 分区存储、SW 不可用，
+   *  同步在这种形态下不可能工作 —— 浏览器硬限制，不是 bug。 */
+  function syncAvailable() {
+    try { return location.protocol === 'http:' || location.protocol === 'https:'; }
+    catch (e) { return false; }
+  }
+
+  function checkPairHash() {
+    var hash = location.hash || '';
+    if (hash.indexOf(XJ.syncCore.INSTALL_KEY) !== 0) return;
+    if (!syncAvailable()) {
+      UI.toast('当前打开方式不支持跨设备同步（请用网址打开，而不是双击本地文件）');
+      return;
+    }
+    var payload = null;
+    try { payload = XJ.syncCore.readInstallHash(hash); } catch (e) { /* 忽略 */ }
+    if (!payload) {
+      /* 密文（XJ2e）优先：口令文本可能被聊天软件折行/加零宽字符，用容错解析 */
+      var text = hash.slice(XJ.syncCore.INSTALL_KEY.length);
+      try {
+        /* parsePairText 返回口令字符串（容错解析：去零宽/全角/空白/尾标点） */
+        var codeStr = XJ.syncCore.parsePairText ? XJ.syncCore.parsePairText(text) : null;
+        if (codeStr) return applyPairCode(codeStr);
+      } catch (e) { /* 忽略 */ }
+      UI.toast('配对链接无法识别（可能被聊天软件截断了）');
+      return;
+    }
+    /* 立刻清地址栏：链接本身等同钥匙，不该留在历史记录里 */
+    clearPairHash();
+    return doApplyPair(payload);
+  }
+  function clearPairHash() {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* 忽略 */ }
+  }
+
+  function doApplyPair(payload) {
+    UI.toast('正在连接云端…');
+    return XJ.sync.preflightPair(payload).then(function (pre) {
+      if (!pre.ok) { UI.toast('配对失败：' + (pre.msg || pre.reason)); return null; }
+      var applied = XJ.sync.applyPair(payload, { installMode: 'merge' });
+      if (!applied.ok) { UI.toast('配对失败：' + (applied.msg || applied.reason)); return null; }
+      if (XJ.storage && XJ.storage.save) XJ.storage.save(S.state);
+      return XJ.sync.verifyPair().then(function (v) {
+        if (!v.ok) {
+          UI.toast('已连接但校验未通过：' + (v.reasons || []).join('；'));
+        } else {
+          UI.toast('同步已连接（云端第 ' + v.version + ' 版）');
+        }
+        XJ.sync.start();
+        S.notify();
+        return v;
+      });
+    }).catch(function (e) {
+      UI.toast('配对失败：' + (e && e.message ? e.message : '网络错误'));
+    });
+  }
+
+  /** 口令文本（XJ2e 密文 / XJ1p 明文）落地 —— 面板「粘贴口令」与链接共用同一条路径 */
+  function applyPairCode(codeStr) {
+    return XJ.syncCore.decodePairCode(codeStr).then(function (r) {
+      if (!r.ok) { UI.toast('口令无法识别：' + (r.reason || '格式错误')); return null; }
+      var key = r.key || null;
+      if (key) { try { S.state.syncMeta.pairKey = key; } catch (e) { /* 忽略 */ } }
+      return doApplyPair({ token: r.token, gistId: r.gistId, boxFingerprint: r.boxFingerprint });
+    }).catch(function (e) {
+      UI.toast('口令无法识别：' + (e && e.message ? e.message : '格式错误'));
+    });
+  }
+
+  /* ---- 面板动作（精简面板：开关 + 立即同步 + 重新配对 + 复制口令 + 重置） ---- */
+  UI.on('toggleSync', function (node) {
+    XJ.sync.setEnabled(!!node.checked);
+    S.notify();
+    UI.toast(node.checked ? '已开启同步' : '已关闭同步（不再发送任何数据）');
+  });
+
+  UI.on('syncNow', function () {
+    UI.toast('正在同步…');
+    XJ.sync.tick({ force: true }).then(function (r) {
+      if (r && r.ok) UI.toast('同步完成');
+      else if (r && r.reason === 'rate') UI.toast('触发 GitHub 限流，稍后自动继续');
+      else UI.toast('同步未成功：' + ((r && r.reason) || '未知'));
+      S.notify();
+    });
+  });
+
+  UI.on('syncRepair', function () {
+    var html = UI.field('把配对口令粘贴到这里',
+      '<input type="text" data-k="code" placeholder="XJ2e.… 或 XJ1p.…" autocomplete="off">') +
+      '<button class="btn-block" data-act="syncRepairGo">连接</button>' +
+      '<div class="tiny" style="margin-top:10px">口令就是别人发给你的那条同步链接里 <code>#xjsync=</code> 后面的部分。' +
+      '连接成功后建议清掉对方的聊天记录 —— 链接等同云端钥匙。</div>';
+    UI.openSheet({ title: '重新配对', html: html });
+  });
+  UI.on('syncRepairGo', function (node) {
+    var f = UI.readFields(node.closest('.sheet'));
+    var text = String(f.code || '').trim();
+    if (!text) return UI.toast('请先粘贴口令');
+    var m = text.match(/#?xjsync=(.+)$/);
+    if (m) text = m[1];
+    UI.closeSheet();
+    return applyPairCode(text);
+  });
+
+  UI.on('syncCopyCode', function () {
+    var m = S.state.syncMeta || {};
+    if (!m.token || !m.gistId) return UI.toast('还没有连接信息');
+    /* encodePairCode 是异步的（要 crypto.subtle 加密），且返回 { code, plain } */
+    return XJ.syncCore.encodePairCode({ token: m.token, gistId: m.gistId, key: m.pairKey || undefined })
+      .then(function (r) {
+        var code = r && r.code;
+        if (!code) return UI.toast('生成口令失败（浏览器不支持加密，请改用链接方式）');
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(code).then(function () {
+            UI.toast('口令已复制');
+            /* 剪贴板里不该留着钥匙：用完即清 */
+            setTimeout(function () { try { navigator.clipboard.writeText(''); } catch (e) {} }, 8000);
+          }).catch(function () { showCodeFallback(code); });
+        } else {
+          showCodeFallback(code);
+        }
+      }).catch(function () { UI.toast('生成口令失败，请改用链接方式'); });
+  });
+  function showCodeFallback(code) {
+    UI.openSheet({
+      title: '配对口令',
+      html: '<div class="field"><textarea rows="4" readonly style="width:100%;font-size:12px">' +
+        U.esc(code) + '</textarea></div><div class="tiny">长按全选复制到另一台设备的「重新配对」里。</div>',
+    });
+  }
+
+  UI.on('syncReset', function () {
+    UI.confirm({
+      title: '重置同步连接',
+      message: '本机数据不会被删除，但需要重新配对才能继续同步。已配对过的其他设备不受影响。',
+      confirmText: '重置连接', danger: true,
+    }).then(function (ok) {
+      if (!ok) return;
+      S.commit(function (s) {
+        var sm = s.syncMeta || {};
+        sm.enabled = false; sm.token = null; sm.gistId = null; sm.etag = null;
+        sm.version = 0; sm.outbox = []; sm.versions = {}; sm.everPaired = false;
+        sm.forcePull = false; sm.lastErr = null; sm.failSince = null;
+        /* deviceId 与墓碑刻意保留：它们不是「连接」，且墓碑丢了删除会被复活 */
+      });
+      XJ.sync.stop();
+      S.notify();
+      UI.toast('已重置连接');
+    });
+  });
+
+  UI.on('syncFoldConn', function () { S.setUI({ foldSyncConn: !S.ui.foldSyncConn }); });
+  UI.on('syncFoldLog', function () { S.setUI({ foldSyncLog: !S.ui.foldSyncLog }); });
+
+  /* file:// 打开时首屏就说明白，而不是等用户点进面板才发现 */
+  if (!syncAvailable()) {
+    setTimeout(function () {
+      UI.toast('提示：本地文件方式不支持跨设备同步');
+    }, 1200);
+  }
   UI.on('xferLink', function () {
     XJ.transfer.encode(transferPayload()).then(function (enc) { showTransferOut(enc, true); });
   });
@@ -3655,7 +3825,25 @@
       injectManifest();
       registerSW();
 
+      /* ---- 跨设备同步：挂钩 + 前后台监听（接回预留点，app.js:3626） ---- */
+      XJ.sync.attach();
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) XJ.sync.onVisible();
+      });
+      window.addEventListener('pagehide', function () { XJ.sync.flushNow(); });
+      /* 应用已开着时又点了一条配对链接：hash 导航不会重载页面，必须靠这个兜住 */
+      window.addEventListener('hashchange', function () {
+        if (/#xjsync=/.test(location.hash || '')) checkPairHash();
+      });
+
+      /* 从带 #xjsync= 的链接打开 → 落地配对（必须排在首屏对齐之前，
+         否则用户会先看到「空数据」再跳变） */
+      checkPairHash();
+
       render();
+      /* 首屏等一次对齐（最多 4 秒）：配对后先拉一次，用户看到的就是对齐后的数据 */
+      XJ.sync.isFirstPaintSynced();
+      XJ.sync.start();
       /* 从带 #xjimport= 的链接打开 → 询问是否导入 */
       setTimeout(function () { checkImportHash(); }, 400);
       /* 派息日弹窗：这里试一次（分红方案本地就有缓存，离线也能弹），
