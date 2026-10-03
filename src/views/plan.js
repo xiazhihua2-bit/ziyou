@@ -61,7 +61,10 @@ XJ.views.plan = (function () {
         : '投入与息率不足以增长——请调高攒股金额或息率';
     } else if (tl.reached) {
       big = '已达成';
-      sub = '🎉 当前被动收入已覆盖目标支出';
+      /* reached 有两种来路：纯被动收入覆盖 / 不再投分红把目标抵扣到 0 —— 文案如实区分 */
+      sub = tl.coveredByOffset
+        ? '🎉 不再投的分红已抵扣全部目标支出'
+        : '🎉 当前被动收入已覆盖目标支出';
     } else {
       var ym = tl.date || U.ymOf(U.today());
       big = Number(ym.slice(0, 4)) + ' 年 ' + Number(ym.slice(5, 7)) + ' 月';
@@ -70,8 +73,8 @@ XJ.views.plan = (function () {
     return '<div class="card fire-hero fi-glass">' +
       '<div class="fire-hero-row"><span class="fire-hero-title">' + title + '</span>' +
       '<span class="fs-mini-seg fi-glass" role="group">' + tierChipsHtml(tier) + '</span></div>' +
-      '<div class="fire-big" id="fire-big-num">' + big + '</div>' +
-      '<div class="fire-sub" id="fire-big-sub">' + sub + '</div>' +
+      '<div class="fire-big" id="fire-big-num" data-anim="S">' + big + '</div>' +
+      '<div class="fire-sub" id="fire-big-sub" data-anim="A">' + sub + '</div>' +
       '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红（再投 ' +
       U.n0(fire.reinvestPct) + '%，可在下方试算卡调节）</div>' +
       '</div>';
@@ -115,6 +118,15 @@ XJ.views.plan = (function () {
       ? '暂无法测算'
       : U.moneySign(tierTarget.fireNumber, 0) + '（按当前市值息率 ' + U.pct(targets.yieldPct === null ? 0 : targets.yieldPct, 2) + ' 折算）';
 
+    /* 提取抵扣行：随「分红再投」滑杆实时联动（firePatchDom 就地更新同一 id）。
+       base = 当前滑杆模拟支出（cfg.monthlySpend），offset = 持仓月均分红 ×（1−r） */
+    var eff = X.fireEffectiveSpend(cfg);
+    var effLine = '<div class="fs-offset" id="fire-spend-eff">' +
+      '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
+      '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+      (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '') +
+      '</div>';
+
     return '<div class="card fi-glass">' +
       '<div class="card-head"><h2>⚖ 试算</h2><span class="spacer"></span>' +
       '<button class="chip" data-act="fireReset">重置</button></div>' +
@@ -122,6 +134,7 @@ XJ.views.plan = (function () {
       sliderHtml('drip', '每月攒股', 0, X.FIRE.dripMax, X.FIRE.dripStep, cfg.drip, U.moneySign(cfg.drip, 0)) +
       sliderHtml('dripYieldPct', '攒股息率（市值口径）', 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1)) +
       sliderHtml('reinvest', '分红再投', 0, 100, 10, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
+      effLine +
       tip +
       '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + capText +
       ' 生息资产，随行情刷新自动更新。息率默认跟随当前组合（' +
@@ -193,10 +206,10 @@ XJ.views.plan = (function () {
       var pct = d.ratio === null ? 0 : Math.min(100, Math.max(0, d.ratio));
       var active = t === tier;
       return '<div class="fi-row' + (active ? ' active' : '') + '">' +
-        '<div class="fi-row-t"><b>' + tierName(t) + '</b><span class="fi-goal">' +
+        '<div class="fi-row-t"><b>' + tierName(t) + '</b><span class="fi-goal" data-anim="A" data-anim-key="' + t + ':goal">' +
         (d.fireNumber === null ? '暂无法测算' : tierTag(t) + ' · ' + U.moneyCompact(d.fireNumber)) + '</span>' +
-        '<span class="fi-pct">' + (d.ratio === null ? '—' : U.pct(d.ratio, 1)) + '</span></div>' +
-        '<div class="bar"><i style="width:' + pct + '%' + (active ? ';background:var(--dividend)' : '') + '"></i></div>' +
+        '<span class="fi-pct" data-anim="A" data-anim-key="' + t + ':pct">' + (d.ratio === null ? '—' : U.pct(d.ratio, 1)) + '</span></div>' +
+        '<div class="bar"><i data-anim="bar" data-anim-key="' + t + ':bar" style="width:' + pct + '%' + (active ? ';background:var(--dividend)' : '') + '"></i></div>' +
         '</div>';
     }).join('');
 
@@ -247,7 +260,7 @@ XJ.views.plan = (function () {
     }
     return '<div class="card fi-glass">' +
       '<div class="card-head"><h2>◎ FI 进度</h2><span class="spacer"></span>' +
-      '<span class="fi-principal">FI 本金 <b>' + U.moneyCompact(pr.fiPrincipal) + '</b></span></div>' +
+      '<span class="fi-principal">FI 本金 <b data-anim="B">' + U.moneyCompact(pr.fiPrincipal) + '</b></span></div>' +
       bars +
       '<div class="fs-mini-seg fi-range-row fi-glass">' + chips + '</div>' +
       (chartHtml ? '<div class="fi-chart">' + chartHtml + '</div>' : chartNote) +
@@ -270,8 +283,11 @@ XJ.views.plan = (function () {
     var avgPct = recent.length
       ? U.sum(recent, function (p) { return p.pct; }) / recent.length
       : (cov.future.length ? cov.future[0].pct : null);
-    var head = '<div class="cov-head"><span class="cov-num">' + (avgPct === null ? '—' : U.pct(avgPct, 1)) + '</span>' +
-      '<span class="cov-hint">近 12 个月平均 · 达到 100% 即 ' + tierName(tier) + ' 达成</span></div>';
+    var head = '<div class="cov-head"><span class="cov-num" data-anim="S">' +
+      (avgPct === null ? (cov.coveredByOffset ? '🎉' : '—') : U.pct(avgPct, 1)) + '</span>' +
+      '<span class="cov-hint">' + (cov.coveredByOffset
+        ? '抵扣后目标已归零——不再投的分红已完全覆盖'
+        : '近 12 个月平均 · 达到 100% 即 ' + tierName(tier) + ' 达成') + '</span></div>';
 
     var range = st.ui.fireCovRange || 'all';
     var histPts = slicePoints(hist, range, st.ui.fireCovBeg, st.ui.fireCovEnd, true);
@@ -287,15 +303,18 @@ XJ.views.plan = (function () {
     }
     var covChips = rangeChipsHtml(range, ['3m', '6m', 'ytd', 'all', 'custom'], 'setFireCovRange');
 
-    /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则） */
+    /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则）。
+       ★ 口径与曲线分母一致 = 抵扣后目标（effective），不是台账原始支出。 */
     var passiveNow = X.fireMonthlyPassive(cfg, 0);
-    var gapM = Math.max(0, cfg.monthlySpend - passiveNow);
+    var eff = X.fireEffectiveSpend(cfg);
+    var gapM = Math.max(0, eff.effective - passiveNow);
     var tierTarget = targets.tiers[tier];
     var sim = fire.tierSims[tier] || {};
     var drip = sim.drip === null ? 5000 : sim.drip;
     var yPct = targets.yieldPct;
     var newDivM = drip * (yPct === null ? 0 : yPct) / 1200;
-    var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，目标月支出 ' + U.moneySign(cfg.monthlySpend, 2) +
+    var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，抵扣后目标月支出 ' + U.moneySign(eff.effective, 2) +
+      (eff.offset > 0 ? '（原 ' + U.moneySign(eff.base, 2) + ' − 不再投分红抵扣 ' + U.moneySign(eff.offset, 2) + '）' : '') +
       (gapM > 0 ? '——每月再补 ' + U.moneySign(gapM, 2) + ' 被动现金流即可完全覆盖' : '——已完全覆盖 🎉') +
       '；每月攒股 ' + U.moneySign(drip, 0) + ' 按市值息率新增月分红 ' + U.moneySign(newDivM, 2) +
       (tierTarget && tierTarget.fireNumber !== null
