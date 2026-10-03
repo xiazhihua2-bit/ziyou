@@ -90,7 +90,9 @@ const PROBE = `
   /* mine 页：同步入口必须已删，搬运/导入导出必须还在 */
   XJ.store.setUI({ tab: 'mine', subPage: null });
   out.mine = {
-    openSync: !!document.querySelector('[data-act="openSync"]'),
+    syncCard: !!document.querySelector('.sync-card'),
+    syncToggle: !!document.querySelector('[data-act="toggleSync"]'),
+    syncDisabled: ((document.getElementById('view-body')||{}).textContent || '').indexOf('当前打开方式不支持同步') >= 0,
     exportJson: !!document.querySelector('[data-act="exportJson"]'),
     importJson: !!document.querySelector('[data-act="importJson"]'),
     openTransfer: !!document.querySelector('[data-act="openTransfer"]'),
@@ -229,8 +231,12 @@ try {
       else bad('Tab ' + t + ' 渲染异常: ' + JSON.stringify(tb));
     });
     const m = out.mine || {};
-    if (m.openSync) bad('mine 页仍有 openSync 入口'); else ok('mine 页同步入口已删');
-    if (m.syncWord) bad('mine 页仍出现「跨设备同步」字样'); else ok('mine 页无同步字样');
+    /* 同步已接回：mine 页必须有同步入口（开关 + 状态行） */
+    if (m.syncCard) ok('mine 页同步卡片在位');
+    else bad('mine 页缺同步卡片: ' + JSON.stringify(m));
+    /* 冒烟跑在 file:// 下：同步卡片应显示为「不支持」并说明原因，而不是静默不可见 */
+    if (m.syncToggle || m.syncDisabled) ok('mine 页同步卡片按环境正确呈现（file:// 下为禁用态）');
+    else bad('mine 页同步卡片异常: ' + JSON.stringify(m));
     ['exportJson', 'importJson', 'openTransfer', 'exportCsvTx', 'exportCsvRec'].forEach((k) => {
       if (m[k]) ok('mine 页 ' + k + ' 在'); else bad('mine 页缺 ' + k);
     });
@@ -245,11 +251,24 @@ try {
     else bad('summary 异常: ' + JSON.stringify(out.numbers || out.numbersError));
   }
 
-  /* 产物检查：可执行同步代码与用户可见同步 UI 必须为零（源码注释提及不算） */
+  /* 产物检查（语义已反转）：同步层【必须在场】，密钥材料【必须不在场】 */
   const html = fs.readFileSync(SRC, 'utf8');
-  ['XJ.sync.', 'XJ.syncCore', 'XJ.qr', 'data-act="openSync"', 'XJ2e.', '云端位置编号', '接入口令', 'openSync\\b'].forEach((w) => {
-    const re = new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    if (re.test(html)) bad('产物仍含同步代码/文案: ' + w); else ok('产物无 "' + w + '"');
+  [
+    ['XJ.syncCore', '同步内核已打包'],
+    ['XJ.sync.', '同步编排层已打包'],
+    ['XJ.syncTransport', '传输层已打包（换后端的唯一改动点）'],
+    ['data-act="toggleSync"', '同步开关已渲染'],
+    ['#xjsync=', '配对链接键已打包'],
+    ['当前打开方式不支持同步', 'file:// 禁用提示'],
+  ].forEach(([w, why]) => {
+    if (html.indexOf(w) >= 0) ok(why); else bad('产物缺: ' + w + '（' + why + '）');
+  });
+  [
+    ['XJ.qr', '二维码模块不该回来（本方案点链接，不用扫码）'],
+    ['ghp_', '★ 产物绝不能含 GitHub 令牌字面量'],
+    ['github_pat_', '★ 同上（细粒度令牌前缀）'],
+  ].forEach(([w, why]) => {
+    if (html.indexOf(w) >= 0) bad(why + '：' + w); else ok('产物无 "' + w + '"');
   });
 
   console.log(fail === 0 ? '\n[smoke] 全部通过 ✓' : '\n[smoke] 失败 ' + fail + ' 项 ✗');
