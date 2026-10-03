@@ -1366,10 +1366,15 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .fs-mini button{ padding:3px 10px; font-size:12px; border-radius:6px; color:var(--text-2); }
 .fs-mini-seg{ display:inline-flex; gap:4px; }
 .fs-mini-seg .chip{ padding:3px 10px; font-size:12px; }
+/* ★ 只允许【按住圆形把手拖动】：轨道不接收指针事件（点一下就跳到那个位置的误触太伤），
+   把手单独放行。轨道的 --p 填充仍然实时跟随拖动。 */
 .fs-range{
   -webkit-appearance:none; appearance:none;
-  width:100%; height:44px; background:transparent; margin:0; display:block; cursor:pointer;
+  width:100%; height:44px; background:transparent; margin:0; display:block;
+  cursor:pointer; pointer-events:none;
 }
+.fs-range::-webkit-slider-thumb{ pointer-events:auto; }
+.fs-range::-moz-range-thumb{ pointer-events:auto; }
 .fs-range::-webkit-slider-runnable-track{
   height:4px; border-radius:2px;
   background:linear-gradient(to right, var(--dividend) var(--p, 0%), var(--fill) var(--p, 0%));
@@ -1568,6 +1573,146 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .sync-card code{ font-size:11.5px; background:var(--fill); padding:1px 4px; border-radius:4px; }
 
 
+
+
+/* ==================== 手动主题（build 自动派生，勿手改） ====================
+ * 由「浅色 :root」与「@media (prefers-color-scheme: dark) 里的 :root」各复制一份，
+ * 换成带 data-theme 的属性选择器：特异性 (0,1,1) > (0,1,0)，故手动档盖得住系统偏好。
+ ============================================================================ */
+:root[data-theme="light"]{
+  --bg:#F2F2F7;
+  --bg-elev:#FFFFFF;
+  --card:#FFFFFF;
+  --card-2:#F7F7FA;
+  --text:#1C1C1E;
+  --text-2:#6E6E73;
+  --text-3:#A1A1A6;
+  --line:#E5E5EA;
+  --line-2:#F0F0F3;
+  --blue:#007AFF;
+  --blue-soft:rgba(0,122,255,.10);
+  --up:#E0312F;          /* 涨 · 红（中国习惯） */
+  --down:#12A150;        /* 跌 · 绿 */
+  --payout:#12A150;      /* 派息日 · 绿（与「除权除息」的红色区分开） */
+  --dividend:#E8461F;    /* 分红金额 · 橙红（对齐息记） */
+  --dividend-mid:#E8A87C;/* 柱状图 / 进度条 · 浅橙 */
+  --dividend-soft:rgba(232,70,31,.10);
+  --hero-bg:#2C2C2E;     /* 首页深色卡 */
+  --hero-bg-2:#3A3A3C;
+  --hero-text:#F2F2F7;
+  --hero-dim:rgba(242,242,247,.56);
+  --warn-bg:#FFF8EC;
+  --warn-line:rgba(232,70,31,.20);
+  /* 待除权模块（对齐息记）：这块用琥珀暖色，与主色橙红区分出「尚未到手」的语义 */
+  --pend-amt:#C8801E;
+  --pend-bg:#FDF7EF;
+  --pend-bg-2:#FAF0E2;
+  --pend-bar:#D9A05B;
+  --pend-tag-bg:#F3E0BE;
+  --pend-tag-fg:#B0761A;
+  --pend-text:#A08060;
+  --pend-text-2:#C0A88C;
+  /* ---- 玻璃层（Liquid Glass） ---- */
+  --glass-bg:rgba(255,255,255,.60);
+  --glass-bg-2:rgba(255,255,255,.42);
+  --glass-bg-strong:rgba(250,250,252,.72);
+  --glass-border:rgba(255,255,255,.65);
+  --glass-edge:rgba(0,0,0,.055);
+  --glass-highlight:rgba(255,255,255,.85);
+  --glass-shadow:0 2px 6px rgba(24,36,60,.05), 0 12px 32px rgba(24,36,60,.08);
+  --glass-shadow-lg:0 6px 16px rgba(24,36,60,.10), 0 24px 56px rgba(24,36,60,.16);
+  --blur:saturate(180%) blur(24px);
+  --blur-soft:saturate(150%) blur(14px);
+  --scrim:rgba(10,10,14,.34);
+  /* ---- 中性填充 / 反转字色 / 语义软底 ---- */
+  --fill:rgba(120,120,128,.12);
+  --fill-2:rgba(120,120,128,.20);
+  --invert-fg:#FFFFFF;              /* 压在 var(--text) 底上的字色（chip 选中/FAB） */
+  --up-soft:rgba(224,49,47,.10);
+  --down-soft:rgba(18,161,80,.10);
+  --scrollbar:rgba(0,0,0,.15);
+  --hero-grad:linear-gradient(155deg,#FFFFFF 0%,#FBFAF6 60%,#FDF6E9 100%);
+  --hero-glow:rgba(240,163,10,.14);
+  --slogan-grad:linear-gradient(150deg,#FFF8F6,#FFF1EC);
+  --slogan-warm-fg:#9A3A22;
+  --warn-fg:#8A4A2A;
+  --exp-lit-grad:linear-gradient(150deg,#FFFBF2,#FFF7E8);
+  --exp-lit-line:rgba(240,163,10,.32);
+  --warm-lit-grad:linear-gradient(150deg,#FFF3EE,#FFE7DE);
+  --warm-lit-line:rgba(232,70,31,.28);
+  --payout-banner-grad:linear-gradient(150deg,#F4FBF6,#EDF9F1);
+  --payout-banner-line:rgba(18,161,80,.22);
+  --payout-banner-fg:#0B7A3C;
+  --brush-line:#C3D3EA;               /* 图表 brush 选区描边 */
+  --glow-warm:rgba(240,163,10,.10);   /* 环境光斑 · 暖 */
+  --glow-cool:rgba(0,122,255,.07);    /* 环境光斑 · 冷 */
+  --radius:18px;
+  --radius-sm:12px;
+  --shadow:var(--glass-shadow);
+  --shadow-lg:var(--glass-shadow-lg);
+  --safe-b:env(safe-area-inset-bottom, 0px);
+  --safe-t:env(safe-area-inset-top, 0px);
+  --font:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+         "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --mono:"SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+:root[data-theme="dark"]{
+    --bg:#0E0E11;
+    --bg-elev:#1C1C20;
+    --card:#1C1C20;
+    --card-2:#28282E;
+    --text:#F2F2F7;
+    --text-2:#AEAEB4;
+    --text-3:#78787E;
+    --line:rgba(255,255,255,.12);
+    --line-2:rgba(255,255,255,.07);
+    --blue:#0A84FF;
+    --blue-soft:rgba(10,132,255,.20);
+    /* 语义色不动：涨红/跌绿/分红橙红在深浅两态下保持同一色相 */
+    --dividend-soft:rgba(232,70,31,.16);
+    --hero-bg:#1A1A1F;
+    --hero-bg-2:#2C2C33;
+    --warn-bg:#33291B;
+    --warn-line:rgba(232,140,31,.28);
+    --pend-amt:#E5B269;
+    --pend-bg:#2B2418;
+    --pend-bg-2:#332B1D;
+    --pend-bar:#B98A4A;
+    --pend-tag-bg:#453520;
+    --pend-tag-fg:#E0B878;
+    --pend-text:#C9AE8C;
+    --pend-text-2:#8A745C;
+    --glass-bg:rgba(30,30,36,.62);
+    --glass-bg-2:rgba(30,30,36,.46);
+    --glass-bg-strong:rgba(22,22,27,.72);
+    --glass-border:rgba(255,255,255,.14);
+    --glass-edge:rgba(0,0,0,.42);
+    --glass-highlight:rgba(255,255,255,.10);
+    --glass-shadow:0 2px 6px rgba(0,0,0,.32), 0 12px 32px rgba(0,0,0,.38);
+    --glass-shadow-lg:0 6px 16px rgba(0,0,0,.40), 0 24px 56px rgba(0,0,0,.52);
+    --scrim:rgba(0,0,0,.55);
+    --fill:rgba(120,120,128,.24);
+    --fill-2:rgba(120,120,128,.34);
+    --invert-fg:#0E0E11;
+    --up-soft:rgba(240,82,82,.20);
+    --down-soft:rgba(48,191,120,.20);
+    --scrollbar:rgba(255,255,255,.22);
+    --hero-grad:linear-gradient(155deg,#232329 0%,#1E1E24 60%,#26221A 100%);
+    --hero-glow:rgba(240,163,10,.10);
+    --slogan-grad:linear-gradient(150deg,#2E2320,#2B1E1A);
+    --slogan-warm-fg:#E89A80;
+    --warn-fg:#E8B49A;
+    --exp-lit-grad:linear-gradient(150deg,#3A3020,#332A1A);
+    --exp-lit-line:rgba(240,163,10,.45);
+    --warm-lit-grad:linear-gradient(150deg,#3A2722,#33201C);
+    --warm-lit-line:rgba(232,70,31,.40);
+    --payout-banner-grad:linear-gradient(150deg,#16241C,#152019);
+    --payout-banner-line:rgba(48,191,120,.30);
+    --payout-banner-fg:#4CD08A;
+    --brush-line:#4A6B93;
+    --glow-warm:rgba(232,120,31,.09);
+    --glow-cool:rgba(10,132,255,.08);
+  }
 
 </style>
 </head>
@@ -2560,6 +2705,9 @@ XJ.model = (function () {
         id: 'app_settings',
         quoteRefreshMs: 60000,
         planCacheTTLMs: 604800000,     // 7 天
+        /* 外观：'auto' 跟随系统 | 'light' | 'dark'。
+           ★ 本机偏好、刻意【不进同步白名单】：手机想要深色、电脑想要浅色是常见的。 */
+        theme: 'auto',
         defaultAccountId: null,
         reminderLeadDays: 3,
         lastQuoteAt: null,
@@ -2842,6 +2990,8 @@ XJ.model = (function () {
     if (!state.settings.ocr.model) state.settings.ocr.model = 'glm-4v-flash';
     if (!state.settings.ocr.apiKey) state.settings.ocr.apiKey = DEFAULT_OCR_KEY;
     if (!Array.isArray(state.settings.unsupportedDividend)) state.settings.unsupportedDividend = [];
+    /* 外观：只认 light / dark，其余（含旧数据没有这个字段）一律回到 auto */
+    if (state.settings.theme !== 'light' && state.settings.theme !== 'dark') state.settings.theme = 'auto';
 
     /* ---- v6：settings.fire 补齐（只补容器、不动数据；跑两遍结果全等） ---- */
     var fire = state.settings.fire;
@@ -13874,7 +14024,8 @@ XJ.views.plan = (function () {
       sliderHtml('monthlySpend', spendLabel, 0, X.FIRE.spendMax, X.FIRE.spendStep, cfg.monthlySpend, spendVal, spendSwitch) +
       sliderHtml('drip', '每月攒股', 0, X.FIRE.dripMax, X.FIRE.dripStep, cfg.drip, U.moneySign(cfg.drip, 0)) +
       sliderHtml('dripYieldPct', '攒股息率（市值口径）', 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1)) +
-      sliderHtml('reinvest', '分红再投', 0, 100, 10, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
+      /* 再投比例精确到 1%：每 10% 一档太粗，抵扣额对再投很敏感 */
+      sliderHtml('reinvest', '分红再投', 0, 100, 1, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
       effLine +
       tip +
       '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + capText +
@@ -14563,6 +14714,19 @@ XJ.views.mine = (function () {
     var s = st.state.settings;
     var html = '<div class="card flush">' +
       '<div style="padding:14px 16px 10px"><div class="card-head" style="margin:0"><h2>提醒与设置</h2></div></div>';
+
+    /* 外观：跟随系统 / 浅色 / 深色（本机偏好，不参与跨设备同步） */
+    var theme = (s.theme === 'light' || s.theme === 'dark') ? s.theme : 'auto';
+    var THEMES = [['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
+    var themeLabel = THEMES.filter(function (t) { return t[0] === theme; })[0][1];
+    html += '<div class="list-row" style="pointer-events:none"><div class="row-main">' +
+      '<div class="row-t">🎨 外观</div>' +
+      '<div class="row-s">当前 ' + U.esc(themeLabel) + ' · 只影响这台设备（不参与同步）</div></div></div>';
+    html += '<div class="chips" style="padding:0 16px 12px">' + THEMES.map(function (t) {
+      return '<button type="button" class="chip' + (theme === t[0] ? ' active' : '') +
+        '" data-act="setTheme" data-v="' + t[0] + '">' + t[1] + '</button>';
+    }).join('') + '</div>';
+
     html += '<button class="list-row" data-act="openOcrSettings">' +
       '<div class="row-main"><div class="row-t">📷 截图识别设置</div>' +
       '<div class="row-s">智谱 GLM-4V 多模态识别 · 模型与 API Key（截图会上传到智谱服务器）</div></div>' +
@@ -18534,6 +18698,28 @@ XJ.views.symbol = (function () {
         }
       }
       node.style.setProperty('--p', ((v - Number(node.min)) / (Number(node.max) - Number(node.min)) * 100) + '%');
+      /* 再投 → 每月花费视觉联动：把「抵扣后目标」同步显示到花费滑杆。
+         ★ 程序设 value 不会触发 change，也就不会持久化 —— 「每月花费」滑杆的语义
+           始终是「总目标支出（抵扣前）」，抵扣永远只减一次，不存在双重扣减。
+           松手后整页重渲染会显示回台账值，抵扣行与自由日仍按抵扣后口径（那才是真相）。 */
+      if (k === 'reinvest') {
+        var cfgR = fireCfgWithOverride('reinvest', v);
+        var effR = C.fireEffectiveSpend(cfgR);
+        var msEl = document.querySelector('.fs-range[data-k="monthlySpend"]');
+        var msVal = document.getElementById('fs-val-monthlySpend');
+        if (msEl) {
+          var lo = Number(msEl.min), hi = Number(msEl.max);
+          /* value 会被浏览器按 step 网格吸附（如 3066.67 → 3070），这是把手位置的正常行为；
+             显示文本与填充仍用未吸附的抵扣后目标，保证与抵扣行逐位一致。 */
+          msEl.value = effR.effective;
+          msEl.style.setProperty('--p', ((effR.effective - lo) / (hi - lo) * 100) + '%');
+        }
+        if (msVal) {
+          msVal.textContent = S.ui.fireSpendMode === 'day'
+            ? '¥' + (effR.effective / C.FIRE.daysPerMonth).toFixed(2) + '/日'
+            : U.moneySign(effR.effective, 0);
+        }
+      }
       firePatchDom(fireCfgWithOverride(k, v));
     });
   });
@@ -18573,6 +18759,23 @@ XJ.views.symbol = (function () {
 
   UI.on('fireSpendMode', function (node) {
     S.setUI({ fireSpendMode: node.getAttribute('data-v') === 'day' ? 'day' : 'month' });
+  });
+
+  /* ---- 外观：跟随系统 / 浅色 / 深色 ---- */
+  /** 把 settings.theme 落到 <html data-theme>：auto 时去掉属性（交回系统偏好）。
+      CSS 侧的手动通道由 build.mjs 从「浅色 :root + @media dark :root」派生。 */
+  function applyTheme() {
+    var t = (S.state.settings && S.state.settings.theme) || 'auto';
+    var el = document.documentElement;
+    if (t === 'light' || t === 'dark') el.setAttribute('data-theme', t);
+    else el.removeAttribute('data-theme');
+  }
+
+  UI.on('setTheme', function (node) {
+    var v = node.getAttribute('data-v');
+    if (v !== 'light' && v !== 'dark' && v !== 'auto') return;
+    S.commit(function (s) { s.settings.theme = v; });
+    applyTheme();
   });
 
   UI.on('fireReset', function () {
@@ -19196,6 +19399,7 @@ XJ.views.symbol = (function () {
       }
       S.ui.accountId = C.ALL;
       UI.installDelegation();
+      applyTheme();          // 外观（跟随系统 / 浅 / 深）必须在首屏渲染前落地，否则会闪一下
       S.subscribe(render);
       injectManifest();
       registerSW();
