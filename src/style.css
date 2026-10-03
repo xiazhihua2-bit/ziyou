@@ -1361,21 +1361,25 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   height:4px; border-radius:2px;
   background:linear-gradient(to right, var(--dividend) var(--p, 0%), var(--fill) var(--p, 0%));
 }
+/* 把手：32px（26 太小不好捏）+ 分红红；配一圈白描边，压在红色填充上也能看清边界。
+   margin-top 公式 = -(尺寸 − 轨道高 4px) / 2，改尺寸时必须同步改。 */
 .fs-range::-webkit-slider-thumb{
   -webkit-appearance:none; appearance:none;
-  width:26px; height:26px; border-radius:50%; margin-top:-11px;
-  background:var(--bg-elev);
-  box-shadow:0 2px 8px rgba(0,0,0,.22), 0 0 0 .5px var(--glass-edge);
+  width:32px; height:32px; border-radius:50%; margin-top:-14px;
+  background:var(--dividend);
+  border:1.5px solid #fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.28), 0 0 0 .5px var(--glass-edge);
   transition:transform .15s ease;
 }
-.fs-range:active::-webkit-slider-thumb{ transform:scale(1.15); }
+.fs-range:active::-webkit-slider-thumb{ transform:scale(1.12); }
 .fs-range::-moz-range-track{
   height:4px; border-radius:2px;
   background:linear-gradient(to right, var(--dividend) var(--p, 0%), var(--fill) var(--p, 0%));
 }
 .fs-range::-moz-range-thumb{
-  width:26px; height:26px; border:0; border-radius:50%;
-  background:var(--bg-elev); box-shadow:0 2px 8px rgba(0,0,0,.22);
+  width:32px; height:32px; border-radius:50%;
+  border:1.5px solid #fff; background:var(--dividend);
+  box-shadow:0 2px 8px rgba(0,0,0,.28);
 }
 .fs-ticks{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); padding:0 4px; }
 
