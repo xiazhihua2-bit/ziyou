@@ -90,9 +90,28 @@ XJ.ui = (function () {
   }
 
   /* ---------------- 弹层 ---------------- */
-  function closeSheet() {
+  /** 关闭弹层：同步清空（语义与旧版完全一致，uitest 等调用方零感知），
+      出场动画由【克隆节点】播放 —— 原节点立即消失，ghost 挂 body 播 220ms 后移除。
+      为什么不用「先加 closing 类再延时移除」：那会把 closeSheet 变成异步语义，
+      开 A→关 A→开 B 的流程里 B 会被挂起的清场定时器一起删掉（实测 uitest 全线挂）。
+      immediate=true 或 reduced-motion：不播动画。 */
+  function closeSheet(immediate) {
     var root = document.getElementById('modal-root');
-    if (root) root.innerHTML = '';
+    if (!root) return;
+    var mask = root.querySelector('.mask');
+    if (!mask) return;
+    var animate = !immediate && !(XJ.anim && XJ.anim.reduced());
+    var ghost = animate ? mask.cloneNode(true) : null;
+    root.innerHTML = '';
+    if (ghost) {
+      ghost.classList.add('closing');
+      var host = document.createElement('div');
+      host.setAttribute('aria-hidden', 'true');
+      host.style.cssText = 'position:fixed;inset:0;z-index:999;pointer-events:none;';
+      host.appendChild(ghost);
+      document.body.appendChild(host);
+      setTimeout(function () { if (host.parentNode) host.parentNode.removeChild(host); }, 240);
+    }
   }
 
   function openSheet(opts) {
