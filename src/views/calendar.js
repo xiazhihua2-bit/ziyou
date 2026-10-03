@@ -32,10 +32,10 @@ XJ.views.calendar = (function () {
       '<span class="pend-ico">💌</span>' +
       '<span class="pend-hmain">' +
       '<span class="pend-title">你有 <b>' + pend.count + '</b> 只持仓已公布分红方案，等待除权日</span>' +
-      '<span class="pend-sub">预计共可得 <b>' + U.moneySign(pend.total) + '</b>' +
+      '<span class="pend-sub" data-anim="A">预计共可得 <b>' + U.moneySign(pend.total) + '</b>' +
       /* 除权日还没公告的那部分金额是估算，这里如实说明，不混进确定值里 */
       (pend.undatedTotal > 0
-        ? '<i class="pend-subnote">其中 ' + U.moneySign(pend.undatedTotal) + ' 除权日待定</i>'
+        ? '<i class="pend-subnote" data-anim="A">其中 ' + U.moneySign(pend.undatedTotal) + ' 除权日待定</i>'
         : '') +
       '</span>' +
       '</span>' +
@@ -50,7 +50,7 @@ XJ.views.calendar = (function () {
           '<span class="pi-row">' +
           '<span class="pi-name">' + U.esc(it.name) +
           '<i class="pi-tag">' + U.esc(XJ.market.displayCode(it.symbol)) + '</i></span>' +
-          '<span class="pi-amt">' + U.moneySign(it.amount) + '</span>' +
+          '<span class="pi-amt" data-anim="A">' + U.moneySign(it.amount) + '</span>' +
           '</span>' +
           '<span class="pi-row">' +
           '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.thousands(it.qty) + '股</span>' +
@@ -137,10 +137,10 @@ XJ.views.calendar = (function () {
     if (pend.count > 0) {
       html += pendingCard(st, pend);
     } else if (mv.receivedTotal > 0) {
-      html += '<div class="cal-banner" style="background:var(--payout-banner-grad);border-color:var(--payout-banner-line);color:var(--payout-banner-fg)">' +
+      html += '<div class="cal-banner" data-anim="A" style="background:var(--payout-banner-grad);border-color:var(--payout-banner-line);color:var(--payout-banner-fg)">' +
         '本月已到账分红 <b style="color:var(--down)">' + U.moneySign(mv.receivedTotal) + '</b>，当前没有等待除权的方案。</div>';
     } else {
-      html += '<div class="cal-banner" style="background:var(--card-2);border-color:var(--line);color:var(--text-2)">' +
+      html += '<div class="cal-banner" data-anim="A" style="background:var(--card-2);border-color:var(--line);color:var(--text-2)">' +
         '当前没有等待除权的分红方案。</div>';
     }
 
