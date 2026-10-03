@@ -119,20 +119,32 @@
     }
   }
 
+  var prevRenderedTab = null;   // Tab 切换动效：记录上一次渲染的视图
+
   function render() {
     var top = document.getElementById('view-top');
     var body = document.getElementById('view-body');
     var tabs = document.getElementById('view-tabs');
     if (!top || !body || !tabs) { mountShell(); return render(); }
+    /* Tab 切换（非子页面、非首次渲染）→ 主体交叉淡入（iOS 是淡入不是横滑） */
+    var tabSwitched = prevRenderedTab !== null && !S.ui.subPage && prevRenderedTab !== S.ui.tab;
+    prevRenderedTab = S.ui.subPage ? null : S.ui.tab;
+    var prevAnim = XJ.anim ? XJ.anim.snapshot() : null;   // ① 重建前快照（值比对动效）
     top.innerHTML = topHtml();
     body.innerHTML = viewHtml();
     tabs.innerHTML = tabsHtml();
+    if (tabSwitched) {
+      body.classList.remove('view-enter');
+      void body.offsetWidth;
+      body.classList.add('view-enter');
+    }
     var nav = document.querySelector('.tabbar');
     if (nav) nav.style.display = S.ui.subPage ? 'none' : '';
     var shell = document.querySelector('.app-shell');
     if (shell) shell.style.paddingBottom = S.ui.subPage ? '24px' : '';
     renderFloat();
     if (XJ.chart) XJ.chart.bind();
+    if (prevAnim && XJ.anim) XJ.anim.diffAndPlay(prevAnim);   // ③④ 比对 → 分档播放
   }
 
   /* ---------------- 行情与分红数据刷新（与跨设备同步无关） ---------------- */
@@ -3114,14 +3126,7 @@
     var sub = document.getElementById('fire-big-sub');
     var tip = document.getElementById('fire-tip-line');
     var txt = fireBigText(tl);
-    if (big) {
-      if (big.textContent !== txt) {
-        big.classList.add('blur');
-        void big.offsetWidth;                      // 强制 reflow，让 blur→clear 过渡触发
-        big.textContent = txt;
-        requestAnimationFrame(function () { big.classList.remove('blur'); });
-      }
-    }
+    if (big) XJ.anim.patch(big, txt, 'S');
     if (sub) sub.textContent = fireSubText(tl);
     if (tip) {
       var base = C.fireTimeline(S.state, S.acc(), C.fireCfg(S.state, S.acc(), S.state.settings.fire.activeTier,
@@ -3134,8 +3139,22 @@
       }
       var t = S.state.settings.fire.activeTier;
       var cap4 = C.fireTargets(S.state, S.acc(), S.state.settings.fire.yieldBasis);
-      var cap = cap4.tiers[t] ? cap4.tiers[t].capitalAt4 : 0;
-      tip.textContent = seg + '完全覆盖约需 ' + U.moneySign(cap, 0) + ' 生息资产（按 4% 法则）';
+      var tt = cap4.tiers[t] || {};
+      var cap = tt.fireNumber;
+      var tipTxt = seg + (cap === null || cap === undefined
+        ? '完全覆盖所需生息资产暂无法测算'
+        : '完全覆盖约需 ' + U.moneySign(cap, 0) + ' 生息资产（按当前市值息率 ' +
+          U.pct(cap4.yieldPct === null ? 0 : cap4.yieldPct, 2) + ' 折算）');
+      if (tip.textContent !== tipTxt) tip.textContent = tipTxt;
+    }
+    /* 提取抵扣行：随再投/花费滑杆实时联动（与 plan.js 的 effLine 同结构，微档动效） */
+    var effEl = document.getElementById('fire-spend-eff');
+    if (effEl) {
+      var eff = C.fireEffectiveSpend(cfg);
+      var effTxt = '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
+        '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+        (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '');
+      if (effEl.__effTxt !== effTxt) { effEl.__effTxt = effTxt; effEl.innerHTML = effTxt; }
     }
     return tl;
   }
