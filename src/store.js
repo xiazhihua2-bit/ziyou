@@ -34,7 +34,9 @@ XJ.store = (function () {
       firePrEnd: null,          // FI 进度自定义区间止
       fireCovRange: 'all',      // FIRE · 覆盖率曲线时间尺度（3m|6m|ytd|all|custom，月度粒度无当日/本月）
       fireCovBeg: null,         // 覆盖率自定义区间起（'YYYY-MM'）
-      fireCovEnd: null,
+      fireCovEnd: null,        // 覆盖率自定义区间止（'YYYY-MM'）
+      foldSyncConn: false,     // 我的 → 同步卡片：连接信息折叠区
+      foldSyncLog: false,      // 我的 → 同步卡片：详细日志折叠区
       foldPlans: true,          // 个股页「分红档案」是否折叠（默认收起，内容较长）
       foldTx: true,             // 个股页「交易明细」是否折叠（默认收起）
       foldMineTx: true,         // 我的页「交易流水」是否折叠（默认收起）
