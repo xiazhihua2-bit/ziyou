@@ -35,16 +35,16 @@ XJ.views.divsummary = (function () {
     var n = XJ.calc.funEquivalent(sum.total, fun.monthly);
     return '<div class="card ds-hero">' +
       '<div class="ds-cap">分红总额</div>' +
-      '<div class="ds-total">' + U.moneySign(sum.total) + '</div>' +
+      '<div class="ds-total" data-anim="S">' + U.moneySign(sum.total) + '</div>' +
       '<div class="ds-rule"></div>' +
       '<div class="ds-kv"><span>到账笔数</span><span>' + sum.count + ' 笔</span></div>' +
       '<div class="ds-kv"><span>涉及标的</span><span>' + sum.bySymbolList.length + ' 只</span></div>' +
       (sum.pendingTotal > 0
-        ? '<div class="ds-kv ds-pend"><span>另有预计到账</span><span>' +
+        ? '<div class="ds-kv ds-pend" data-anim="A"><span>另有预计到账</span><span>' +
           U.moneySign(sum.pendingTotal) + '</span></div>'
         : '') +
       (n !== null
-        ? '<div class="ds-fun">这些分红相当于 ' + U.thousands(n) + ' 个月' +
+        ? '<div class="ds-fun" data-anim="A">这些分红相当于 ' + U.thousands(n) + ' 个月' +
           U.esc(fun.name) + ' 🎵</div>'
         : '') +
       '<div class="ds-quote">这些都是你的持仓为你赚来的被动收入 🫰</div>' +
@@ -63,7 +63,7 @@ XJ.views.divsummary = (function () {
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
             ' × ' + U.thousands(qty) + ' 股</span>' +
-            '<span class="ds-rec-a">' + U.moneySign(r.amount) + '</span>' +
+            '<span class="ds-rec-a" data-anim="B">' + U.moneySign(r.amount) + '</span>' +
             '</div>';
         }).join('');
         return '<div class="ds-sym' + (isOpen ? ' open' : '') + '">' +
@@ -72,7 +72,7 @@ XJ.views.divsummary = (function () {
           '<span class="ds-code">' + U.esc(XJ.model.codeOf(g.symbol)) + '</span>' +
           '<span class="ds-name">' + U.esc(st.symbolName(g.symbol)) + '</span>' +
           '<span class="ds-sp"></span>' +
-          '<span class="ds-amt">' + U.moneySign(g.amount) + '</span>' +
+          '<span class="ds-amt" data-anim="A">' + U.moneySign(g.amount) + '</span>' +
           '<span class="chev">' + UI.icon('chevron', 15, 2) + '</span>' +
           '</button>' +
           (isOpen ? '<div class="ds-detail">' + rows + '</div>' : '') +
@@ -91,7 +91,7 @@ XJ.views.divsummary = (function () {
         var w = Math.max(2, amt / max * 100);
         return '<div class="ds-year">' +
           '<div class="ds-year-top"><span>' + y + ' 年</span>' +
-          '<span class="c-div ds-year-amt">' + U.moneySign(amt) + '</span></div>' +
+          '<span class="c-div ds-year-amt" data-anim="B">' + U.moneySign(amt) + '</span></div>' +
           '<div class="bar"><i style="width:' + w.toFixed(1) + '%"></i></div>' +
           '</div>';
       }).join('') + '</div>';
