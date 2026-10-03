@@ -2689,10 +2689,10 @@ try {
       await browser.send('Runtime.evaluate', { expression: 'XJ.storage.save(XJ.store.state)' }, sessionId);
       await sleep(300);
       await browser.send('Runtime.evaluate', {
-        expression: 'XJ.store.init(window.__probeRoundTrip = XJ.model.fromImport(JSON.parse(localStorage.getItem("xiji_state_v1"))))',
+        expression: 'XJ.store.init(window.__probeRoundTrip = XJ.model.fromImport(JSON.parse(localStorage.getItem("ziyou_state_v1"))))',
       }, sessionId).catch(() => {});
       const rt = await browser.send('Runtime.evaluate', {
-        expression: '(function(){try{var raw=localStorage.getItem("xiji_state_v1");if(!raw)return null;var o=JSON.parse(raw);return {tx:o.transactions.length,acc:o.accounts.length};}catch(e){return {err:String(e.message)};}})()',
+        expression: '(function(){try{var raw=localStorage.getItem("ziyou_state_v1");if(!raw)return null;var o=JSON.parse(raw);return {tx:o.transactions.length,acc:o.accounts.length};}catch(e){return {err:String(e.message)};}})()',
         returnByValue: true,
       }, sessionId);
       const v2 = rt.result && rt.result.value;
