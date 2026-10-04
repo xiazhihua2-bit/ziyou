@@ -194,7 +194,11 @@ XJ.views.overview = (function () {
       : '<button data-act="toggleHero">收起 ⌃</button>' +
         '<button data-act="openMetricSettings">⚙ 设置指标</button>';
 
-    return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '">' +
+    /* 配色由 settings.heroColor 决定（本机偏好、不同步）；非法值已在 model.normalize 兜底 */
+    var heroColor = XJ.model.HERO_COLORS.some(function (c) { return c.key === cfg.heroColor; })
+      ? cfg.heroColor : XJ.model.HERO_COLOR_DEFAULT;
+
+    return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '">' +
       '<div class="hd-status">' + statusLine + '</div>' +
       '<div class="hd-row">' +
       '<div>' +
@@ -267,27 +271,64 @@ XJ.views.overview = (function () {
       '</div></div>';
   }
 
-  /* ---------------- 分红覆盖 ---------------- */
+  /* ---------------- 分红覆盖 ----------------
+   * 2026-10-05：支出按两大类展示（生存 / 品质），点分类条才展开该类具体支出（手风琴，
+   *   默认展开生存类）。点亮顺序由 calc.coverage() 决定：分红先填生存、生存全亮后才流向品质。
+   */
+  var COVER_CATS = [
+    { key: 'essential', name: '生存支出', icon: '🛡' },
+    { key: 'quality', name: '品质支出', icon: '✨' },
+  ];
+
+  function catOf(e) { return e && e.category === 'quality' ? 'quality' : 'essential'; }
+
   function coverageCard(st, cov, ms) {
-    /* 先算出「已点亮」集合，再排序：已覆盖的排左边、未覆盖的排右边，同组内按原顺序。
-       （依赖 litKeys，所以顺序不能颠倒） */
+    /* 「已点亮」集合先算好，明细区用它排序：已覆盖排左、未覆盖排右，同组内按原顺序。 */
     var litKeys = {};
     cov.items.forEach(function (it) { if (it.lit) litKeys[it.key] = true; });
     var nextKey = cov.nextItem ? cov.nextItem.key : null;
-    var list = st.state.expenses.slice().sort(function (a, b) {
-      var la = litKeys[a.key] ? 0 : 1;
-      var lb = litKeys[b.key] ? 0 : 1;
-      if (la !== lb) return la - lb;
-      return (a.sortOrder || 0) - (b.sortOrder || 0);
-    });
 
-    var icons = list.map(function (e) {
-      var on = litKeys[e.key];
-      var cls = 'cover-icon' + (on ? ' on' : '') + (e.key === nextKey ? ' next' : '');
-      return '<button class="' + cls + '" data-act="openExpenseEditor" data-key="' + U.esc(e.key) + '">' +
-        '<span class="box">' + U.esc(e.icon || '💰') + '</span>' +
-        '<span class="nm">' + U.esc(e.label) + '</span>' +
-        '</button>';
+    /* 展开态：手风琴 —— 点同一类再次点击即收起（null） */
+    var openCat = (st.ui.coverOpenCat === 'quality') ? 'quality'
+      : (st.ui.coverOpenCat === 'essential' ? 'essential' : null);
+
+    function itemIcons(cat) {
+      var list = st.state.expenses.filter(function (e) {
+        return e.enabled && catOf(e) === cat;
+      }).sort(function (a, b) {
+        var la = litKeys[a.key] ? 0 : 1;
+        var lb = litKeys[b.key] ? 0 : 1;
+        if (la !== lb) return la - lb;
+        return (a.sortOrder || 0) - (b.sortOrder || 0);
+      });
+      if (!list.length) {
+        return '<div class="tiny" style="padding:2px 2px 8px">这一类还没有支出项 —— 去 FIRE 视图的「支出分组」里给支出选分类。</div>';
+      }
+      return '<div class="cover-icons">' + list.map(function (e) {
+        var on = litKeys[e.key];
+        var cls = 'cover-icon' + (on ? ' on' : '') + (e.key === nextKey ? ' next' : '');
+        return '<button class="' + cls + '" data-act="openExpenseEditor" data-key="' + U.esc(e.key) + '">' +
+          '<span class="box">' + U.esc(e.icon || '💰') + '</span>' +
+          '<span class="nm">' + U.esc(e.label) + '</span>' +
+          '</button>';
+      }).join('') + '</div>';
+    }
+
+    var cats = COVER_CATS.map(function (c) {
+      var g = (cov.groups && cov.groups[c.key]) ||
+        { count: 0, litCount: 0, monthlyAmount: 0, progress: 0 };
+      var open = openCat === c.key;
+      return '<button class="cover-cat' + (open ? ' open' : '') + (g.count ? '' : ' empty') +
+        '" data-act="toggleCoverCat" data-v="' + c.key + '">' +
+        '<span class="cc-ico">' + c.icon + '</span>' +
+        '<span class="cc-main"><span class="cc-name">' + c.name + '</span>' +
+        '<span class="cc-sub">' + U.moneySign(g.monthlyAmount, 0) + '/月 · ' +
+        g.litCount + '/' + g.count + ' 已覆盖</span></span>' +
+        '<span class="cc-right">' + (g.count ? Math.round(g.progress) + '%' : '—') +
+        '<span class="cc-caret">' + (open ? '⌃' : '⌄') + '</span></span>' +
+        '</button>' +
+        '<div class="bar"><i style="width:' + g.progress.toFixed(1) + '%"></i></div>' +
+        (open ? itemIcons(c.key) : '');
     }).join('');
 
     return '<div class="card">' +
@@ -295,18 +336,18 @@ XJ.views.overview = (function () {
       '<h2>分红覆盖</h2><div class="spacer"></div>' +
       '<span class="hint">' + U.esc(ms.name) + '</span>' +
       '<button class="ghost-btn" data-act="gotoTab" data-tab="find">详情</button></div>' +
-      '<div class="cover-icons">' + icons + '</div>' +
       '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 8px">' +
       '<div style="font-size:24px;font-weight:750;letter-spacing:-.8px;color:var(--dividend)">' + cov.litCount +
       '<span style="font-size:14px;color:var(--text-3);font-weight:600">/' + cov.totalCount + '</span></div>' +
       '<div class="muted" style="font-size:12.5px">项支出已被股息覆盖</div>' +
       '</div>' +
       '<div class="bar"><i style="width:' + cov.overallProgress.toFixed(1) + '%"></i></div>' +
-      '<div class="tiny" style="margin-top:8px">' +
+      '<div class="cov-cats">' + cats + '</div>' +
+      '<div class="tiny" style="margin-top:6px">分红先覆盖生存支出，生存全部满足后再流向品质支出' +
       (cov.nextItem
-        ? '再攒 <b class="c-div">' + U.moneySign(cov.needMore) + '</b> 分红就能点亮 ' +
+        ? '；再攒 <b class="c-div">' + U.moneySign(cov.needMore) + '</b> 分红就能点亮 ' +
         (cov.nextItem.icon || '') + U.esc(cov.nextItem.label)
-        : '全部支出项已被股息覆盖，恭喜！') +
+        : '；全部支出项已被股息覆盖，恭喜！') +
       '</div>' +
       '</div>';
   }
