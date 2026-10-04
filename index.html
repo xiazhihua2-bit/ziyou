@@ -531,8 +531,11 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .loading-inline{ display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-3); }
 
 /* ==================== 首页深色年度分红卡 ==================== */
+/* ==================== 首页年度分红卡（深色卡，配色可自选） ====================
+ * 2026-10-05：底色 / 光晕 / 副色三件套由 data-hero 属性切换（settings.heroColor，本机偏好）。
+ * 新增一套配色 = 加一条 [data-hero="key"] 规则 + model.js 的 HERO_COLORS 表。 */
 .hero-dark{
-  background:linear-gradient(158deg,#3A3A3C 0%,var(--hero-bg) 58%,#232325 100%);
+  background:var(--hero-card-grad);
   border-radius:22px; padding:18px 18px 14px;
   box-shadow:0 10px 30px rgba(0,0,0,.16);
   margin-bottom:12px; color:var(--hero-text);
@@ -540,22 +543,54 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .hero-dark::after{
   content:""; position:absolute; right:-52px; top:-52px; width:190px; height:190px; border-radius:50%;
-  background:radial-gradient(circle, rgba(232,70,31,.22), rgba(232,70,31,0) 70%);
+  background:radial-gradient(circle, var(--hero-card-glow), rgba(0,0,0,0) 70%);
+}
+/* 默认（经典石墨）= 改造前的原配色 */
+.hero-dark{
+  --hero-card-grad:linear-gradient(158deg,#3A3A3C 0%,var(--hero-bg) 58%,#232325 100%);
+  --hero-card-glow:rgba(232,70,31,.22);
+  --hero-card-accent:var(--dividend-mid);
+}
+.hero-dark[data-hero="navy"]{
+  --hero-card-grad:linear-gradient(158deg,#1E3A63 0%,#14243F 58%,#0E1A2E 100%);
+  --hero-card-glow:rgba(232,70,31,.20);
+  --hero-card-accent:#E8A87C;
+}
+.hero-dark[data-hero="teal"]{
+  --hero-card-grad:linear-gradient(158deg,#12564A 0%,#0B3B33 58%,#072A24 100%);
+  --hero-card-glow:rgba(232,70,31,.20);
+  --hero-card-accent:#EDB68D;
+}
+.hero-dark[data-hero="umber"]{
+  --hero-card-grad:linear-gradient(158deg,#4A3418 0%,#33220F 58%,#26180A 100%);
+  --hero-card-glow:rgba(240,163,10,.24);
+  --hero-card-accent:#EFC08E;
+}
+.hero-dark[data-hero="wine"]{
+  --hero-card-grad:linear-gradient(158deg,#4E2030 0%,#3A1620 58%,#2A0F18 100%);
+  --hero-card-glow:rgba(232,70,31,.26);
+  --hero-card-accent:#F0B49C;
+}
+.hero-dark[data-hero="plum"]{
+  --hero-card-grad:linear-gradient(158deg,#33275A 0%,#221A38 58%,#171226 100%);
+  --hero-card-glow:rgba(232,70,31,.22);
+  --hero-card-accent:#E9AE9C;
 }
 .hd-status{ font-size:12.5px; color:var(--hero-dim); position:relative; z-index:1; }
-.hd-status b{ color:var(--dividend-mid); font-weight:650; }
+.hd-status b{ color:var(--hero-card-accent); font-weight:650; }
 .hd-row{ display:flex; align-items:flex-end; gap:10px; margin-top:10px; position:relative; z-index:1; }
 .hd-row .lbl{ font-size:12.5px; color:var(--hero-dim); }
 .hd-amount{
   font-size:38px; font-weight:750; letter-spacing:-1.4px; line-height:1.05;
-  color:#fff; font-variant-numeric:tabular-nums; margin-top:4px;
+  /* 2026-10-05：总分红由纯白改为分红红（深色底上最醒目仍不刺眼） */
+  color:#FF5A3C; font-variant-numeric:tabular-nums; margin-top:4px;
 }
-.hd-amount .cur{ font-size:21px; font-weight:650; margin-right:1px; color:var(--dividend-mid); }
+.hd-amount .cur{ font-size:21px; font-weight:650; margin-right:1px; color:var(--hero-card-accent); }
 .hd-badge{
   margin-left:auto; flex:0 0 auto; text-align:right;
   font-size:11.5px; color:var(--hero-dim);
 }
-.hd-badge b{ color:var(--dividend-mid); font-weight:700; font-size:13px; }
+.hd-badge b{ color:var(--hero-card-accent); font-weight:700; font-size:13px; }
 .hd-metrics{
   display:grid; grid-template-columns:repeat(3,1fr); gap:2px;
   margin-top:14px; position:relative; z-index:1;
@@ -563,7 +598,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hd-metric{ padding:8px 6px 6px; border-radius:10px; }
 .hd-metric .k{ font-size:11px; color:var(--hero-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hd-metric .v{ font-size:16px; font-weight:700; letter-spacing:-.4px; margin-top:2px; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.hd-metric.accent .v{ color:var(--dividend-mid); }
+.hd-metric.accent .v{ color:var(--hero-card-accent); }
 .hd-actions{ display:flex; gap:14px; justify-content:center; margin-top:10px; position:relative; z-index:1; }
 .hd-actions button{ font-size:12px; color:var(--hero-dim); display:inline-flex; align-items:center; gap:4px; }
 .hd-actions button:active{ opacity:.6; }
@@ -589,7 +624,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   border-bottom:1px dashed rgba(242,242,247,.5);
 }
 .hf-num:active{ background:rgba(255,255,255,.24); }
-.hf-num.hf-out{ color:var(--dividend-mid); }
+.hf-num.hf-out{ color:var(--hero-card-accent); }
 .hf-foot{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:9px; font-size:11px; }
 .hf-solve{ display:inline-flex; align-items:center; gap:5px; color:var(--hero-dim); }
 .hf-chip{
@@ -631,6 +666,49 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .cover-icon.on .box{ background:var(--warm-lit-grad); border-color:var(--warm-lit-line); }
 .cover-icon.next .box{ border-color:var(--dividend); border-style:dashed; }
+
+/* ---- 设置首页指标弹层里的「卡片配色」色板 ---- */
+.sheet-sec{ margin:12px 0 4px; }
+.sheet-sec-t{ font-size:12px; color:var(--text-3); margin-bottom:6px; }
+.hero-swatches{ display:flex; flex-wrap:wrap; gap:8px; }
+.hero-swatch{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 10px 5px 5px; border-radius:999px;
+  background:var(--card-2); font-size:12.5px; color:var(--text-2);
+  border:1.5px solid transparent; transition:transform .15s ease;
+}
+.hero-swatch:active{ transform:scale(.96); }
+.hero-swatch.active{ border-color:var(--dividend); color:var(--text); font-weight:600; }
+.hs-dot{ width:22px; height:22px; border-radius:7px; flex:0 0 auto; box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18); }
+.hs-dot[data-hero="graphite"]{ background:#2C2C2E; }
+.hs-dot[data-hero="navy"]{ background:#14243F; }
+.hs-dot[data-hero="teal"]{ background:#0B3B33; }
+.hs-dot[data-hero="umber"]{ background:#33220F; }
+.hs-dot[data-hero="wine"]{ background:#3A1620; }
+.hs-dot[data-hero="plum"]{ background:#221A38; }
+
+/* ---- 分红覆盖 · 两大类（生存 / 品质），点分类条手风琴展开该类明细 ---- */
+.cov-cats{ margin-top:10px; }
+.cover-cat{
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:9px 2px 7px; background:none;
+}
+.cover-cat .cc-ico{
+  width:30px; height:30px; border-radius:9px; flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; background:var(--card-2);
+}
+.cover-cat.open .cc-ico{ background:var(--warm-lit-grad); }
+.cover-cat .cc-main{ flex:1; min-width:0; }
+.cover-cat .cc-name{ display:block; font-size:14px; font-weight:600; letter-spacing:-.2px; }
+.cover-cat .cc-sub{ display:block; font-size:11.5px; color:var(--text-3); margin-top:1px; }
+.cover-cat .cc-right{
+  flex:0 0 auto; display:flex; align-items:center; gap:5px;
+  font-size:14px; font-weight:650; color:var(--dividend); font-variant-numeric:tabular-nums;
+}
+.cover-cat.empty .cc-right{ color:var(--text-3); }
+.cover-cat .cc-caret{ font-size:12px; font-weight:400; color:var(--text-3); }
+.cover-cat + .bar{ margin-bottom:2px; }
 .cover-icon .nm{ font-size:10px; color:var(--text-2); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .cover-icon.on .nm{ color:var(--dividend); font-weight:600; }
 
@@ -1401,7 +1479,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .fs-ticks{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); padding:0 4px; }
 
-/* 提取抵扣行（再投滑杆下方，随滑杆实时联动） */
+/* 提取抵扣行（试算滑杆下方，随滑杆实时联动） */
 .fs-offset{
   margin-top:10px; padding:9px 13px; border-radius:11px;
   font-size:13px; font-weight:550; line-height:1.55;
@@ -2652,6 +2730,19 @@ XJ.model = (function () {
     { key: 'monthlyDividend',  label: '月均预测分红', hint: '预测年度分红 ÷ 12' },
   ];
 
+  /* ---- 首页年度分红卡可选配色（2026-10-05：用户自选，本机偏好、不参与跨设备同步） ----
+   * 每套 = 底色渐变 + 右上角光晕 + 指标/徽章副色三件套，副色按底色微调以保证对比度。
+   * 新增一套要同时改：这里的表 + style.css 的 .hero-dark[data-hero="key"] 两条规则。 */
+  var HERO_COLORS = [
+    { key: 'graphite', label: '经典石墨' },
+    { key: 'navy',     label: '藏青蓝墨' },
+    { key: 'teal',     label: '墨绿青瓷' },
+    { key: 'umber',    label: '暖墨棕赭' },
+    { key: 'wine',     label: '酒红墨' },
+    { key: 'plum',     label: '紫墨夜色' },
+  ];
+  var HERO_COLOR_DEFAULT = 'graphite';
+
   /* ---- 证券代码规范化（委托给 market.js，支持 A股/北交所/港股/美股/场外基金） ---- */
   var SYMBOL_RE = /^(sh|sz|bj|hk|us|of)[A-Za-z0-9]{1,8}$/;
 
@@ -2719,6 +2810,8 @@ XJ.model = (function () {
         onboarded: false,
         heroMetrics: HERO_METRICS.map(function (m) { return m.key; }),
         heroCollapsed: false,
+        /* 大卡片配色（本机偏好，不参与跨设备同步 —— 与 theme 同处理方式） */
+        heroColor: HERO_COLOR_DEFAULT,
         /* 深色卡「测算带」参数（每年投入 / 股息率 / 年数 / 再投比例 / 反解目标）。
            首次启动由 ensureBootstrapped 从 projection 派生起点，之后与「展望未来」完全独立。
            yieldPct = null 表示「跟随当前组合市值息率」，用户一旦手改就固定下来。 */
@@ -2971,6 +3064,10 @@ XJ.model = (function () {
     }
     if (!Array.isArray(state.settings.heroMetrics) || !state.settings.heroMetrics.length) {
       state.settings.heroMetrics = HERO_METRICS.map(function (m) { return m.key; });
+    }
+    /* 大卡片配色：非法值一律回落到默认石墨（老库升级时该字段不存在 → 补默认值） */
+    if (!HERO_COLORS.some(function (c) { return c.key === state.settings.heroColor; })) {
+      state.settings.heroColor = HERO_COLOR_DEFAULT;
     }
     /* 深色卡「测算带」：首次启动借「展望未来」的定投与年数当起点，之后两者完全独立。
        yieldPct 留 null = 跟随当前组合市值息率（用户手改后落成数字，不再浮动）。 */
@@ -3276,6 +3373,8 @@ XJ.model = (function () {
     EXPENSE_TEMPLATE: EXPENSE_TEMPLATE,
     LEGACY_EXPENSE_TEMPLATE: LEGACY_EXPENSE_TEMPLATE,
     HERO_METRICS: HERO_METRICS,
+    HERO_COLORS: HERO_COLORS,
+    HERO_COLOR_DEFAULT: HERO_COLOR_DEFAULT,
     EMOJI_GROUPS: EMOJI_GROUPS,
     KEY_EMOJI: KEY_EMOJI,
     DEFAULT_OCR_KEY: DEFAULT_OCR_KEY,
@@ -3859,7 +3958,9 @@ XJ.syncCore = (function () {
 
   /* 同步的 settings 白名单。刻意【不含】ocr（含 API Key）、
      lastQuoteAt / lastPlanAt / quoteRefreshMs / fx（本机口径）、
-     payoutPopupAt / heroCollapsed（「这台设备弹过/收起过没」，同步只会添乱）。 */
+     payoutPopupAt / heroCollapsed（「这台设备弹过/收起过没」，同步只会添乱）、
+     theme / heroColor（外观是本机偏好：手机选深色、电脑选浅色不该互相覆盖）。
+     ★ 新增 settings 字段时先想清楚：跨设备一致 → 进白名单；本机偏好 → 不进。 */
   var SETTINGS_SYNC = [
     'defaultAccountId', 'reminderLeadDays', 'heroMetrics', 'heroForecast',
     'defaultDividendBasis', 'showLogo', 'unsupportedDividend', 'indexCompare',
@@ -8753,16 +8854,24 @@ XJ.calc = (function () {
 
   function coverage(annualDividend, expenses, assumedYieldPct) {
     var ay = assumedYieldPct === undefined || assumedYieldPct === null ? 7 : U.n0(assumedYieldPct);
+    /* 2026-10-05：分红先填【生存支出】、生存全亮后才流向【品质支出】；
+       类内仍按金额从便宜到贵（同一笔钱点亮更多项的最优点亮顺序）。 */
+    var CAT_ORDER = { essential: 0, quality: 1 };
     var items = expenses
       .filter(function (e) { return e.enabled; })
       .map(function (e) {
         return {
           expenseId: e.expenseId, key: e.key, label: e.label,
+          category: e.category === 'quality' ? 'quality' : 'essential',
           monthlyAmount: U.n0(e.monthlyAmount),
           annualAmount: U.n0(e.monthlyAmount) * 12,
         };
       })
-      .sort(function (a, b) { return a.annualAmount - b.annualAmount; });
+      .sort(function (a, b) {
+        var ca = CAT_ORDER[a.category] || 0, cb = CAT_ORDER[b.category] || 0;
+        if (ca !== cb) return ca - cb;
+        return a.annualAmount - b.annualAmount;
+      });
 
     var div = U.n0(annualDividend);
     var running = 0, lit = 0;
@@ -8778,6 +8887,11 @@ XJ.calc = (function () {
         return Object.assign({}, it, { lit: true, progress: 100, remaining: 0, covered: 0 });
       }
       var avail = Math.max(0, div - running);
+      /* ★ 部分覆盖也要把额度占掉：剩余分红一旦被这一项吃掉，后面任何项都不该再点亮。
+         旧实现只在「整项点亮」时推进 running —— 按金额升序时不显形（后面的项只会更贵），
+         改成「先生存后品质」后顺序不再单调，会出现「生存项半覆盖 + 便宜品质项仍点亮」
+         的双重计入。这里统一占额，与独立复算逐位对齐。 */
+      running += avail;
       return Object.assign({}, it, {
         lit: false,
         progress: avail / it.annualAmount * 100,
@@ -8792,8 +8906,28 @@ XJ.calc = (function () {
     var needMore = nextItem ? nextItem.remaining : 0;
     var addCapital = (needMore > 0 && ay > 0) ? needMore / (ay / 100) : 0;
 
+    /* 两大类聚合（生存 / 品质）：分红先填生存、生存全亮后才流到品质，
+       所以生存未满时品质组的 coveredAnnual 必然是 0（瀑布在类间不回头）。 */
+    var groups = { essential: catGroup('essential'), quality: catGroup('quality') };
+    function catGroup(cat) {
+      var g = { category: cat, count: 0, litCount: 0, monthlyAmount: 0,
+        totalAnnual: 0, coveredAnnual: 0, remaining: 0, progress: 0 };
+      out.forEach(function (it) {
+        if (it.category !== cat) return;
+        g.count++;
+        if (it.lit) g.litCount++;
+        g.totalAnnual += it.annualAmount;
+        g.monthlyAmount += it.monthlyAmount;
+        g.coveredAnnual += it.covered || 0;
+      });
+      g.remaining = Math.max(0, g.totalAnnual - g.coveredAnnual);
+      g.progress = g.totalAnnual > 0 ? U.clamp(g.coveredAnnual / g.totalAnnual * 100, 0, 100) : 0;
+      return g;
+    }
+
     return {
       items: out,
+      groups: groups,
       litCount: lit,
       totalCount: items.length,
       coveredAnnual: running,
@@ -9074,6 +9208,9 @@ XJ.calc = (function () {
     daysPerMonth: 30.44,                // 日↔月显示换算（年平均月长度）
     capitalRule4: 0.04,                 // 4% 法则（仅提示条参考文案用）
     futureMonthsCap: 600,               // 覆盖率外推封顶 50 年
+    /* 2026-10-05：去掉「分红再投」滑杆后引擎固定值 = 0（分红全额抵扣花费、不滚入复利）。
+       settings.fire.reinvestPct 字段保留只为兼容存量数据，引擎不再读它。 */
+    reinvestFixed: 0,
   };
 
   /** 'YYYY-MM' 加 n 个月（n 可负），返回 'YYYY-MM' */
@@ -9099,11 +9236,13 @@ XJ.calc = (function () {
   }
 
   /**
-   * 提取抵扣：把「不再投的那份分红」当作可直接支配的现金流，从该档月支出里扣掉。
-   *   offset    = P0/12 × (1 − r/100)      持仓月均分红中不再投的部分
-   *   effective = max(0, base − offset)     抵扣后目标支出（全站统一口径）
-   *   covered   = 抵扣额已够覆盖整档支出 → effective = 0，界面判「已达成」
-   * ★ r = 100%（默认）时 offset 恰为 0、effective === base —— 与改造前逐位一致。
+   * 提取抵扣：把分红当作可直接支配的现金流，从该档月支出里扣掉。
+   *   offset    = P0/12 × (1 − r/100)      持仓月均分红中可自由支配的部分
+   *   effective = max(0, base − offset)     抵扣后目标支出（= 按当前口径今天的现金缺口）
+   *   covered   = 分红已够覆盖整档支出 → effective = 0，界面判「已达成」
+   * ★ 2026-10-05 去掉「分红再投」滑杆：引擎固定 r = FIRE.reinvestFixed = 0
+   *   （分红全额抵扣花费、不滚入复利；积累只由「每月攒股」驱动）。
+   *   r 参数保留只是为了纯函数单测，生产路径（fireCfg / fireTargets）一律传 0。
    * ★ offset 是【持仓级】的（分红与档位无关），三档只差分母 base。
    */
   function fireEffectiveSpend(cfg) {
@@ -9136,8 +9275,7 @@ XJ.calc = (function () {
     var basis = yieldBasis === 'cost' ? 'cost' : 'market';
     var yieldPct = (basis === 'cost') ? s.costYield : s.compositeYield;
     if (yieldPct !== null && !isFinite(yieldPct)) yieldPct = null;
-    var fire = (state.settings && state.settings.fire) || {};
-    var r = U.clamp(U.n0(fire.reinvestPct), 0, 100);
+    var r = FIRE.reinvestFixed;      // 固定 0：分红全额抵扣，不再有「再投比例」这个变量
     var tiers = {};
     ['lean', 'regular', 'fat'].forEach(function (t) {
       var monthly = tierMonthlySpend(state.expenses, t);
@@ -9188,7 +9326,7 @@ XJ.calc = (function () {
       P0: Math.max(0, U.n0(s.totalPredicted)),       // 现有持仓预测年分红（恒定）
       X: drip * 12,                                   // 年投入（新钱）
       y: dripYieldPct,                                // 攒股息率 %
-      r: U.clamp(U.n0(fire.reinvestPct), 0, 100),     // 再投比例 %
+      r: FIRE.reinvestFixed,                  // 固定 0（再投滑杆已移除，注释见 FIRE.reinvestFixed）
       monthlySpend: monthlySpend,                     // 目标月支出（当前档模拟值）
       drip: drip,
       dripYieldPct: dripYieldPct,
@@ -9351,6 +9489,7 @@ XJ.calc = (function () {
     var tScene = fireTimeline(state, acc, cfg2);
     var cleanFire = { yieldBasis: fire.yieldBasis, reinvestPct: fire.reinvestPct,
       tierSims: { lean: {}, regular: {}, fat: {} } };   // 全默认（monthlySpend/dripYieldPct=null, drip=5000）
+    // 注：cleanFire 曾带 reinvestPct —— 再投滑杆移除后引擎不再读它，留着无害、删了更干净
     var tBase = fireTimeline(state, acc, fireCfg(state, acc, tier, cleanFire));
     var deltaMonths = (tScene.solvable && tBase.solvable)
       ? tScene.months - tBase.months : null;
@@ -11028,6 +11167,7 @@ XJ.store = (function () {
       annualMonth: null,        // 年度总览选中月份
       calView: 'calendar',      // calendar | annual
       pendCollapsed: false,     // 分红日历「等待除权」卡片是否折叠
+      coverOpenCat: 'essential',// 首页「分红覆盖」卡：展开哪个分类（'essential'|'quality'|null；手风琴，默认展开生存）
       fireSpendMode: 'month',   // FIRE 试算 · 花费显示单位（month | day，纯显示不持久化）
       firePrRange: 'all',       // FIRE · FI 进度曲线时间尺度（today|1m|3m|6m|ytd|all|custom）
       firePrBeg: null,          // FI 进度自定义区间起（'YYYY-MM-DD'）
@@ -12565,7 +12705,11 @@ XJ.views.overview = (function () {
       : '<button data-act="toggleHero">收起 ⌃</button>' +
         '<button data-act="openMetricSettings">⚙ 设置指标</button>';
 
-    return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '">' +
+    /* 配色由 settings.heroColor 决定（本机偏好、不同步）；非法值已在 model.normalize 兜底 */
+    var heroColor = XJ.model.HERO_COLORS.some(function (c) { return c.key === cfg.heroColor; })
+      ? cfg.heroColor : XJ.model.HERO_COLOR_DEFAULT;
+
+    return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '">' +
       '<div class="hd-status">' + statusLine + '</div>' +
       '<div class="hd-row">' +
       '<div>' +
@@ -12638,27 +12782,64 @@ XJ.views.overview = (function () {
       '</div></div>';
   }
 
-  /* ---------------- 分红覆盖 ---------------- */
+  /* ---------------- 分红覆盖 ----------------
+   * 2026-10-05：支出按两大类展示（生存 / 品质），点分类条才展开该类具体支出（手风琴，
+   *   默认展开生存类）。点亮顺序由 calc.coverage() 决定：分红先填生存、生存全亮后才流向品质。
+   */
+  var COVER_CATS = [
+    { key: 'essential', name: '生存支出', icon: '🛡' },
+    { key: 'quality', name: '品质支出', icon: '✨' },
+  ];
+
+  function catOf(e) { return e && e.category === 'quality' ? 'quality' : 'essential'; }
+
   function coverageCard(st, cov, ms) {
-    /* 先算出「已点亮」集合，再排序：已覆盖的排左边、未覆盖的排右边，同组内按原顺序。
-       （依赖 litKeys，所以顺序不能颠倒） */
+    /* 「已点亮」集合先算好，明细区用它排序：已覆盖排左、未覆盖排右，同组内按原顺序。 */
     var litKeys = {};
     cov.items.forEach(function (it) { if (it.lit) litKeys[it.key] = true; });
     var nextKey = cov.nextItem ? cov.nextItem.key : null;
-    var list = st.state.expenses.slice().sort(function (a, b) {
-      var la = litKeys[a.key] ? 0 : 1;
-      var lb = litKeys[b.key] ? 0 : 1;
-      if (la !== lb) return la - lb;
-      return (a.sortOrder || 0) - (b.sortOrder || 0);
-    });
 
-    var icons = list.map(function (e) {
-      var on = litKeys[e.key];
-      var cls = 'cover-icon' + (on ? ' on' : '') + (e.key === nextKey ? ' next' : '');
-      return '<button class="' + cls + '" data-act="openExpenseEditor" data-key="' + U.esc(e.key) + '">' +
-        '<span class="box">' + U.esc(e.icon || '💰') + '</span>' +
-        '<span class="nm">' + U.esc(e.label) + '</span>' +
-        '</button>';
+    /* 展开态：手风琴 —— 点同一类再次点击即收起（null） */
+    var openCat = (st.ui.coverOpenCat === 'quality') ? 'quality'
+      : (st.ui.coverOpenCat === 'essential' ? 'essential' : null);
+
+    function itemIcons(cat) {
+      var list = st.state.expenses.filter(function (e) {
+        return e.enabled && catOf(e) === cat;
+      }).sort(function (a, b) {
+        var la = litKeys[a.key] ? 0 : 1;
+        var lb = litKeys[b.key] ? 0 : 1;
+        if (la !== lb) return la - lb;
+        return (a.sortOrder || 0) - (b.sortOrder || 0);
+      });
+      if (!list.length) {
+        return '<div class="tiny" style="padding:2px 2px 8px">这一类还没有支出项 —— 去 FIRE 视图的「支出分组」里给支出选分类。</div>';
+      }
+      return '<div class="cover-icons">' + list.map(function (e) {
+        var on = litKeys[e.key];
+        var cls = 'cover-icon' + (on ? ' on' : '') + (e.key === nextKey ? ' next' : '');
+        return '<button class="' + cls + '" data-act="openExpenseEditor" data-key="' + U.esc(e.key) + '">' +
+          '<span class="box">' + U.esc(e.icon || '💰') + '</span>' +
+          '<span class="nm">' + U.esc(e.label) + '</span>' +
+          '</button>';
+      }).join('') + '</div>';
+    }
+
+    var cats = COVER_CATS.map(function (c) {
+      var g = (cov.groups && cov.groups[c.key]) ||
+        { count: 0, litCount: 0, monthlyAmount: 0, progress: 0 };
+      var open = openCat === c.key;
+      return '<button class="cover-cat' + (open ? ' open' : '') + (g.count ? '' : ' empty') +
+        '" data-act="toggleCoverCat" data-v="' + c.key + '">' +
+        '<span class="cc-ico">' + c.icon + '</span>' +
+        '<span class="cc-main"><span class="cc-name">' + c.name + '</span>' +
+        '<span class="cc-sub">' + U.moneySign(g.monthlyAmount, 0) + '/月 · ' +
+        g.litCount + '/' + g.count + ' 已覆盖</span></span>' +
+        '<span class="cc-right">' + (g.count ? Math.round(g.progress) + '%' : '—') +
+        '<span class="cc-caret">' + (open ? '⌃' : '⌄') + '</span></span>' +
+        '</button>' +
+        '<div class="bar"><i style="width:' + g.progress.toFixed(1) + '%"></i></div>' +
+        (open ? itemIcons(c.key) : '');
     }).join('');
 
     return '<div class="card">' +
@@ -12666,18 +12847,18 @@ XJ.views.overview = (function () {
       '<h2>分红覆盖</h2><div class="spacer"></div>' +
       '<span class="hint">' + U.esc(ms.name) + '</span>' +
       '<button class="ghost-btn" data-act="gotoTab" data-tab="find">详情</button></div>' +
-      '<div class="cover-icons">' + icons + '</div>' +
       '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 8px">' +
       '<div style="font-size:24px;font-weight:750;letter-spacing:-.8px;color:var(--dividend)">' + cov.litCount +
       '<span style="font-size:14px;color:var(--text-3);font-weight:600">/' + cov.totalCount + '</span></div>' +
       '<div class="muted" style="font-size:12.5px">项支出已被股息覆盖</div>' +
       '</div>' +
       '<div class="bar"><i style="width:' + cov.overallProgress.toFixed(1) + '%"></i></div>' +
-      '<div class="tiny" style="margin-top:8px">' +
+      '<div class="cov-cats">' + cats + '</div>' +
+      '<div class="tiny" style="margin-top:6px">分红先覆盖生存支出，生存全部满足后再流向品质支出' +
       (cov.nextItem
-        ? '再攒 <b class="c-div">' + U.moneySign(cov.needMore) + '</b> 分红就能点亮 ' +
+        ? '；再攒 <b class="c-div">' + U.moneySign(cov.needMore) + '</b> 分红就能点亮 ' +
         (cov.nextItem.icon || '') + U.esc(cov.nextItem.label)
-        : '全部支出项已被股息覆盖，恭喜！') +
+        : '；全部支出项已被股息覆盖，恭喜！') +
       '</div>' +
       '</div>';
   }
@@ -13938,7 +14119,6 @@ XJ.views.plan = (function () {
   }
   function ticksFor(k) {
     if (k === 'dripYieldPct') return '<span>0%</span><span>10%</span><span>20%</span><span>30%</span>';
-    if (k === 'reinvest') return '<span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>';
     if (k === 'drip') return '<span>0</span><span>1万</span><span>2万</span><span>3万</span><span>4万</span><span>5万</span>';
     return '<span>0</span><span>1万</span><span>2万</span><span>3万</span>';
   }
@@ -13961,10 +14141,11 @@ XJ.views.plan = (function () {
         : '投入与息率不足以增长——请调高攒股金额或息率';
     } else if (tl.reached) {
       big = '已达成';
-      /* reached 有两种来路：纯被动收入覆盖 / 不再投分红把目标抵扣到 0 —— 文案如实区分 */
+      /* reached 有两种来路：全部分红覆盖目标支出 / 分红抵扣把目标抵到 0 —— 文案如实区分
+         （引擎固定 r=0，这两路其实是同一条件：P0/12 ≥ base ⟺ effective = 0） */
       sub = tl.coveredByOffset
-        ? '🎉 不再投的分红已抵扣全部目标支出'
-        : '🎉 全部分红已覆盖目标支出（达成后停止再投、全额转消费）';
+        ? '🎉 分红已抵扣全部目标支出'
+        : '🎉 全部分红已覆盖目标支出';
     } else {
       var ym = tl.date || U.ymOf(U.today());
       big = Number(ym.slice(0, 4)) + ' 年 ' + Number(ym.slice(5, 7)) + ' 月';
@@ -13975,13 +14156,12 @@ XJ.views.plan = (function () {
       '<span class="fs-mini-seg fi-glass" role="group">' + tierChipsHtml(tier) + '</span></div>' +
       '<div class="fire-big" id="fire-big-num" data-anim="S">' + big + '</div>' +
       '<div class="fire-sub" id="fire-big-sub" data-anim="A">' + sub + '</div>' +
-      '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红（再投 ' +
-      U.n0(fire.reinvestPct) + '%，可在下方试算卡调节）；达成口径 = 全部分红 ≥ 目标支出，届时停止再投即可' +
-      '</div>' +
+      '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红；' +
+      '达成口径 = 全部分红 ≥ 目标支出（分红不再滚入复利，积累只由「每月攒股」驱动）</div>' +
       '</div>';
   }
 
-  /* ---------------- 卡 2：试算滑杆（四根：花费/攒股/息率/再投） ---------------- */
+  /* ---------------- 卡 2：试算滑杆（三根：花费/攒股/息率；再投滑杆已移除） ---------------- */
   function sliderCardHtml(st, fire, tier, cfg, targets) {
     var spendMode = st.ui.fireSpendMode === 'day' ? 'day' : 'month';
     var spendVal = spendMode === 'day'
@@ -13999,7 +14179,7 @@ XJ.views.plan = (function () {
     var touched = sim.monthlySpend !== null || (sim.drip !== null && sim.drip !== 5000) || sim.dripYieldPct !== null;
     var tip;
     if (touched) {
-      var cleanFire = { yieldBasis: 'market', reinvestPct: fire.reinvestPct, tierSims: { lean: {}, regular: {}, fat: {} } };
+      var cleanFire = { yieldBasis: 'market', tierSims: { lean: {}, regular: {}, fat: {} } };
       var baseTl = X.fireTimeline(st.state, st.acc(), X.fireCfg(st.state, st.acc(), tier, cleanFire));
       var cur = X.fireTimeline(st.state, st.acc(), cfg);
       if (cur.solvable && !cur.reached && baseTl.solvable && !baseTl.reached) {
@@ -14019,12 +14199,13 @@ XJ.views.plan = (function () {
       ? '暂无法测算'
       : U.moneySign(tierTarget.fireNumber, 0) + '（按当前市值息率 ' + U.pct(targets.yieldPct === null ? 0 : targets.yieldPct, 2) + ' 折算）';
 
-    /* 提取抵扣行：随「分红再投」滑杆实时联动（firePatchDom 就地更新同一 id）。
-       base = 当前滑杆模拟支出（cfg.monthlySpend），offset = 持仓月均分红 ×（1−r） */
+    /* 提取抵扣行：分红全额抵扣花费（引擎固定 r=0，offset = 持仓月均分红）。
+       ★ 与 app.js firePatchDom 同结构（同一 id 就地更新）。
+       达成判定与「抵扣后目标 = 0」是同一条件：这里显示 🎉 时大卡片必然也是「已达成」。 */
     var eff = X.fireEffectiveSpend(cfg);
     var effLine = '<div class="fs-offset" id="fire-spend-eff">' +
-      '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
-      '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+      '<span class="fs-off-amt">分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月</span>' +
+      ' · 抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
       (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '') +
       '</div>';
 
@@ -14034,8 +14215,6 @@ XJ.views.plan = (function () {
       sliderHtml('monthlySpend', spendLabel, 0, X.FIRE.spendMax, X.FIRE.spendStep, cfg.monthlySpend, spendVal, spendSwitch) +
       sliderHtml('drip', '每月攒股', 0, X.FIRE.dripMax, X.FIRE.dripStep, cfg.drip, U.moneySign(cfg.drip, 0)) +
       sliderHtml('dripYieldPct', '攒股息率（市值口径）', 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1)) +
-      /* 再投比例精确到 1%：每 10% 一档太粗，抵扣额对再投很敏感 */
-      sliderHtml('reinvest', '分红再投', 0, 100, 1, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
       effLine +
       tip +
       '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + capText +
@@ -14188,7 +14367,7 @@ XJ.views.plan = (function () {
     var head = '<div class="cov-head"><span class="cov-num" data-anim="S">' +
       (avgPct === null ? (cov.coveredByOffset ? '🎉' : '—') : U.pct(avgPct, 1)) + '</span>' +
       '<span class="cov-hint">' + (cov.coveredByOffset
-        ? '抵扣后目标已归零——不再投的分红已完全覆盖'
+        ? '目标已归零——分红已完全覆盖'
         : '近 12 个月平均 · 达到 100% 即 ' + tierName(tier) + ' 达成') + '</span></div>';
 
     var range = st.ui.fireCovRange || 'all';
@@ -14208,7 +14387,7 @@ XJ.views.plan = (function () {
     /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则）。
        ★ 口径与曲线分母一致 = 档位原始目标支出 base（总额口径），
          缺口 = base − 当前月均被动收入，与大卡片达成日同源自洽；
-         effective 只做「按当前再投习惯今天的现金缺口」展示，不参与达成判定。 */
+         effective 只做「分红抵扣后今天的现金缺口」展示，不参与达成判定。 */
     var passiveNow = X.fireMonthlyPassive(cfg, 0);
     var eff = X.fireEffectiveSpend(cfg);
     var gapM = Math.max(0, eff.base - passiveNow);
@@ -14218,7 +14397,7 @@ XJ.views.plan = (function () {
     var yPct = targets.yieldPct;
     var newDivM = drip * (yPct === null ? 0 : yPct) / 1200;
     var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，目标月支出 ' + U.moneySign(eff.base, 2) +
-      (eff.offset > 0 ? '（不再投分红抵扣 ' + U.moneySign(eff.offset, 2) + '，按当前再投习惯今天还需 ' + U.moneySign(eff.effective, 2) + '）' : '') +
+      (eff.offset > 0 ? '（分红抵扣 ' + U.moneySign(eff.offset, 2) + '，抵扣后今天还需 ' + U.moneySign(eff.effective, 2) + '）' : '') +
       (gapM > 0 ? '——完全覆盖还差 ' + U.moneySign(gapM, 2) + '/月' : '——已完全覆盖 🎉') +
       '；每月攒股 ' + U.moneySign(drip, 0) + ' 按市值息率新增月分红 ' + U.moneySign(newDivM, 2) +
       (tierTarget && tierTarget.fireNumber !== null
@@ -16341,9 +16520,29 @@ XJ.views.symbol = (function () {
         ' style="width:20px;height:20px;flex:0 0 auto">' +
         '</label>';
     }).join('');
-    html += '<button class="btn-block" data-act="saveMetricSettings">保存</button>' +
+    /* 卡片配色（本机偏好、不参与同步）：选完即时生效，不用等保存 */
+    var curColor = S.state.settings.heroColor || M.HERO_COLOR_DEFAULT;
+    var swatches = M.HERO_COLORS.map(function (c) {
+      return '<button class="hero-swatch' + (c.key === curColor ? ' active' : '') +
+        '" data-act="setHeroColor" data-v="' + U.esc(c.key) + '">' +
+        '<span class="hs-dot" data-hero="' + U.esc(c.key) + '"></span>' +
+        '<span class="hs-name">' + U.esc(c.label) + '</span></button>';
+    }).join('');
+
+    html += '<div class="sheet-sec"><div class="sheet-sec-t">卡片配色</div>' +
+      '<div class="hero-swatches">' + swatches + '</div>' +
+      '<div class="tiny" style="margin-top:6px">只影响这台设备（不参与跨设备同步）。</div></div>' +
+      '<button class="btn-block" data-act="saveMetricSettings">保存</button>' +
       '<div class="tiny" style="margin-top:8px">至少选 1 个，最多 6 个。</div>';
     UI.openSheet({ title: '设置首页指标', html: html });
+  });
+
+  UI.on('setHeroColor', function (node) {
+    var v = node.getAttribute('data-v');
+    if (!M.HERO_COLORS.some(function (c) { return c.key === v; })) return;
+    S.commit(function (s) { s.settings.heroColor = v; });
+    UI.closeSheet();
+    UI.toast('卡片配色已切换');
   });
 
   UI.on('saveMetricSettings', function (node) {
@@ -16831,6 +17030,12 @@ XJ.views.symbol = (function () {
 
   UI.on('togglePend', function () {
     S.setUI({ pendCollapsed: !S.ui.pendCollapsed });
+  });
+
+  /* 分红覆盖卡：两大类手风琴（点同一类收起，null = 全收起） */
+  UI.on('toggleCoverCat', function (node) {
+    var v = node.getAttribute('data-v');
+    S.setUI({ coverOpenCat: S.ui.coverOpenCat === v ? null : v });
   });
 
   UI.on('setCalView', function (node) {
@@ -18606,7 +18811,6 @@ XJ.views.symbol = (function () {
     var fire = S.state.settings.fire;
     var tier = fire.activeTier;
     var f2 = Object.assign({}, fire);
-    if (k === 'reinvest') { f2.reinvestPct = v; return C.fireCfg(S.state, S.acc(), tier, f2); }
     var sim = Object.assign({}, fire.tierSims[tier]);
     if (k === 'monthlySpend') sim.monthlySpend = v;
     else if (k === 'drip') sim.drip = v;
@@ -18642,7 +18846,7 @@ XJ.views.symbol = (function () {
     if (!tl.solvable) {
       return tl.reason === 'beyond-limit' ? '按当前参数 50 年内无法达成' : '投入与息率不足以增长——请调高攒股金额或息率';
     }
-    if (tl.reached) return '🎉 当前被动收入已覆盖目标支出';
+    if (tl.reached) return '🎉 全部分红已覆盖目标支出';
     var startYear = Number(U.ymOf(U.today()).slice(0, 4));
     var endYear = startYear + Math.ceil(tl.months / 12);
     return '预计 ' + endYear + '–' + (endYear + 1) + ' 年间达成';
@@ -18659,8 +18863,7 @@ XJ.views.symbol = (function () {
     if (sub) sub.textContent = fireSubText(tl);
     if (tip) {
       var base = C.fireTimeline(S.state, S.acc(), C.fireCfg(S.state, S.acc(), S.state.settings.fire.activeTier,
-        { yieldBasis: S.state.settings.fire.yieldBasis, reinvestPct: S.state.settings.fire.reinvestPct,
-          tierSims: { lean: {}, regular: {}, fat: {} } }));
+        { yieldBasis: S.state.settings.fire.yieldBasis, tierSims: { lean: {}, regular: {}, fat: {} } }));
       var seg = '';
       if (tl.solvable && base.solvable && !tl.reached && !base.reached && tl.months !== base.months) {
         var d = base.months - tl.months;           // 正 = 提前
@@ -18676,12 +18879,13 @@ XJ.views.symbol = (function () {
           U.pct(cap4.yieldPct === null ? 0 : cap4.yieldPct, 2) + ' 折算）');
       if (tip.textContent !== tipTxt) tip.textContent = tipTxt;
     }
-    /* 提取抵扣行：随再投/花费滑杆实时联动（与 plan.js 的 effLine 同结构，微档动效） */
+    /* 提取抵扣行：随花费/攒股/息率滑杆实时联动（与 plan.js 的 effLine 同结构，微档动效）。
+       分红全额抵扣（引擎固定 r=0），offset 只随持仓分红变化，不随滑杆变。 */
     var effEl = document.getElementById('fire-spend-eff');
     if (effEl) {
       var eff = C.fireEffectiveSpend(cfg);
-      var effTxt = '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
-        '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+      var effTxt = '<span class="fs-off-amt">分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月</span>' +
+        ' · 抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
         (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '');
       if (effEl.__effTxt !== effTxt) { effEl.__effTxt = effTxt; effEl.innerHTML = effTxt; }
     }
@@ -18703,35 +18907,11 @@ XJ.views.symbol = (function () {
             : U.moneySign(v, 0);
         } else if (k === 'drip') {
           val.textContent = U.moneySign(v, 0);
-        } else if (k === 'reinvest') {
-          val.textContent = U.pct(v, 0);
         } else {
           val.textContent = U.pct(v, 1);
         }
       }
       node.style.setProperty('--p', ((v - Number(node.min)) / (Number(node.max) - Number(node.min)) * 100) + '%');
-      /* 再投 → 每月花费视觉联动：把「抵扣后目标」同步显示到花费滑杆。
-         ★ 程序设 value 不会触发 change，也就不会持久化 —— 「每月花费」滑杆的语义
-           始终是「总目标支出（抵扣前）」，抵扣永远只减一次，不存在双重扣减。
-           松手后整页重渲染会显示回台账值，抵扣行与自由日仍按抵扣后口径（那才是真相）。 */
-      if (k === 'reinvest') {
-        var cfgR = fireCfgWithOverride('reinvest', v);
-        var effR = C.fireEffectiveSpend(cfgR);
-        var msEl = document.querySelector('.fs-range[data-k="monthlySpend"]');
-        var msVal = document.getElementById('fs-val-monthlySpend');
-        if (msEl) {
-          var lo = Number(msEl.min), hi = Number(msEl.max);
-          /* value 会被浏览器按 step 网格吸附（如 3066.67 → 3070），这是把手位置的正常行为；
-             显示文本与填充仍用未吸附的抵扣后目标，保证与抵扣行逐位一致。 */
-          msEl.value = effR.effective;
-          msEl.style.setProperty('--p', ((effR.effective - lo) / (hi - lo) * 100) + '%');
-        }
-        if (msVal) {
-          msVal.textContent = S.ui.fireSpendMode === 'day'
-            ? '¥' + (effR.effective / C.FIRE.daysPerMonth).toFixed(2) + '/日'
-            : U.moneySign(effR.effective, 0);
-        }
-      }
       firePatchDom(fireCfgWithOverride(k, v));
     });
   });
@@ -18739,10 +18919,6 @@ XJ.views.symbol = (function () {
   UI.on('fireSliderCommit', function (node) {
     var k = node.getAttribute('data-k');
     var v = Number(node.value);
-    if (k === 'reinvest') {
-      S.commit(function (s) { s.settings.fire.reinvestPct = v; });
-      return;
-    }
     var tier = S.state.settings.fire.activeTier;
     S.commit(function (s) {
       var sim = s.settings.fire.tierSims[tier];
