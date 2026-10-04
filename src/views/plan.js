@@ -64,7 +64,7 @@ XJ.views.plan = (function () {
       /* reached 有两种来路：纯被动收入覆盖 / 不再投分红把目标抵扣到 0 —— 文案如实区分 */
       sub = tl.coveredByOffset
         ? '🎉 不再投的分红已抵扣全部目标支出'
-        : '🎉 当前被动收入已覆盖目标支出';
+        : '🎉 全部分红已覆盖目标支出（达成后停止再投、全额转消费）';
     } else {
       var ym = tl.date || U.ymOf(U.today());
       big = Number(ym.slice(0, 4)) + ' 年 ' + Number(ym.slice(5, 7)) + ' 月';
@@ -76,7 +76,8 @@ XJ.views.plan = (function () {
       '<div class="fire-big" id="fire-big-num" data-anim="S">' + big + '</div>' +
       '<div class="fire-sub" id="fire-big-sub" data-anim="A">' + sub + '</div>' +
       '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红（再投 ' +
-      U.n0(fire.reinvestPct) + '%，可在下方试算卡调节）</div>' +
+      U.n0(fire.reinvestPct) + '%，可在下方试算卡调节）；达成口径 = 全部分红 ≥ 目标支出，届时停止再投即可' +
+      '</div>' +
       '</div>';
   }
 
@@ -305,18 +306,20 @@ XJ.views.plan = (function () {
     var covChips = rangeChipsHtml(range, ['3m', '6m', 'ytd', 'all', 'custom'], 'setFireCovRange');
 
     /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则）。
-       ★ 口径与曲线分母一致 = 抵扣后目标（effective），不是台账原始支出。 */
+       ★ 口径与曲线分母一致 = 档位原始目标支出 base（总额口径），
+         缺口 = base − 当前月均被动收入，与大卡片达成日同源自洽；
+         effective 只做「按当前再投习惯今天的现金缺口」展示，不参与达成判定。 */
     var passiveNow = X.fireMonthlyPassive(cfg, 0);
     var eff = X.fireEffectiveSpend(cfg);
-    var gapM = Math.max(0, eff.effective - passiveNow);
+    var gapM = Math.max(0, eff.base - passiveNow);
     var tierTarget = targets.tiers[tier];
     var sim = fire.tierSims[tier] || {};
     var drip = sim.drip === null ? 5000 : sim.drip;
     var yPct = targets.yieldPct;
     var newDivM = drip * (yPct === null ? 0 : yPct) / 1200;
-    var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，抵扣后目标月支出 ' + U.moneySign(eff.effective, 2) +
-      (eff.offset > 0 ? '（原 ' + U.moneySign(eff.base, 2) + ' − 不再投分红抵扣 ' + U.moneySign(eff.offset, 2) + '）' : '') +
-      (gapM > 0 ? '——每月再补 ' + U.moneySign(gapM, 2) + ' 被动现金流即可完全覆盖' : '——已完全覆盖 🎉') +
+    var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，目标月支出 ' + U.moneySign(eff.base, 2) +
+      (eff.offset > 0 ? '（不再投分红抵扣 ' + U.moneySign(eff.offset, 2) + '，按当前再投习惯今天还需 ' + U.moneySign(eff.effective, 2) + '）' : '') +
+      (gapM > 0 ? '——完全覆盖还差 ' + U.moneySign(gapM, 2) + '/月' : '——已完全覆盖 🎉') +
       '；每月攒股 ' + U.moneySign(drip, 0) + ' 按市值息率新增月分红 ' + U.moneySign(newDivM, 2) +
       (tierTarget && tierTarget.fireNumber !== null
         ? '，完全覆盖约需 ' + U.moneyCompact(tierTarget.fireNumber) + ' 生息资产（按市值息率折算，随行情自动更新）'
