@@ -293,16 +293,16 @@ console.log('\n--- 8) fireEffectiveSpend：提取抵扣（再投比例 → 可�
   eq('★ 三档 offset 相同（持仓级抵扣）', [tg0.tiers.lean.offset, tg0.tiers.regular.offset, tg0.tiers.fat.offset], [100, 100, 100]);
   close('effective 差值 === base 差值（500）', tg0.tiers.fat.effective - tg0.tiers.lean.effective,
     tg0.tiers.fat.monthly - tg0.tiers.lean.monthly, 1e-9);
-  close('fireNumber(Regular) = 1900×12 ÷ 3%', tg0.tiers.regular.fireNumber, 1900 * 12 / 0.03, 1e-6);
-  close('fireNumber 比值 = effective/base', tg0.tiers.regular.fireNumber / (24000 / 0.03), 1900 / 2000, 1e-9);
+  close('★ fireNumber(Regular) = 2000×12 ÷ 3%（总额口径，抵扣不再拉低 FI number）', tg0.tiers.regular.fireNumber, 2000 * 12 / 0.03, 1e-6);
+  close('★ fireNumber 与 effective 解耦（r=0 也不变）', tg0.tiers.regular.fireNumber, 24000 / 0.03, 1e-9);
   close('offsetMonthly 透出 = 100', tg0.offsetMonthly, 100, 1e-9);
 
-  /* D. fireTimeline：target = effective；抵扣覆盖全部支出 → reached(0) */
+  /* D. fireTimeline：target = base（总额口径）；抵扣覆盖全部支出 → reached(0) */
   const fire0 = st.settings.fire;
   fire0.tierSims.regular = { monthlySpend: 2000, drip: 5000, dripYieldPct: 8 };
   const cfg0 = C.fireCfg(st, ALL, 'regular', fire0);
   const tl0 = C.fireTimeline(st, ALL, cfg0);
-  close('tl.targetMonthly = effective(1900)', tl0.targetMonthly, 1900, 1e-9);
+  close('★ tl.targetMonthly = base(2000)（总额口径反解，不再用 effective）', tl0.targetMonthly, 2000, 1e-9);
   close('tl.baseMonthly = 2000', tl0.baseMonthly, 2000, 1e-9);
   close('tl.offsetMonthly = 100', tl0.offsetMonthly, 100, 1e-9);
   close('tl.monthlyPassive0 = P0/12 = 100', tl0.monthlyPassive0, 100, 1e-9);
@@ -312,19 +312,29 @@ console.log('\n--- 8) fireEffectiveSpend：提取抵扣（再投比例 → 可�
   eq('★ 抵扣覆盖全部支出 → reached', tlC.reached, true);
   eq('coveredByOffset = true', tlC.coveredByOffset, true);
   close('months = 0', tlC.months, 0, 1e-9);
-  close('targetMonthly = 0', tlC.targetMonthly, 0, 1e-9);
+  close('targetMonthly = base(80)', tlC.targetMonthly, 80, 1e-9);
 
-  /* E. 覆盖率分母 = effective（cfg 直构，免依赖 received 细节） */
+  /* D2. 用户报障回归（2026-10-04）：旧口径把 offset 减进目标后又拿全额分红去比，
+         同一笔钱计两次 → 缺口 1057 时误判「已达成」。新口径必须给出日期而非达成。 */
+  const cfgBug = { P0: 24000, X: 0, y: 6, r: 50, monthlySpend: 2057, drip: 0, dripYieldPct: 6, baseYieldPct: 6, yieldBasis: 'market' };
+  const tlBug = C.fireTimeline(st, ALL, cfgBug);
+  close('场景自检：缺口 = base − offset = 1057', tlBug.baseMonthly - tlBug.offsetMonthly, 1057, 1e-9);
+  eq('★ 现金缺口 1057 时不再误判「已达成」', tlBug.reached, false);
+  eq('且可解（全部分红增长后可覆盖）', tlBug.solvable, true);
+  close('★ 反解目标 = base(2057)', tlBug.targetMonthly, 2057, 1e-9);
+  close('need=2057×12=24684 > P0=24000 → months > 0', tlBug.months > 0 ? 1 : 0, 1, 0);
+
+  /* E. 覆盖率分母 = base（总额口径，与大卡片达成日同源；cfg 直构，免依赖 received 细节） */
   const cfgE = { P0: 1200, X: 12000, y: 10, r: 0, monthlySpend: 2000, drip: 1000, dripYieldPct: 10, baseYieldPct: 10, yieldBasis: 'market' };
   const covE = C.fireCoverageHistory(st, ALL, 'regular', cfgE);
-  close('cov.targetMonthly = 1900（抵扣后）', covE.targetMonthly, 1900, 1e-9);
+  close('★ cov.targetMonthly = base(2000)（不再用 effective）', covE.targetMonthly, 2000, 1e-9);
   close('cov.baseMonthly = 2000', covE.baseMonthly, 2000, 1e-9);
   close('cov.offsetMonthly = 100', covE.offsetMonthly, 100, 1e-9);
   eq('cov.coveredByOffset = false', covE.coveredByOffset, false);
   const cfgZ = Object.assign({}, cfgE, { monthlySpend: 80 });
   const covZ = C.fireCoverageHistory(st, ALL, 'regular', cfgZ);
-  close('★ 目标归零 → pct 全 null（视图翻译为「已完全覆盖」）',
-    covZ.history.every(h => h.pct === null) && covZ.future.every(f => f.pct === null) ? 1 : 0, 1, 0);
+  close('★ 抵扣覆盖整档 → 未来首月覆盖率已 ≥100%（P0/12=100 ≥ base=80）',
+    covZ.future.length && covZ.future[0].pct >= 100 ? 1 : 0, 1, 0);
   eq('coveredByOffset = true', covZ.coveredByOffset, true);
 
   /* F. fireProgress 与 fireTargets 口径一致（r=0 下再验，FI 进度卡继承抵扣） */
