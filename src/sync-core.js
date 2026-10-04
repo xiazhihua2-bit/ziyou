@@ -39,7 +39,9 @@ XJ.syncCore = (function () {
 
   /* 同步的 settings 白名单。刻意【不含】ocr（含 API Key）、
      lastQuoteAt / lastPlanAt / quoteRefreshMs / fx（本机口径）、
-     payoutPopupAt / heroCollapsed（「这台设备弹过/收起过没」，同步只会添乱）。 */
+     payoutPopupAt / heroCollapsed（「这台设备弹过/收起过没」，同步只会添乱）、
+     theme / heroColor（外观是本机偏好：手机选深色、电脑选浅色不该互相覆盖）。
+     ★ 新增 settings 字段时先想清楚：跨设备一致 → 进白名单；本机偏好 → 不进。 */
   var SETTINGS_SYNC = [
     'defaultAccountId', 'reminderLeadDays', 'heroMetrics', 'heroForecast',
     'defaultDividendBasis', 'showLogo', 'unsupportedDividend', 'indexCompare',
