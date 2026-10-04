@@ -111,55 +111,27 @@ const PROBE = `
     bigNow: (document.getElementById('fire-big-num')||{}).textContent,
   };
 
-  /* 再投滑杆 + 提取抵扣行联动（r=100 回归 → r=50 抵扣生效 → 还原） */
-  var rs = document.querySelector('.fs-range[data-k="reinvest"]');
+  /* 提取抵扣行（2026-10-05：再投滑杆已移除，引擎固定 r=0 → 分红全额抵扣） */
   var effEl = document.getElementById('fire-spend-eff');
   var effParse = function (txt) {
     var t = (txt || '').match(/抵扣后目标\\s*¥([\\d,\\.]+)/);
-    var o = (txt || '').match(/抵扣\\s*−¥([\\d,\\.]+)/);
+    var o = (txt || '').match(/分红抵扣\\s*−¥([\\d,\\.]+)/);
     var n = function (m) { return m ? Number(m[1].replace(/,/g, '')) : null; };
     return { target: n(t), offset: n(o) };
   };
-  var e100 = effParse(effEl ? effEl.textContent : null);
-  var persisted50 = false;
-  var ms = document.querySelector('.fs-range[data-k="monthlySpend"]');
-  if (rs) {
-    rs.value = 50; rs.dispatchEvent(new Event('input', { bubbles: true })); await sleep(220);
-    var e50 = effParse(effEl ? effEl.textContent : null);
-    /* ①b 视觉联动：拖再投后,每月花费滑杆应同步显示抵扣后目标(程序设值,不持久化)
-       ★ 采集必须【现取】元素：整页重渲染会让此前持有的节点脱离文档,
-         读到的 computed/textContent 就成了空或旧值（实测踩过）。 */
-    var tierNow = XJ.store.state.settings.fire.activeTier;
-    var msNow = document.querySelector('.fs-range[data-k="monthlySpend"]');
-    var msValNow = document.getElementById('fs-val-monthlySpend');
-    var rsNow = document.querySelector('.fs-range[data-k="reinvest"]');
-    var msVal50 = msNow ? Number(msNow.value) : null;
-    var msSimNull = XJ.store.state.settings.fire.tierSims[tierNow].monthlySpend === null;
-    rs.dispatchEvent(new Event('change', { bubbles: true })); await sleep(120);
-    persisted50 = XJ.store.state.settings.fire.reinvestPct === 50;
-    out.reinvest = { exists: true, val: 50, persisted: persisted50,
-      step: rsNow ? rsNow.step : null,
-      inDoc: !!(rsNow && document.contains(rsNow)),
-      peRaw: rsNow ? getComputedStyle(rsNow).pointerEvents : null,
-      thumbOnly: !!(rsNow && getComputedStyle(rsNow).pointerEvents === 'none'),
-      msValueAt50: msVal50, msSimUnchanged: msSimNull,
-      msTextAt50: (function () {
-        var m = msValNow ? (msValNow.textContent || '').match(/¥([\\d,\\.]+)/) : null;
-        return m ? Number(m[1].replace(/,/g, '')) : null;
-      })(),
-      effLineExists: !!effEl, effAt100: e100, effAt50: e50,
-      offsetUp: e100.offset === 0 && e50.offset !== null && e50.offset >= 300 && e50.offset <= 350,
-      targetDown: e50.target !== null && e100.target !== null && e50.target < e100.target,
-      bigAfter: (document.getElementById('fire-big-num')||{}).textContent };
-    /* 还原 100%（默认口径，后续截图不受影响）—— 同样要现取元素 */
-    var rsBack = document.querySelector('.fs-range[data-k="reinvest"]');
-    if (rsBack) {
-      rsBack.value = 100; rsBack.dispatchEvent(new Event('input', { bubbles: true })); await sleep(220);
-      rsBack.dispatchEvent(new Event('change', { bubbles: true })); await sleep(160);
-    }
-  } else {
-    out.reinvest = { exists: false, effLineExists: !!effEl, effAt100: e100 };
-  }
+  var eNow = effParse(effEl ? effEl.textContent : null);
+  var tierNow2 = XJ.store.state.settings.fire.activeTier;
+  var cfgNow = XJ.calc.fireCfg(XJ.store.state, XJ.store.ui.accountId, tierNow2, XJ.store.state.settings.fire);
+  var effNow = XJ.calc.fireEffectiveSpend(cfgNow);
+  out.offset = {
+    exists: !!effEl,
+    parsed: eNow,
+    offsetExpect: Math.round(effNow.offset),
+    targetExpect: Math.round(effNow.effective),
+    sliders: document.querySelectorAll('.fs-range').length,
+    reinvestSliderGone: !document.querySelector('.fs-range[data-k="reinvest"]'),
+    hasOffsetText: effEl ? /分红抵扣/.test(effEl.textContent) : false,
+  };
 
   /* FI 曲线时间尺度切换（近三月 → 近半年） */
   var pr3 = document.querySelector('[data-act="setFirePrRange"][data-v="3m"]');
@@ -268,7 +240,7 @@ try {
   else {
     const rd = out.render || {};
     if (rd.bigIsYm) ok('① 大数字 = 具体年月（' + rd.bigNum + '）'); else bad('大数字非年月格式: ' + rd.bigNum);
-    if (rd.sliders === 4) ok('③ 四根滑杆在位（含再投）'); else bad('滑杆数量 ' + rd.sliders);
+    if (rd.sliders === 3) ok('③ 三根滑杆在位（再投已移除）'); else bad('滑杆数量 ' + rd.sliders);
     if (rd.tierChips === 6) ok('② 档位 chips 两处共 6 枚（大数字卡+覆盖率卡）'); else bad('档位 chips ' + rd.tierChips);
     if (rd.hasCoverage && rd.hasProgress) ok('两张分析卡都在'); else bad('卡片缺失');
     if (rd.noScene) ok('⑪ 场景模拟卡已删除'); else bad('场景卡仍存在');
@@ -286,44 +258,15 @@ try {
     if (out.sliderCommit && out.sliderCommit.persisted) ok('松手 commit 持久化'); else bad('commit 未落');
     const ts = out.tierSwitch || {};
     if (ts.activeTier === 'lean' && ts.regularDripKept && ts.leanDripDefault && ts.leanSpendNull) ok('④ 切档：花费强制同步（置 null）+ 攒股/息率各自记忆'); else bad('切档同步异常 ' + JSON.stringify(ts));
-    const rv = out.reinvest || {};
-    if (rv.exists && rv.effLineExists) ok('③ 再投滑杆 + 抵扣行在位'); else bad('再投滑杆/抵扣行缺失 ' + JSON.stringify(rv));
-    if (rv.effAt100 && rv.effAt100.offset === 0 && rv.effAt100.target === 3400)
-      ok('r=100% 回归：抵扣行显示零抵扣（目标 ¥' + rv.effAt100.target + '）');
-    else bad('r=100% 抵扣行异常 ' + JSON.stringify(rv.effAt100));
-    if (rv.offsetUp && rv.targetDown)
-      ok('联动：再投 100→50 → 抵扣 −¥' + (rv.effAt50 || {}).offset + '，目标 ¥' + (rv.effAt50 || {}).target + '（变小）');
-    else bad('抵扣联动失效 ' + JSON.stringify(rv));
-    if (rv.persisted) ok('再投 commit 持久化'); else bad('再投 commit 未落');
-    if (rv.step === '1') ok('①a 再投滑杆步进 1%（可精确到个位）'); else bad('再投步进 ' + rv.step);
-    /* ③ 行为断言（比读 computed 更硬）：在轨道左侧 15% 处真实点击一次，
-       值不应跳变 —— headless 下 getComputedStyle 读 pointer-events 会给出空值，不可靠。 */
-    const rb = await browser.send('Runtime.evaluate', {
-      expression: `JSON.stringify((function(){var r=document.querySelector('.fs-range[data-k="reinvest"]');if(!r)return null;var b=r.getBoundingClientRect();return {x:b.x,y:b.y,w:b.width,h:b.height,val:Number(r.value)};})())`,
-      returnByValue: true,
-    }, sessionId);
-    const rect = rb && rb.result && rb.result.value ? JSON.parse(rb.result.value) : null;
-    if (rect) {
-      const px = Math.round(rect.x + rect.w * 0.15);
-      const py = Math.round(rect.y + rect.h / 2);
-      await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: px, y: py, button: 'left', clickCount: 1 }, sessionId);
-      await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: px, y: py, button: 'left', clickCount: 1 }, sessionId);
-      await sleep(220);
-      const after = await browser.send('Runtime.evaluate', {
-        expression: `Number(document.querySelector('.fs-range[data-k="reinvest"]').value)`,
-        returnByValue: true,
-      }, sessionId);
-      if (after && after.result && after.result.value === rect.val) {
-        ok('③ 点击轨道不跳值（只有按住把手拖才动，当前 ' + rect.val + '%）');
-      } else {
-        bad('③ 点轨道仍跳值：' + rect.val + ' → ' + (after && after.result ? after.result.value : '?'));
-      }
-    } else bad('③ 取不到再投滑杆位置');
-    if (rv.msTextAt50 !== null && rv.msTextAt50 === rv.effAt50.target && rv.msSimUnchanged
-        && Math.abs(rv.msValueAt50 - rv.effAt50.target) <= 20)
-      ok('①b 拖再投 → 花费滑杆同步到抵扣后目标 ¥' + rv.msTextAt50 + '（把手按 step 吸附，不持久化）');
-    else bad('①b 花费滑杆联动异常 text=' + rv.msTextAt50 + ' val=' + rv.msValueAt50 +
-      ' eff=' + (rv.effAt50 || {}).target + ' simNull=' + rv.msSimUnchanged);
+    const rv = out.offset || {};
+    if (rv.exists && rv.hasOffsetText) ok('③ 抵扣行在位（分红抵扣 −X/月 · 抵扣后目标 Y/月）');
+    else bad('抵扣行缺失 ' + JSON.stringify(rv));
+    if (rv.reinvestSliderGone && rv.sliders === 3)
+      ok('① 再投滑杆已移除（试算卡剩 3 根）');
+    else bad('再投滑杆仍在或滑杆数异常 ' + JSON.stringify(rv));
+    if (rv.parsed && rv.parsed.offset === rv.offsetExpect && rv.parsed.target === rv.targetExpect)
+      ok('★ 抵扣行与引擎逐位一致：抵扣 ¥' + rv.parsed.offset + '，抵扣后目标 ¥' + rv.parsed.target);
+    else bad('抵扣行与引擎不一致 ' + JSON.stringify(rv));
     const pr = out.prRange || {};
     if (pr.ui === '3m' && pr.svg >= 1) ok('⑦ FI 曲线切到近三月仍渲染'); else bad('FI 尺度切换异常 ' + JSON.stringify(pr));
     const cv = out.covRange || {};
