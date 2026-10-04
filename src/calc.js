@@ -1141,8 +1141,9 @@ XJ.calc = (function () {
   /**
    * 三档 FIRE 目标与 FI 进度。
    * fireNumber = 档位年支出 ÷ 真实持仓息率（口径 yieldBasis：'cost'|'market'）；
-   *   ★ 年支出口径 = fireEffectiveSpend 的 effective（抵扣后支出）× 12，
-   *     所以三档 fireNumber 都会被「不再投分红」同额拉低，FI 进度相应提前。
+   *   ★ 年支出口径 = 档位原始月支出 base × 12（总额口径，2026-10-04 用户拍板）——
+   *     抵扣（effective）只做「今天现金缺口」展示，不再拉低 FI number
+   *     （旧口径 effective 先减掉 offset、又隐含 fiPrincipal 生出同一笔分红，双重计入）。
    * 息率 ≤ 0 / 成本非正 → fireNumber = null（界面如实显示「暂无法测算」）。
    * capitalAt4 = 真实台账年支出 ÷ 4%（4% 法则参考值；FIRE number 才是主口径）。
    * monthly/annual 保留【真实台账】口径不动，抵扣后的数看 effective/baseMonthly。
@@ -1159,7 +1160,7 @@ XJ.calc = (function () {
       var monthly = tierMonthlySpend(state.expenses, t);
       var annual = monthly * 12;
       var eff = fireEffectiveSpend({ monthlySpend: monthly, P0: s.totalPredicted, r: r });
-      var fireNumber = (yieldPct !== null && yieldPct > 0) ? eff.effective * 12 / (yieldPct / 100) : null;
+      var fireNumber = (yieldPct !== null && yieldPct > 0) ? annual / (yieldPct / 100) : null;
       tiers[t] = {
         monthly: monthly,
         annual: annual,
@@ -1219,16 +1220,18 @@ XJ.calc = (function () {
   }
 
   /**
-   * 距离财务自由的时间：解「被动收入(t) ≥ 抵扣后目标月支出」。
-   * ★ 目标取 fireEffectiveSpend(cfg).effective —— 「不再投的分红」已从支出里扣掉，
-   *   所以再投比例越低、当期目标越小、自由日越近（代价是积累变慢，见 calc 内注释）。
-   *   effective ≤ 0（抵扣额已覆盖整档支出）→ reached，months=0。
+   * 距离财务自由的时间：解「被动收入(t) ≥ 档位目标月支出」（总额口径）。
+   * ★ 目标取 fireEffectiveSpend(cfg).base，不再用 effective（抵扣后）反解：
+   *   offset 本来就是分红的一部分——若先从目标里减掉、再拿全额分红去比，
+   *   同一笔钱被计入两次（2026-10-04 修复：大卡片「已达成」与「还差 1057」矛盾的根因）。
+   *   offset ≥ base（抵扣覆盖整档）→ need=base×12 ≤ P0 自然成立 → reached，
+   *   coveredByOffset 如实透出供文案区分「抵扣达成」与「分红达成」。
    * reached（目标 ≤ 当前被动收入）→ months=0；
    * reason ∈ 'no-growth' | 'beyond-limit' 原样透出（调用方不得改参数）。
    */
   function fireTimeline(state, acc, cfg) {
     var eff = fireEffectiveSpend(cfg);
-    var target = eff.effective;
+    var target = eff.base;
     var solved = forecastSolveYears(fireAsForecast(cfg), cfg.P0, target);
     var todayYm = U.ymOf(U.today());
     var extra = {
@@ -1269,14 +1272,16 @@ XJ.calc = (function () {
    * 被动收入覆盖率月度序列（图 2 曲线数据）。
    * ★ 历史段自行遍历 received 并按标的币种折 CNY —— stats().byMonth 是原币合计，
    *   跨币种直接加总会把港币当人民币（踩过：summary 的 recvCny 范式，calc.js 同款）。
-   * ★ 分母 = fireEffectiveSpend(cfg).effective（抵扣后目标支出），不是台账原始支出。
+   * ★ 分母 = fireEffectiveSpend(cfg).base（档位原始目标支出，总额口径）——
+   *   与大卡片达成日同源：曲线 ≥100% 的交点就是 fireTimeline 反解出的自由日。
+   *   （effective 只在注脚里做「按当前再投习惯今天的现金缺口」展示。）
    * 历史段缺月填 0（连续填月不断线）；未来段从当月起按月外推，≥100% 即停或 600 个月封顶。
-   * effective ≤ 0（抵扣额已覆盖整档支出）→ 全部 pct = null，由视图翻译成「已完全覆盖 🎉」。
+   * base ≤ 0（该档没有任何启用支出）→ 全部 pct = null，由视图显示「—」。
    */
   function fireCoverageHistory(state, acc, tier, cfg) {
     var fxNow = (state.settings && state.settings.fx) || {};
     var eff = fireEffectiveSpend(cfg);
-    var target = eff.effective;
+    var target = eff.base;
     var byMonth = {};
     state.received.forEach(function (r) {
       if (acc !== ALL && r.accountId !== acc) return;
