@@ -341,6 +341,19 @@ console.log('\n--- 8) fireEffectiveSpend：提取抵扣（再投比例 → 可�
   const pr0 = C.fireProgress(st, ALL, 'market');
   close('progress.fireNumber == targets.fireNumber（抵扣口径同步）', pr0.tiers.regular.fireNumber, tg0.tiers.regular.fireNumber, 1e-9);
 
+  /* G. 再投滑杆已移除（2026-10-05）：引擎固定 r=0，与 settings.fire.reinvestPct 无关 */
+  st.settings.fire.reinvestPct = 100;          // 存量数据里仍是旧默认 100
+  const cfgFix = C.fireCfg(st, ALL, 'regular', st.settings.fire);
+  eq('★ 引擎固定 r=0（再投滑杆已移除）', cfgFix.r, 0);
+  const tgFix = C.fireTargets(st, ALL, 'market');
+  close('★ FI number 与再投字段无关 = 2000×12 ÷ 3%', tgFix.tiers.regular.fireNumber, 24000 / 0.03, 1e-9);
+  close('★ offsetMonthly = 全额月分红 P0/12 = 100', tgFix.offsetMonthly, 100, 1e-9);
+  close('★ 抵扣后目标 = 2000 − 100', tgFix.tiers.regular.effective, 1900, 1e-9);
+  const tlFix = C.fireTimeline(st, ALL, cfgFix);
+  /* 注意：此时 tierSims.regular.monthlySpend 被 D 组改成了 80，反解目标跟它走 */
+  close('★ 反解目标 = cfg 的月支出（不再用 effective）', tlFix.targetMonthly, cfgFix.monthlySpend, 1e-9);
+  close('★ 该目标下 offset = P0/12 = 100', tlFix.offsetMonthly, 100, 1e-9);
+
   /* 还原默认（后续组依赖 state 干净） */
   st.settings.fire.reinvestPct = 100;
   fire0.tierSims.regular = { monthlySpend: 2000, drip: 5000, dripYieldPct: 8 };
