@@ -513,8 +513,11 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .loading-inline{ display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-3); }
 
 /* ==================== 首页深色年度分红卡 ==================== */
+/* ==================== 首页年度分红卡（深色卡，配色可自选） ====================
+ * 2026-10-05：底色 / 光晕 / 副色三件套由 data-hero 属性切换（settings.heroColor，本机偏好）。
+ * 新增一套配色 = 加一条 [data-hero="key"] 规则 + model.js 的 HERO_COLORS 表。 */
 .hero-dark{
-  background:linear-gradient(158deg,#3A3A3C 0%,var(--hero-bg) 58%,#232325 100%);
+  background:var(--hero-card-grad);
   border-radius:22px; padding:18px 18px 14px;
   box-shadow:0 10px 30px rgba(0,0,0,.16);
   margin-bottom:12px; color:var(--hero-text);
@@ -522,22 +525,54 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .hero-dark::after{
   content:""; position:absolute; right:-52px; top:-52px; width:190px; height:190px; border-radius:50%;
-  background:radial-gradient(circle, rgba(232,70,31,.22), rgba(232,70,31,0) 70%);
+  background:radial-gradient(circle, var(--hero-card-glow), rgba(0,0,0,0) 70%);
+}
+/* 默认（经典石墨）= 改造前的原配色 */
+.hero-dark{
+  --hero-card-grad:linear-gradient(158deg,#3A3A3C 0%,var(--hero-bg) 58%,#232325 100%);
+  --hero-card-glow:rgba(232,70,31,.22);
+  --hero-card-accent:var(--dividend-mid);
+}
+.hero-dark[data-hero="navy"]{
+  --hero-card-grad:linear-gradient(158deg,#1E3A63 0%,#14243F 58%,#0E1A2E 100%);
+  --hero-card-glow:rgba(232,70,31,.20);
+  --hero-card-accent:#E8A87C;
+}
+.hero-dark[data-hero="teal"]{
+  --hero-card-grad:linear-gradient(158deg,#12564A 0%,#0B3B33 58%,#072A24 100%);
+  --hero-card-glow:rgba(232,70,31,.20);
+  --hero-card-accent:#EDB68D;
+}
+.hero-dark[data-hero="umber"]{
+  --hero-card-grad:linear-gradient(158deg,#4A3418 0%,#33220F 58%,#26180A 100%);
+  --hero-card-glow:rgba(240,163,10,.24);
+  --hero-card-accent:#EFC08E;
+}
+.hero-dark[data-hero="wine"]{
+  --hero-card-grad:linear-gradient(158deg,#4E2030 0%,#3A1620 58%,#2A0F18 100%);
+  --hero-card-glow:rgba(232,70,31,.26);
+  --hero-card-accent:#F0B49C;
+}
+.hero-dark[data-hero="plum"]{
+  --hero-card-grad:linear-gradient(158deg,#33275A 0%,#221A38 58%,#171226 100%);
+  --hero-card-glow:rgba(232,70,31,.22);
+  --hero-card-accent:#E9AE9C;
 }
 .hd-status{ font-size:12.5px; color:var(--hero-dim); position:relative; z-index:1; }
-.hd-status b{ color:var(--dividend-mid); font-weight:650; }
+.hd-status b{ color:var(--hero-card-accent); font-weight:650; }
 .hd-row{ display:flex; align-items:flex-end; gap:10px; margin-top:10px; position:relative; z-index:1; }
 .hd-row .lbl{ font-size:12.5px; color:var(--hero-dim); }
 .hd-amount{
   font-size:38px; font-weight:750; letter-spacing:-1.4px; line-height:1.05;
-  color:#fff; font-variant-numeric:tabular-nums; margin-top:4px;
+  /* 2026-10-05：总分红由纯白改为分红红（深色底上最醒目仍不刺眼） */
+  color:#FF5A3C; font-variant-numeric:tabular-nums; margin-top:4px;
 }
-.hd-amount .cur{ font-size:21px; font-weight:650; margin-right:1px; color:var(--dividend-mid); }
+.hd-amount .cur{ font-size:21px; font-weight:650; margin-right:1px; color:var(--hero-card-accent); }
 .hd-badge{
   margin-left:auto; flex:0 0 auto; text-align:right;
   font-size:11.5px; color:var(--hero-dim);
 }
-.hd-badge b{ color:var(--dividend-mid); font-weight:700; font-size:13px; }
+.hd-badge b{ color:var(--hero-card-accent); font-weight:700; font-size:13px; }
 .hd-metrics{
   display:grid; grid-template-columns:repeat(3,1fr); gap:2px;
   margin-top:14px; position:relative; z-index:1;
@@ -545,7 +580,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hd-metric{ padding:8px 6px 6px; border-radius:10px; }
 .hd-metric .k{ font-size:11px; color:var(--hero-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hd-metric .v{ font-size:16px; font-weight:700; letter-spacing:-.4px; margin-top:2px; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.hd-metric.accent .v{ color:var(--dividend-mid); }
+.hd-metric.accent .v{ color:var(--hero-card-accent); }
 .hd-actions{ display:flex; gap:14px; justify-content:center; margin-top:10px; position:relative; z-index:1; }
 .hd-actions button{ font-size:12px; color:var(--hero-dim); display:inline-flex; align-items:center; gap:4px; }
 .hd-actions button:active{ opacity:.6; }
@@ -571,7 +606,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   border-bottom:1px dashed rgba(242,242,247,.5);
 }
 .hf-num:active{ background:rgba(255,255,255,.24); }
-.hf-num.hf-out{ color:var(--dividend-mid); }
+.hf-num.hf-out{ color:var(--hero-card-accent); }
 .hf-foot{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:9px; font-size:11px; }
 .hf-solve{ display:inline-flex; align-items:center; gap:5px; color:var(--hero-dim); }
 .hf-chip{
@@ -613,6 +648,49 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .cover-icon.on .box{ background:var(--warm-lit-grad); border-color:var(--warm-lit-line); }
 .cover-icon.next .box{ border-color:var(--dividend); border-style:dashed; }
+
+/* ---- 设置首页指标弹层里的「卡片配色」色板 ---- */
+.sheet-sec{ margin:12px 0 4px; }
+.sheet-sec-t{ font-size:12px; color:var(--text-3); margin-bottom:6px; }
+.hero-swatches{ display:flex; flex-wrap:wrap; gap:8px; }
+.hero-swatch{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 10px 5px 5px; border-radius:999px;
+  background:var(--card-2); font-size:12.5px; color:var(--text-2);
+  border:1.5px solid transparent; transition:transform .15s ease;
+}
+.hero-swatch:active{ transform:scale(.96); }
+.hero-swatch.active{ border-color:var(--dividend); color:var(--text); font-weight:600; }
+.hs-dot{ width:22px; height:22px; border-radius:7px; flex:0 0 auto; box-shadow:inset 0 0 0 .5px rgba(255,255,255,.18); }
+.hs-dot[data-hero="graphite"]{ background:#2C2C2E; }
+.hs-dot[data-hero="navy"]{ background:#14243F; }
+.hs-dot[data-hero="teal"]{ background:#0B3B33; }
+.hs-dot[data-hero="umber"]{ background:#33220F; }
+.hs-dot[data-hero="wine"]{ background:#3A1620; }
+.hs-dot[data-hero="plum"]{ background:#221A38; }
+
+/* ---- 分红覆盖 · 两大类（生存 / 品质），点分类条手风琴展开该类明细 ---- */
+.cov-cats{ margin-top:10px; }
+.cover-cat{
+  display:flex; align-items:center; gap:10px; width:100%; text-align:left;
+  padding:9px 2px 7px; background:none;
+}
+.cover-cat .cc-ico{
+  width:30px; height:30px; border-radius:9px; flex:0 0 auto;
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; background:var(--card-2);
+}
+.cover-cat.open .cc-ico{ background:var(--warm-lit-grad); }
+.cover-cat .cc-main{ flex:1; min-width:0; }
+.cover-cat .cc-name{ display:block; font-size:14px; font-weight:600; letter-spacing:-.2px; }
+.cover-cat .cc-sub{ display:block; font-size:11.5px; color:var(--text-3); margin-top:1px; }
+.cover-cat .cc-right{
+  flex:0 0 auto; display:flex; align-items:center; gap:5px;
+  font-size:14px; font-weight:650; color:var(--dividend); font-variant-numeric:tabular-nums;
+}
+.cover-cat.empty .cc-right{ color:var(--text-3); }
+.cover-cat .cc-caret{ font-size:12px; font-weight:400; color:var(--text-3); }
+.cover-cat + .bar{ margin-bottom:2px; }
 .cover-icon .nm{ font-size:10px; color:var(--text-2); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
 .cover-icon.on .nm{ color:var(--dividend); font-weight:600; }
 
@@ -1383,7 +1461,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .fs-ticks{ display:flex; justify-content:space-between; font-size:10.5px; color:var(--text-3); padding:0 4px; }
 
-/* 提取抵扣行（再投滑杆下方，随滑杆实时联动） */
+/* 提取抵扣行（试算滑杆下方，随滑杆实时联动） */
 .fs-offset{
   margin-top:10px; padding:9px 13px; border-radius:11px;
   font-size:13px; font-weight:550; line-height:1.55;
