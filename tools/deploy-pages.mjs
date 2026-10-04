@@ -42,6 +42,7 @@ const FILES = [
   ['build.mjs', 'build.mjs'],
   ['tools/test-fire.mjs', 'tools/test-fire.mjs'],
   ['tools/shoot-fire.mjs', 'tools/shoot-fire.mjs'],
+  ['tools/shoot-overview.mjs', 'tools/shoot-overview.mjs'],
   ['tools/shoot-theme.mjs', 'tools/shoot-theme.mjs'],
   ['tools/sync-e2e.mjs', 'tools/sync-e2e.mjs'],
   ['tools/deploy-pages.mjs', 'tools/deploy-pages.mjs'],
