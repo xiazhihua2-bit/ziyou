@@ -812,9 +812,29 @@
         ' style="width:20px;height:20px;flex:0 0 auto">' +
         '</label>';
     }).join('');
-    html += '<button class="btn-block" data-act="saveMetricSettings">保存</button>' +
+    /* 卡片配色（本机偏好、不参与同步）：选完即时生效，不用等保存 */
+    var curColor = S.state.settings.heroColor || M.HERO_COLOR_DEFAULT;
+    var swatches = M.HERO_COLORS.map(function (c) {
+      return '<button class="hero-swatch' + (c.key === curColor ? ' active' : '') +
+        '" data-act="setHeroColor" data-v="' + U.esc(c.key) + '">' +
+        '<span class="hs-dot" data-hero="' + U.esc(c.key) + '"></span>' +
+        '<span class="hs-name">' + U.esc(c.label) + '</span></button>';
+    }).join('');
+
+    html += '<div class="sheet-sec"><div class="sheet-sec-t">卡片配色</div>' +
+      '<div class="hero-swatches">' + swatches + '</div>' +
+      '<div class="tiny" style="margin-top:6px">只影响这台设备（不参与跨设备同步）。</div></div>' +
+      '<button class="btn-block" data-act="saveMetricSettings">保存</button>' +
       '<div class="tiny" style="margin-top:8px">至少选 1 个，最多 6 个。</div>';
     UI.openSheet({ title: '设置首页指标', html: html });
+  });
+
+  UI.on('setHeroColor', function (node) {
+    var v = node.getAttribute('data-v');
+    if (!M.HERO_COLORS.some(function (c) { return c.key === v; })) return;
+    S.commit(function (s) { s.settings.heroColor = v; });
+    UI.closeSheet();
+    UI.toast('卡片配色已切换');
   });
 
   UI.on('saveMetricSettings', function (node) {
@@ -1302,6 +1322,12 @@
 
   UI.on('togglePend', function () {
     S.setUI({ pendCollapsed: !S.ui.pendCollapsed });
+  });
+
+  /* 分红覆盖卡：两大类手风琴（点同一类收起，null = 全收起） */
+  UI.on('toggleCoverCat', function (node) {
+    var v = node.getAttribute('data-v');
+    S.setUI({ coverOpenCat: S.ui.coverOpenCat === v ? null : v });
   });
 
   UI.on('setCalView', function (node) {
@@ -3077,7 +3103,6 @@
     var fire = S.state.settings.fire;
     var tier = fire.activeTier;
     var f2 = Object.assign({}, fire);
-    if (k === 'reinvest') { f2.reinvestPct = v; return C.fireCfg(S.state, S.acc(), tier, f2); }
     var sim = Object.assign({}, fire.tierSims[tier]);
     if (k === 'monthlySpend') sim.monthlySpend = v;
     else if (k === 'drip') sim.drip = v;
@@ -3113,7 +3138,7 @@
     if (!tl.solvable) {
       return tl.reason === 'beyond-limit' ? '按当前参数 50 年内无法达成' : '投入与息率不足以增长——请调高攒股金额或息率';
     }
-    if (tl.reached) return '🎉 当前被动收入已覆盖目标支出';
+    if (tl.reached) return '🎉 全部分红已覆盖目标支出';
     var startYear = Number(U.ymOf(U.today()).slice(0, 4));
     var endYear = startYear + Math.ceil(tl.months / 12);
     return '预计 ' + endYear + '–' + (endYear + 1) + ' 年间达成';
@@ -3130,8 +3155,7 @@
     if (sub) sub.textContent = fireSubText(tl);
     if (tip) {
       var base = C.fireTimeline(S.state, S.acc(), C.fireCfg(S.state, S.acc(), S.state.settings.fire.activeTier,
-        { yieldBasis: S.state.settings.fire.yieldBasis, reinvestPct: S.state.settings.fire.reinvestPct,
-          tierSims: { lean: {}, regular: {}, fat: {} } }));
+        { yieldBasis: S.state.settings.fire.yieldBasis, tierSims: { lean: {}, regular: {}, fat: {} } }));
       var seg = '';
       if (tl.solvable && base.solvable && !tl.reached && !base.reached && tl.months !== base.months) {
         var d = base.months - tl.months;           // 正 = 提前
@@ -3147,12 +3171,13 @@
           U.pct(cap4.yieldPct === null ? 0 : cap4.yieldPct, 2) + ' 折算）');
       if (tip.textContent !== tipTxt) tip.textContent = tipTxt;
     }
-    /* 提取抵扣行：随再投/花费滑杆实时联动（与 plan.js 的 effLine 同结构，微档动效） */
+    /* 提取抵扣行：随花费/攒股/息率滑杆实时联动（与 plan.js 的 effLine 同结构，微档动效）。
+       分红全额抵扣（引擎固定 r=0），offset 只随持仓分红变化，不随滑杆变。 */
     var effEl = document.getElementById('fire-spend-eff');
     if (effEl) {
       var eff = C.fireEffectiveSpend(cfg);
-      var effTxt = '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
-        '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+      var effTxt = '<span class="fs-off-amt">分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月</span>' +
+        ' · 抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
         (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '');
       if (effEl.__effTxt !== effTxt) { effEl.__effTxt = effTxt; effEl.innerHTML = effTxt; }
     }
@@ -3174,35 +3199,11 @@
             : U.moneySign(v, 0);
         } else if (k === 'drip') {
           val.textContent = U.moneySign(v, 0);
-        } else if (k === 'reinvest') {
-          val.textContent = U.pct(v, 0);
         } else {
           val.textContent = U.pct(v, 1);
         }
       }
       node.style.setProperty('--p', ((v - Number(node.min)) / (Number(node.max) - Number(node.min)) * 100) + '%');
-      /* 再投 → 每月花费视觉联动：把「抵扣后目标」同步显示到花费滑杆。
-         ★ 程序设 value 不会触发 change，也就不会持久化 —— 「每月花费」滑杆的语义
-           始终是「总目标支出（抵扣前）」，抵扣永远只减一次，不存在双重扣减。
-           松手后整页重渲染会显示回台账值，抵扣行与自由日仍按抵扣后口径（那才是真相）。 */
-      if (k === 'reinvest') {
-        var cfgR = fireCfgWithOverride('reinvest', v);
-        var effR = C.fireEffectiveSpend(cfgR);
-        var msEl = document.querySelector('.fs-range[data-k="monthlySpend"]');
-        var msVal = document.getElementById('fs-val-monthlySpend');
-        if (msEl) {
-          var lo = Number(msEl.min), hi = Number(msEl.max);
-          /* value 会被浏览器按 step 网格吸附（如 3066.67 → 3070），这是把手位置的正常行为；
-             显示文本与填充仍用未吸附的抵扣后目标，保证与抵扣行逐位一致。 */
-          msEl.value = effR.effective;
-          msEl.style.setProperty('--p', ((effR.effective - lo) / (hi - lo) * 100) + '%');
-        }
-        if (msVal) {
-          msVal.textContent = S.ui.fireSpendMode === 'day'
-            ? '¥' + (effR.effective / C.FIRE.daysPerMonth).toFixed(2) + '/日'
-            : U.moneySign(effR.effective, 0);
-        }
-      }
       firePatchDom(fireCfgWithOverride(k, v));
     });
   });
@@ -3210,10 +3211,6 @@
   UI.on('fireSliderCommit', function (node) {
     var k = node.getAttribute('data-k');
     var v = Number(node.value);
-    if (k === 'reinvest') {
-      S.commit(function (s) { s.settings.fire.reinvestPct = v; });
-      return;
-    }
     var tier = S.state.settings.fire.activeTier;
     S.commit(function (s) {
       var sim = s.settings.fire.tierSims[tier];
