@@ -770,16 +770,24 @@ XJ.calc = (function () {
 
   function coverage(annualDividend, expenses, assumedYieldPct) {
     var ay = assumedYieldPct === undefined || assumedYieldPct === null ? 7 : U.n0(assumedYieldPct);
+    /* 2026-10-05：分红先填【生存支出】、生存全亮后才流向【品质支出】；
+       类内仍按金额从便宜到贵（同一笔钱点亮更多项的最优点亮顺序）。 */
+    var CAT_ORDER = { essential: 0, quality: 1 };
     var items = expenses
       .filter(function (e) { return e.enabled; })
       .map(function (e) {
         return {
           expenseId: e.expenseId, key: e.key, label: e.label,
+          category: e.category === 'quality' ? 'quality' : 'essential',
           monthlyAmount: U.n0(e.monthlyAmount),
           annualAmount: U.n0(e.monthlyAmount) * 12,
         };
       })
-      .sort(function (a, b) { return a.annualAmount - b.annualAmount; });
+      .sort(function (a, b) {
+        var ca = CAT_ORDER[a.category] || 0, cb = CAT_ORDER[b.category] || 0;
+        if (ca !== cb) return ca - cb;
+        return a.annualAmount - b.annualAmount;
+      });
 
     var div = U.n0(annualDividend);
     var running = 0, lit = 0;
@@ -795,6 +803,11 @@ XJ.calc = (function () {
         return Object.assign({}, it, { lit: true, progress: 100, remaining: 0, covered: 0 });
       }
       var avail = Math.max(0, div - running);
+      /* ★ 部分覆盖也要把额度占掉：剩余分红一旦被这一项吃掉，后面任何项都不该再点亮。
+         旧实现只在「整项点亮」时推进 running —— 按金额升序时不显形（后面的项只会更贵），
+         改成「先生存后品质」后顺序不再单调，会出现「生存项半覆盖 + 便宜品质项仍点亮」
+         的双重计入。这里统一占额，与独立复算逐位对齐。 */
+      running += avail;
       return Object.assign({}, it, {
         lit: false,
         progress: avail / it.annualAmount * 100,
@@ -809,8 +822,28 @@ XJ.calc = (function () {
     var needMore = nextItem ? nextItem.remaining : 0;
     var addCapital = (needMore > 0 && ay > 0) ? needMore / (ay / 100) : 0;
 
+    /* 两大类聚合（生存 / 品质）：分红先填生存、生存全亮后才流到品质，
+       所以生存未满时品质组的 coveredAnnual 必然是 0（瀑布在类间不回头）。 */
+    var groups = { essential: catGroup('essential'), quality: catGroup('quality') };
+    function catGroup(cat) {
+      var g = { category: cat, count: 0, litCount: 0, monthlyAmount: 0,
+        totalAnnual: 0, coveredAnnual: 0, remaining: 0, progress: 0 };
+      out.forEach(function (it) {
+        if (it.category !== cat) return;
+        g.count++;
+        if (it.lit) g.litCount++;
+        g.totalAnnual += it.annualAmount;
+        g.monthlyAmount += it.monthlyAmount;
+        g.coveredAnnual += it.covered || 0;
+      });
+      g.remaining = Math.max(0, g.totalAnnual - g.coveredAnnual);
+      g.progress = g.totalAnnual > 0 ? U.clamp(g.coveredAnnual / g.totalAnnual * 100, 0, 100) : 0;
+      return g;
+    }
+
     return {
       items: out,
+      groups: groups,
       litCount: lit,
       totalCount: items.length,
       coveredAnnual: running,
@@ -1091,6 +1124,9 @@ XJ.calc = (function () {
     daysPerMonth: 30.44,                // 日↔月显示换算（年平均月长度）
     capitalRule4: 0.04,                 // 4% 法则（仅提示条参考文案用）
     futureMonthsCap: 600,               // 覆盖率外推封顶 50 年
+    /* 2026-10-05：去掉「分红再投」滑杆后引擎固定值 = 0（分红全额抵扣花费、不滚入复利）。
+       settings.fire.reinvestPct 字段保留只为兼容存量数据，引擎不再读它。 */
+    reinvestFixed: 0,
   };
 
   /** 'YYYY-MM' 加 n 个月（n 可负），返回 'YYYY-MM' */
@@ -1116,11 +1152,13 @@ XJ.calc = (function () {
   }
 
   /**
-   * 提取抵扣：把「不再投的那份分红」当作可直接支配的现金流，从该档月支出里扣掉。
-   *   offset    = P0/12 × (1 − r/100)      持仓月均分红中不再投的部分
-   *   effective = max(0, base − offset)     抵扣后目标支出（全站统一口径）
-   *   covered   = 抵扣额已够覆盖整档支出 → effective = 0，界面判「已达成」
-   * ★ r = 100%（默认）时 offset 恰为 0、effective === base —— 与改造前逐位一致。
+   * 提取抵扣：把分红当作可直接支配的现金流，从该档月支出里扣掉。
+   *   offset    = P0/12 × (1 − r/100)      持仓月均分红中可自由支配的部分
+   *   effective = max(0, base − offset)     抵扣后目标支出（= 按当前口径今天的现金缺口）
+   *   covered   = 分红已够覆盖整档支出 → effective = 0，界面判「已达成」
+   * ★ 2026-10-05 去掉「分红再投」滑杆：引擎固定 r = FIRE.reinvestFixed = 0
+   *   （分红全额抵扣花费、不滚入复利；积累只由「每月攒股」驱动）。
+   *   r 参数保留只是为了纯函数单测，生产路径（fireCfg / fireTargets）一律传 0。
    * ★ offset 是【持仓级】的（分红与档位无关），三档只差分母 base。
    */
   function fireEffectiveSpend(cfg) {
@@ -1153,8 +1191,7 @@ XJ.calc = (function () {
     var basis = yieldBasis === 'cost' ? 'cost' : 'market';
     var yieldPct = (basis === 'cost') ? s.costYield : s.compositeYield;
     if (yieldPct !== null && !isFinite(yieldPct)) yieldPct = null;
-    var fire = (state.settings && state.settings.fire) || {};
-    var r = U.clamp(U.n0(fire.reinvestPct), 0, 100);
+    var r = FIRE.reinvestFixed;      // 固定 0：分红全额抵扣，不再有「再投比例」这个变量
     var tiers = {};
     ['lean', 'regular', 'fat'].forEach(function (t) {
       var monthly = tierMonthlySpend(state.expenses, t);
@@ -1205,7 +1242,7 @@ XJ.calc = (function () {
       P0: Math.max(0, U.n0(s.totalPredicted)),       // 现有持仓预测年分红（恒定）
       X: drip * 12,                                   // 年投入（新钱）
       y: dripYieldPct,                                // 攒股息率 %
-      r: U.clamp(U.n0(fire.reinvestPct), 0, 100),     // 再投比例 %
+      r: FIRE.reinvestFixed,                  // 固定 0（再投滑杆已移除，注释见 FIRE.reinvestFixed）
       monthlySpend: monthlySpend,                     // 目标月支出（当前档模拟值）
       drip: drip,
       dripYieldPct: dripYieldPct,
@@ -1368,6 +1405,7 @@ XJ.calc = (function () {
     var tScene = fireTimeline(state, acc, cfg2);
     var cleanFire = { yieldBasis: fire.yieldBasis, reinvestPct: fire.reinvestPct,
       tierSims: { lean: {}, regular: {}, fat: {} } };   // 全默认（monthlySpend/dripYieldPct=null, drip=5000）
+    // 注：cleanFire 曾带 reinvestPct —— 再投滑杆移除后引擎不再读它，留着无害、删了更干净
     var tBase = fireTimeline(state, acc, fireCfg(state, acc, tier, cleanFire));
     var deltaMonths = (tScene.solvable && tBase.solvable)
       ? tScene.months - tBase.months : null;
