@@ -38,7 +38,6 @@ XJ.views.plan = (function () {
   }
   function ticksFor(k) {
     if (k === 'dripYieldPct') return '<span>0%</span><span>10%</span><span>20%</span><span>30%</span>';
-    if (k === 'reinvest') return '<span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>';
     if (k === 'drip') return '<span>0</span><span>1万</span><span>2万</span><span>3万</span><span>4万</span><span>5万</span>';
     return '<span>0</span><span>1万</span><span>2万</span><span>3万</span>';
   }
@@ -61,10 +60,11 @@ XJ.views.plan = (function () {
         : '投入与息率不足以增长——请调高攒股金额或息率';
     } else if (tl.reached) {
       big = '已达成';
-      /* reached 有两种来路：纯被动收入覆盖 / 不再投分红把目标抵扣到 0 —— 文案如实区分 */
+      /* reached 有两种来路：全部分红覆盖目标支出 / 分红抵扣把目标抵到 0 —— 文案如实区分
+         （引擎固定 r=0，这两路其实是同一条件：P0/12 ≥ base ⟺ effective = 0） */
       sub = tl.coveredByOffset
-        ? '🎉 不再投的分红已抵扣全部目标支出'
-        : '🎉 全部分红已覆盖目标支出（达成后停止再投、全额转消费）';
+        ? '🎉 分红已抵扣全部目标支出'
+        : '🎉 全部分红已覆盖目标支出';
     } else {
       var ym = tl.date || U.ymOf(U.today());
       big = Number(ym.slice(0, 4)) + ' 年 ' + Number(ym.slice(5, 7)) + ' 月';
@@ -75,13 +75,12 @@ XJ.views.plan = (function () {
       '<span class="fs-mini-seg fi-glass" role="group">' + tierChipsHtml(tier) + '</span></div>' +
       '<div class="fire-big" id="fire-big-num" data-anim="S">' + big + '</div>' +
       '<div class="fire-sub" id="fire-big-sub" data-anim="A">' + sub + '</div>' +
-      '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红（再投 ' +
-      U.n0(fire.reinvestPct) + '%，可在下方试算卡调节）；达成口径 = 全部分红 ≥ 目标支出，届时停止再投即可' +
-      '</div>' +
+      '<div class="fire-hero-note">被动收入 = 现有持仓分红 + 每月攒股按息率滚出的分红；' +
+      '达成口径 = 全部分红 ≥ 目标支出（分红不再滚入复利，积累只由「每月攒股」驱动）</div>' +
       '</div>';
   }
 
-  /* ---------------- 卡 2：试算滑杆（四根：花费/攒股/息率/再投） ---------------- */
+  /* ---------------- 卡 2：试算滑杆（三根：花费/攒股/息率；再投滑杆已移除） ---------------- */
   function sliderCardHtml(st, fire, tier, cfg, targets) {
     var spendMode = st.ui.fireSpendMode === 'day' ? 'day' : 'month';
     var spendVal = spendMode === 'day'
@@ -99,7 +98,7 @@ XJ.views.plan = (function () {
     var touched = sim.monthlySpend !== null || (sim.drip !== null && sim.drip !== 5000) || sim.dripYieldPct !== null;
     var tip;
     if (touched) {
-      var cleanFire = { yieldBasis: 'market', reinvestPct: fire.reinvestPct, tierSims: { lean: {}, regular: {}, fat: {} } };
+      var cleanFire = { yieldBasis: 'market', tierSims: { lean: {}, regular: {}, fat: {} } };
       var baseTl = X.fireTimeline(st.state, st.acc(), X.fireCfg(st.state, st.acc(), tier, cleanFire));
       var cur = X.fireTimeline(st.state, st.acc(), cfg);
       if (cur.solvable && !cur.reached && baseTl.solvable && !baseTl.reached) {
@@ -119,12 +118,13 @@ XJ.views.plan = (function () {
       ? '暂无法测算'
       : U.moneySign(tierTarget.fireNumber, 0) + '（按当前市值息率 ' + U.pct(targets.yieldPct === null ? 0 : targets.yieldPct, 2) + ' 折算）';
 
-    /* 提取抵扣行：随「分红再投」滑杆实时联动（firePatchDom 就地更新同一 id）。
-       base = 当前滑杆模拟支出（cfg.monthlySpend），offset = 持仓月均分红 ×（1−r） */
+    /* 提取抵扣行：分红全额抵扣花费（引擎固定 r=0，offset = 持仓月均分红）。
+       ★ 与 app.js firePatchDom 同结构（同一 id 就地更新）。
+       达成判定与「抵扣后目标 = 0」是同一条件：这里显示 🎉 时大卡片必然也是「已达成」。 */
     var eff = X.fireEffectiveSpend(cfg);
     var effLine = '<div class="fs-offset" id="fire-spend-eff">' +
-      '抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
-      '<span class="fs-off-amt">（不再投分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月）</span>' +
+      '<span class="fs-off-amt">分红抵扣 −' + U.moneySign(eff.offset, 0) + '/月</span>' +
+      ' · 抵扣后目标 <b>' + U.moneySign(eff.effective, 0) + '/月</b>' +
       (eff.covered ? '<span class="fs-off-done"> · 已完全抵扣 🎉</span>' : '') +
       '</div>';
 
@@ -134,8 +134,6 @@ XJ.views.plan = (function () {
       sliderHtml('monthlySpend', spendLabel, 0, X.FIRE.spendMax, X.FIRE.spendStep, cfg.monthlySpend, spendVal, spendSwitch) +
       sliderHtml('drip', '每月攒股', 0, X.FIRE.dripMax, X.FIRE.dripStep, cfg.drip, U.moneySign(cfg.drip, 0)) +
       sliderHtml('dripYieldPct', '攒股息率（市值口径）', 0, 30, 0.1, cfg.dripYieldPct, U.pct(cfg.dripYieldPct, 1)) +
-      /* 再投比例精确到 1%：每 10% 一档太粗，抵扣额对再投很敏感 */
-      sliderHtml('reinvest', '分红再投', 0, 100, 1, U.n0(fire.reinvestPct), U.pct(U.n0(fire.reinvestPct), 0)) +
       effLine +
       tip +
       '<div class="tiny" style="margin-top:8px">完全覆盖约需 ' + capText +
@@ -288,7 +286,7 @@ XJ.views.plan = (function () {
     var head = '<div class="cov-head"><span class="cov-num" data-anim="S">' +
       (avgPct === null ? (cov.coveredByOffset ? '🎉' : '—') : U.pct(avgPct, 1)) + '</span>' +
       '<span class="cov-hint">' + (cov.coveredByOffset
-        ? '抵扣后目标已归零——不再投的分红已完全覆盖'
+        ? '目标已归零——分红已完全覆盖'
         : '近 12 个月平均 · 达到 100% 即 ' + tierName(tier) + ' 达成') + '</span></div>';
 
     var range = st.ui.fireCovRange || 'all';
@@ -308,7 +306,7 @@ XJ.views.plan = (function () {
     /* 小字（⑩）：缺口 + 攒股新增月分红 + 市值息率折算（非 4% 法则）。
        ★ 口径与曲线分母一致 = 档位原始目标支出 base（总额口径），
          缺口 = base − 当前月均被动收入，与大卡片达成日同源自洽；
-         effective 只做「按当前再投习惯今天的现金缺口」展示，不参与达成判定。 */
+         effective 只做「分红抵扣后今天的现金缺口」展示，不参与达成判定。 */
     var passiveNow = X.fireMonthlyPassive(cfg, 0);
     var eff = X.fireEffectiveSpend(cfg);
     var gapM = Math.max(0, eff.base - passiveNow);
@@ -318,7 +316,7 @@ XJ.views.plan = (function () {
     var yPct = targets.yieldPct;
     var newDivM = drip * (yPct === null ? 0 : yPct) / 1200;
     var note = '月均被动收入 ' + U.moneySign(passiveNow, 2) + '，目标月支出 ' + U.moneySign(eff.base, 2) +
-      (eff.offset > 0 ? '（不再投分红抵扣 ' + U.moneySign(eff.offset, 2) + '，按当前再投习惯今天还需 ' + U.moneySign(eff.effective, 2) + '）' : '') +
+      (eff.offset > 0 ? '（分红抵扣 ' + U.moneySign(eff.offset, 2) + '，抵扣后今天还需 ' + U.moneySign(eff.effective, 2) + '）' : '') +
       (gapM > 0 ? '——完全覆盖还差 ' + U.moneySign(gapM, 2) + '/月' : '——已完全覆盖 🎉') +
       '；每月攒股 ' + U.moneySign(drip, 0) + ' 按市值息率新增月分红 ' + U.moneySign(newDivM, 2) +
       (tierTarget && tierTarget.fireNumber !== null
