@@ -757,7 +757,6 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hc-name .nm{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* 第二行：代码 + 涨跌幅徽章（徽章从名字行下移到这里，腾出整行给名字） */
 .hc-code{ display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-3); margin-top:3px; min-width:0; }
-.hc-code .chg{ font-size:10.5px; padding:1px 6px; border-radius:5px; flex:0 0 auto; }
 
 /* 技术信号标记（BOLL 下轨 + KDJ 的 J<0）
    文案是中性指标描述，不构成投资建议。
@@ -1282,7 +1281,6 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   .hc-head{ gap:8px; }
   .hc-div{ font-size:16.5px; }
   .hc-code{ font-size:10.5px; gap:4px; }
-  .hc-code .chg{ font-size:9.5px; padding:1px 4px; }
   /* 技术信号在极窄屏进一步缩字号；必要时由 .hc-sig 的 ellipsis 兜底，
      优先级让给代码与涨跌幅徽章（信号只是附加信息） */
   .hc-sig{ font-size:9px; padding:1px 4px; }
@@ -12950,10 +12948,11 @@ XJ.views.overview = (function () {
       '<div class="hc-head">' +
       UI.avatar(h.name, h.symbol, 42, C.logoOf(h), 'hc-avatar') +
       '<div class="hc-id">' +
-      /* 名字独占第一行（涨跌幅徽章已移到下一行的代码旁），窄屏也能完整显示 */
+      /* 名字独占第一行，窄屏也能完整显示。
+         ★ 2026-10-06：代码旁的涨跌幅徽章已移除 —— 涨跌% 只在价格行以大号实底徽章出现一次，
+           同一信息不在卡片上重复两遍。 */
       '<div class="hc-name"><span class="nm">' + U.esc(h.name) + '</span>' + tag + '</div>' +
       '<div class="hc-code">' + U.esc(XJ.market.displayCode(h.symbol)) +
-      (chg === null || chg === undefined ? '' : '<span class="chg ' + dir + '" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':chg">' + U.signPct(chg) + '</span>') +
       sig +
       '</div>' +
       '</div>' +
