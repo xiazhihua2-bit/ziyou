@@ -115,7 +115,8 @@ const PROBE = `(async () => {
     pxFontSize: csb ? parseFloat(csb.fontSize) : null,
     pxColor: csb ? csb.color : null,
     pxAmtGone: !document.querySelector('[data-anim-key$=":pxamt"]'),
-    codeBadgeKept: !!document.querySelector('.hc-code .chg'),
+    codeBadgeGone: !document.querySelector('.hc-code .chg'),
+    codeText: (document.querySelector('.hc-code') || {}).textContent,
   };
 
   /* 顶部大卡片：默认配色 + 红字 + 切到藏青 */
@@ -266,7 +267,8 @@ try {
       ok('② 实时价格降为次要（' + px.pxText + '，' + px.pxColor + '）');
     else bad('现价样式异常 ' + JSON.stringify(px));
     if (px.pxAmtGone) ok('② 价差（±金额）已删除'); else bad('价差仍在');
-    if (px.codeBadgeKept) ok('② 代码旁涨跌徽章保留'); else bad('代码旁徽章丢失');
+    if (px.codeBadgeGone) ok('★ 代码旁涨跌徽章已移除（代码行：' + (px.codeText || '').trim() + '）');
+    else bad('代码旁徽章仍在');
 
     const hd = out.hero || {};
     if (hd.exists && hd.dataHero === 'graphite') ok('③ 大卡片默认配色 = 经典石墨'); else bad('默认配色异常 ' + hd.dataHero);
