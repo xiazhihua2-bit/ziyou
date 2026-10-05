@@ -156,7 +156,7 @@ XJ.views.overview = (function () {
 
   function heroCard(st, s, proj, stat) {
     var cfg = st.state.settings;
-    var collapsed = !!cfg.heroCollapsed;
+    var collapsed = XJ.store.folded('heroCollapsed', cfg);   // 默认折叠（util.FOLD.collapsed）
     var all = XJ.model.HERO_METRICS;
     var chosen = (cfg.heroMetrics && cfg.heroMetrics.length) ? cfg.heroMetrics : all.map(function (m) { return m.key; });
 
@@ -292,7 +292,10 @@ XJ.views.overview = (function () {
        ★ 两类明细走同一个 itemIcons()，样式（间距/字号/色值/图标/对齐）天然完全一致。 */
     var openSet = (st.ui.coverOpenCats && typeof st.ui.coverOpenCats === 'object')
       ? st.ui.coverOpenCats : {};
-    function isOpen(cat) { return openSet[cat] === true; }
+    function isOpen(cat) {
+      var v = openSet[cat];
+      return (v === undefined || v === null) ? U.FOLD.open : v === true;   // 默认折叠（不展开）
+    }
 
     function itemIcons(cat) {
       var list = st.state.expenses.filter(function (e) {
@@ -335,7 +338,7 @@ XJ.views.overview = (function () {
 
     /* 整卡可折叠（默认展开）：折叠后仍保留卡头与「X/N 项已被覆盖」大数字，
        明细（总进度条 + 两大类 + 口径说明）收进 .cover-body。 */
-    var collapsed = !!st.ui.coverCollapsed;
+    var collapsed = XJ.store.folded('coverCollapsed');   // 默认折叠（util.FOLD.collapsed）
 
     return '<div class="card' + (collapsed ? ' cover-collapsed' : '') + '">' +
       '<div class="card-head">' +
