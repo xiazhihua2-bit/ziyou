@@ -333,16 +333,23 @@ XJ.views.overview = (function () {
         (open ? itemIcons(c.key) : '');
     }).join('');
 
-    return '<div class="card">' +
+    /* 整卡可折叠（默认展开）：折叠后仍保留卡头与「X/N 项已被覆盖」大数字，
+       明细（总进度条 + 两大类 + 口径说明）收进 .cover-body。 */
+    var collapsed = !!st.ui.coverCollapsed;
+
+    return '<div class="card' + (collapsed ? ' cover-collapsed' : '') + '">' +
       '<div class="card-head">' +
       '<h2>分红覆盖</h2><div class="spacer"></div>' +
       '<span class="hint">' + U.esc(ms.name) + '</span>' +
       '<button class="ghost-btn" data-act="gotoTab" data-tab="find">详情</button></div>' +
-      '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 8px">' +
-      '<div style="font-size:24px;font-weight:750;letter-spacing:-.8px;color:var(--dividend)">' + cov.litCount +
-      '<span style="font-size:14px;color:var(--text-3);font-weight:600">/' + cov.totalCount + '</span></div>' +
-      '<div class="muted" style="font-size:12.5px">项支出已被股息覆盖</div>' +
-      '</div>' +
+      '<button class="cover-head" data-act="toggleCoverCard" aria-expanded="' + (collapsed ? 'false' : 'true') + '">' +
+      '<span class="cov-big" style="font-size:24px;font-weight:750;letter-spacing:-.8px;color:var(--dividend)">' +
+      cov.litCount +
+      '<span style="font-size:14px;color:var(--text-3);font-weight:600">/' + cov.totalCount + '</span></span>' +
+      '<span class="muted" style="font-size:12.5px">项支出已被股息覆盖</span>' +
+      '<span class="cov-caret">' + UI.icon('chevron', 16) + '</span>' +
+      '</button>' +
+      '<div class="cover-body">' +
       '<div class="bar"><i style="width:' + cov.overallProgress.toFixed(1) + '%"></i></div>' +
       '<div class="cov-cats">' + cats + '</div>' +
       '<div class="tiny" style="margin-top:6px">分红先覆盖生存支出，生存全部满足后再流向品质支出' +
@@ -350,6 +357,7 @@ XJ.views.overview = (function () {
         ? '；再攒 <b class="c-div">' + U.moneySign(cov.needMore) + '</b> 分红就能点亮 ' +
         (cov.nextItem.icon || '') + U.esc(cov.nextItem.label)
         : '；全部支出项已被股息覆盖，恭喜！') +
+      '</div>' +
       '</div>' +
       '</div>';
   }
