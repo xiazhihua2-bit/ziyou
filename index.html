@@ -2071,7 +2071,21 @@ XJ.util = (function () {
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
   }
 
+  /* ==================== 折叠 / 展开默认值（全站唯一入口） ====================
+   * 2026-10-06 统一：全站所有可折叠区域一律【默认折叠】，用户点一下才展开。
+   * ★ 放在 util（最先加载的模块）是为了让 model / store / 各视图都能引用同一份常量，
+   *   不会出现「model 写死 false、store 写死 true」这种各写一套的情况。
+   * 新增可折叠卡片时只需两步，不要另写布尔字面量：
+   *   ① 初值：在 ui（或 settings）里用 FOLD.collapsed 赋值
+   *   ② 读取：用 XJ.store.folded('键名') —— 未设置时自动回落 FOLD.collapsed
+   * 如果哪天要改回「默认展开」，只需把这里 collapsed 改成 false。 */
+  var FOLD = {
+    collapsed: true,   // 「是否折叠」语义的键（foldXxx / xxxCollapsed）的默认值
+    open: false,       // 「是否展开」语义的键（如分类明细 openCats）的默认值
+  };
+
   return {
+    FOLD: FOLD,
     pad2: pad2, ymd: ymd, today: today, nowStamp: nowStamp, mdShort: mdShort,
     parseYmd: parseYmd, addDays: addDays, daysBetween: daysBetween,
     yearOf: yearOf, monthOf: monthOf, ymOf: ymOf,
@@ -2828,7 +2842,9 @@ XJ.model = (function () {
         lastPlanAt: null,
         onboarded: false,
         heroMetrics: HERO_METRICS.map(function (m) { return m.key; }),
-        heroCollapsed: false,
+        /* 顶部年度分红卡是否收起 —— 默认跟随全站折叠常量（见 util.js 的 FOLD）。
+           model 先于 store 加载，这里直接用 U.FOLD.collapsed 而不是 store.folded()。 */
+        heroCollapsed: XJ.util.FOLD.collapsed,
         /* 大卡片配色（本机偏好，不参与跨设备同步 —— 与 theme 同处理方式） */
         heroColor: HERO_COLOR_DEFAULT,
         /* 深色卡「测算带」参数（每年投入 / 股息率 / 年数 / 再投比例 / 反解目标）。
@@ -11160,6 +11176,28 @@ XJ.calc = (function () {
 XJ.store = (function () {
   var U = XJ.util;
 
+  /* 折叠默认值取自 util.FOLD（全站唯一入口，见 util.js 的说明） */
+  var FOLD = U.FOLD;
+
+  /**
+   * 统一读取折叠态 —— 所有可折叠区域的**唯一读法**。
+   * 未设置（undefined / null）时自动回落 FOLD.collapsed（默认折叠），
+   * 所以新增折叠卡片只要在 ui 里存一个键即可，不用在视图里写 `!== false` 之类的兜底。
+   * @param {string} key  ui（或传入的 src）里的键名
+   * @param {object=} src 默认读 app.ui；settings 里的折叠标志（如 heroCollapsed）传 settings 对象
+   */
+  function folded(key, src) {
+    var o = src || app.ui;
+    var v = o ? o[key] : null;
+    return (v === undefined || v === null) ? FOLD.collapsed : !!v;
+  }
+
+  /** 「是否展开」语义的键（如分类明细）—— 缺省回落 FOLD.open（默认不展开） */
+  function isOpen(key) {
+    var v = app.ui[key];
+    return (v === undefined || v === null) ? FOLD.open : !!v;
+  }
+
   var listeners = [];
 
   var app = {
@@ -11185,13 +11223,10 @@ XJ.store = (function () {
       annualYear: null,         // 年度总览选中年份
       annualMonth: null,        // 年度总览选中月份
       calView: 'calendar',      // calendar | annual
-      /* 分红日历「等待除权」卡片是否折叠 —— 2026-10-06：默认【折叠】，
-         标题行（只数 + 预计可得金额）始终可见，点标题行即展开明细。 */
-      pendCollapsed: true,
-      /* 首页「分红覆盖」卡：两类各自独立展开（可同时展开；默认两类都收起） */
-      coverOpenCats: { essential: false, quality: false },
-      /* 整卡折叠（默认展开）：折叠后仍保留卡头与「X/N 项已被覆盖」大数字 */
-      coverCollapsed: false,
+      /* ---- 以下折叠态一律取 FOLD.collapsed / FOLD.open（全站默认「折叠」） ---- */
+      pendCollapsed: FOLD.collapsed,        // 分红日历「待除权」卡片
+      coverOpenCats: { essential: FOLD.open, quality: FOLD.open },  // 分红覆盖卡两类明细
+      coverCollapsed: FOLD.collapsed,       // 分红覆盖卡整卡
       fireSpendMode: 'month',   // FIRE 试算 · 花费显示单位（month | day，纯显示不持久化）
       firePrRange: 'all',       // FIRE · FI 进度曲线时间尺度（today|1m|3m|6m|ytd|all|custom）
       firePrBeg: null,          // FI 进度自定义区间起（'YYYY-MM-DD'）
@@ -11199,11 +11234,12 @@ XJ.store = (function () {
       fireCovRange: 'all',      // FIRE · 覆盖率曲线时间尺度（3m|6m|ytd|all|custom，月度粒度无当日/本月）
       fireCovBeg: null,         // 覆盖率自定义区间起（'YYYY-MM'）
       fireCovEnd: null,        // 覆盖率自定义区间止（'YYYY-MM'）
-      foldSyncConn: false,     // 我的 → 同步卡片：连接信息折叠区
-      foldSyncLog: false,      // 我的 → 同步卡片：详细日志折叠区
-      foldPlans: true,          // 个股页「分红档案」是否折叠（默认收起，内容较长）
-      foldTx: true,             // 个股页「交易明细」是否折叠（默认收起）
-      foldMineTx: true,         // 我的页「交易流水」是否折叠（默认收起）
+      /* 语义统一：true = 折叠（收起），false = 展开 */
+      foldSyncConn: FOLD.collapsed,   // 我的 → 同步卡片：连接信息
+      foldSyncLog: FOLD.collapsed,    // 我的 → 同步卡片：详细日志
+      foldPlans: FOLD.collapsed,      // 个股页「分红档案」（内容长，默认收起）
+      foldTx: FOLD.collapsed,         // 个股页「交易明细」
+      foldMineTx: FOLD.collapsed,     // 我的页「交易流水」
       // 资产走势卡挂两处，控件状态各自独立：'' = 首页（nwXxx），'an' = 账户分析（anNwXxx）
       nwGran: 'day',            // 资产走势曲线：day | month
       nwRange: null,            // 资产走势曲线区间：1m | 6m | ytd | all | custom（null 时自适应）
@@ -11212,7 +11248,8 @@ XJ.store = (function () {
       nwMode: 'line',           // 收益率画法：line 曲线 | candle K线（蜡烛为选中指数）
       nwRetMode: 'twr',         // 收益率口径：twr 时间加权 | cost 成本收益率（累计收益 ÷ 累计净投入）
       anNwRetMode: 'twr',       // 账户分析那张卡的同名控件（两实例状态独立）
-      nwCollapsed: false,       // 资产走势卡片是否收起
+      nwCollapsed: FOLD.collapsed,        // 资产走势卡（首页）是否收起
+      anNwCollapsed: FOLD.collapsed,      // 资产走势卡（账户分析那张）是否收起
       floatOpen: false,         // 悬浮双入口是否展开
       subPage: null,            // 子页面：null | 'analysis' | 'symbol'
       subArg: null,             // 子页面参数（如 symbol）
@@ -11369,6 +11406,11 @@ XJ.store = (function () {
     hasAnyData: function () {
       return this.state.transactions.length > 0;
     },
+
+    /* ---- 折叠 / 展开：统一入口（默认值见 util.js 的 FOLD） ---- */
+    FOLD: FOLD,
+    folded: folded,
+    isOpen: isOpen,
   };
 
   return app;
@@ -12691,7 +12733,7 @@ XJ.views.overview = (function () {
 
   function heroCard(st, s, proj, stat) {
     var cfg = st.state.settings;
-    var collapsed = !!cfg.heroCollapsed;
+    var collapsed = XJ.store.folded('heroCollapsed', cfg);   // 默认折叠（util.FOLD.collapsed）
     var all = XJ.model.HERO_METRICS;
     var chosen = (cfg.heroMetrics && cfg.heroMetrics.length) ? cfg.heroMetrics : all.map(function (m) { return m.key; });
 
@@ -12827,7 +12869,10 @@ XJ.views.overview = (function () {
        ★ 两类明细走同一个 itemIcons()，样式（间距/字号/色值/图标/对齐）天然完全一致。 */
     var openSet = (st.ui.coverOpenCats && typeof st.ui.coverOpenCats === 'object')
       ? st.ui.coverOpenCats : {};
-    function isOpen(cat) { return openSet[cat] === true; }
+    function isOpen(cat) {
+      var v = openSet[cat];
+      return (v === undefined || v === null) ? U.FOLD.open : v === true;   // 默认折叠（不展开）
+    }
 
     function itemIcons(cat) {
       var list = st.state.expenses.filter(function (e) {
@@ -12870,7 +12915,7 @@ XJ.views.overview = (function () {
 
     /* 整卡可折叠（默认展开）：折叠后仍保留卡头与「X/N 项已被覆盖」大数字，
        明细（总进度条 + 两大类 + 口径说明）收进 .cover-body。 */
-    var collapsed = !!st.ui.coverCollapsed;
+    var collapsed = XJ.store.folded('coverCollapsed');   // 默认折叠（util.FOLD.collapsed）
 
     return '<div class="card' + (collapsed ? ' cover-collapsed' : '') + '">' +
       '<div class="card-head">' +
@@ -13225,7 +13270,7 @@ XJ.views.networth = (function () {
     var metric = (metricV === 'nw' || metricV === 'ret') ? metricV : 'mv';
     var mode = getUI(ns, 'mode') === 'candle' ? 'candle' : 'line';
     var gran = getUI(ns, 'gran') === 'month' ? 'month' : 'day';
-    var collapsed = !!getUI(ns, 'collapsed');
+    var collapsed = XJ.store.folded(keyOf(ns, 'collapsed'));   // 默认折叠（util.FOLD.collapsed）
     var beg = getUI(ns, 'beg') || '';
     var end = getUI(ns, 'end') || '';
     var b = build(st, ns);
@@ -13838,7 +13883,7 @@ XJ.views.calendar = (function () {
 
   function pendingCard(st, pend) {
     if (!pend.count) return '';
-    var collapsed = !!st.ui.pendCollapsed;
+    var collapsed = XJ.store.folded('pendCollapsed');   // 默认折叠（util.FOLD.collapsed）
     return '<div class="pend-card' + (collapsed ? ' collapsed' : '') + '">' +
       '<button class="pend-head" data-act="togglePend">' +
       '<span class="pend-ico">💌</span>' +
@@ -14715,7 +14760,7 @@ XJ.views.mine = (function () {
 
   function renderTransactions() {
     var st = XJ.store;
-    var folded = st.ui.foldMineTx !== false;      // 默认收起（最多 30 条，收起后页面清爽）
+    var folded = XJ.store.folded('foldMineTx');   // 默认折叠（util.FOLD.collapsed）
     var txs = st.state.transactions.slice().sort(function (a, b) {
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
       return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1;
@@ -14828,10 +14873,11 @@ XJ.views.mine = (function () {
         '<div class="row-s">' + (mins > 1 ? '已连续失败 ' + mins + ' 分钟' : '本机数据完好无损') + '</div></div></div>';
     }
 
-    /* 折叠区 1：连接信息（只读） */
+    /* 折叠区 1：连接信息（只读）—— 语义统一：true = 折叠 */
+    var connFolded = XJ.store.folded('foldSyncConn');
     body += '<button class="fold-head" data-act="syncFoldConn">连接信息' +
-      '<span class="fold-caret' + (st.ui.foldSyncConn ? '' : ' folded') + '"></span></button>';
-    if (st.ui.foldSyncConn) {
+      '<span class="fold-caret' + (connFolded ? ' folded' : '') + '"></span></button>';
+    if (!connFolded) {
       body += '<div class="sync-kv">' +
         kvLine('云端位置', s.gistId || '—') +
         kvLine('位置指纹', s.boxFingerprint || '—') +
@@ -14853,9 +14899,10 @@ XJ.views.mine = (function () {
 
     /* 折叠区 2：详细日志（只在内存里，刷新即清） */
     var logs = SY.logAll ? SY.logAll() : [];
+    var logFolded = XJ.store.folded('foldSyncLog');
     body += '<button class="fold-head" data-act="syncFoldLog">详细日志' +
-      '<span class="fold-caret' + (st.ui.foldSyncLog ? '' : ' folded') + '"></span></button>';
-    if (st.ui.foldSyncLog) {
+      '<span class="fold-caret' + (logFolded ? ' folded' : '') + '"></span></button>';
+    if (!logFolded) {
       body += '<div class="sync-log">' + (logs.length
         ? logs.slice().reverse().map(function (l) {
             return '<div class="sync-log-l"><span class="t">' + U.esc(String(l.ts).slice(11, 19)) +
@@ -15597,7 +15644,7 @@ XJ.views.symbol = (function () {
       return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount) * yRate, perShare: U.n0(r.perShareAmount),
                qty: U.n0(r.qtyAtRecord), source: r.source };
     });
-    var txFolded = st.ui.foldTx !== false;      // 默认收起
+    var txFolded = XJ.store.folded('foldTx');   // 默认折叠（util.FOLD.collapsed）
     html += '<div class="card flush" style="margin-bottom:12px">';
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0">' +
       '<button class="fold-head" data-act="toggleFoldTx">' +
@@ -15673,7 +15720,7 @@ XJ.views.symbol = (function () {
 
     /* ⑩ 分红档案（可折叠） */
     html += '<div class="card flush" style="margin-bottom:12px">';
-    var planFolded = st.ui.foldPlans !== false;      // 默认收起（条数多时很长）
+    var planFolded = XJ.store.folded('foldPlans');   // 默认折叠（util.FOLD.collapsed）
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0">' +
       '<button class="fold-head" data-act="toggleFoldPlans">' +
       '<h2>分红档案</h2>' +
