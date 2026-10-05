@@ -430,10 +430,11 @@ XJ.views.overview = (function () {
       '<div class="hc-head">' +
       UI.avatar(h.name, h.symbol, 42, C.logoOf(h), 'hc-avatar') +
       '<div class="hc-id">' +
-      /* 名字独占第一行（涨跌幅徽章已移到下一行的代码旁），窄屏也能完整显示 */
+      /* 名字独占第一行，窄屏也能完整显示。
+         ★ 2026-10-06：代码旁的涨跌幅徽章已移除 —— 涨跌% 只在价格行以大号实底徽章出现一次，
+           同一信息不在卡片上重复两遍。 */
       '<div class="hc-name"><span class="nm">' + U.esc(h.name) + '</span>' + tag + '</div>' +
       '<div class="hc-code">' + U.esc(XJ.market.displayCode(h.symbol)) +
-      (chg === null || chg === undefined ? '' : '<span class="chg ' + dir + '" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':chg">' + U.signPct(chg) + '</span>') +
       sig +
       '</div>' +
       '</div>' +
