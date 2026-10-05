@@ -33,7 +33,7 @@ XJ.views.mine = (function () {
 
   function renderTransactions() {
     var st = XJ.store;
-    var folded = st.ui.foldMineTx !== false;      // 默认收起（最多 30 条，收起后页面清爽）
+    var folded = XJ.store.folded('foldMineTx');   // 默认折叠（util.FOLD.collapsed）
     var txs = st.state.transactions.slice().sort(function (a, b) {
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
       return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1;
@@ -146,10 +146,11 @@ XJ.views.mine = (function () {
         '<div class="row-s">' + (mins > 1 ? '已连续失败 ' + mins + ' 分钟' : '本机数据完好无损') + '</div></div></div>';
     }
 
-    /* 折叠区 1：连接信息（只读） */
+    /* 折叠区 1：连接信息（只读）—— 语义统一：true = 折叠 */
+    var connFolded = XJ.store.folded('foldSyncConn');
     body += '<button class="fold-head" data-act="syncFoldConn">连接信息' +
-      '<span class="fold-caret' + (st.ui.foldSyncConn ? '' : ' folded') + '"></span></button>';
-    if (st.ui.foldSyncConn) {
+      '<span class="fold-caret' + (connFolded ? ' folded' : '') + '"></span></button>';
+    if (!connFolded) {
       body += '<div class="sync-kv">' +
         kvLine('云端位置', s.gistId || '—') +
         kvLine('位置指纹', s.boxFingerprint || '—') +
@@ -171,9 +172,10 @@ XJ.views.mine = (function () {
 
     /* 折叠区 2：详细日志（只在内存里，刷新即清） */
     var logs = SY.logAll ? SY.logAll() : [];
+    var logFolded = XJ.store.folded('foldSyncLog');
     body += '<button class="fold-head" data-act="syncFoldLog">详细日志' +
-      '<span class="fold-caret' + (st.ui.foldSyncLog ? '' : ' folded') + '"></span></button>';
-    if (st.ui.foldSyncLog) {
+      '<span class="fold-caret' + (logFolded ? ' folded' : '') + '"></span></button>';
+    if (!logFolded) {
       body += '<div class="sync-log">' + (logs.length
         ? logs.slice().reverse().map(function (l) {
             return '<div class="sync-log-l"><span class="t">' + U.esc(String(l.ts).slice(11, 19)) +
