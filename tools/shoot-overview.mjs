@@ -100,6 +100,41 @@ const PROBE = `(async () => {
   out.accordion.collapsedIcons = document.querySelectorAll('.cover-icons .cover-icon').length;
   out.accordion.uiAfterCollapse = JSON.stringify(XJ.store.ui.coverOpenCats);
 
+  /* ---- 分红覆盖卡整卡折叠：折叠后卡头与 X/N 大数字仍在，明细收起 ---- */
+  var covCard = document.querySelector('.card .cover-head') ? document.querySelector('.card .cover-head').closest('.card') : null;
+  out.fold = {
+    defaultExpanded: XJ.store.ui.coverCollapsed === false,
+    bigText: (document.querySelector('.cover-head .cov-big') || {}).textContent,
+    bodyVisibleBefore: !!document.querySelector('.cover-body'),
+    catsBefore: document.querySelectorAll('.cover-cat').length,
+  };
+  var foldBtn = document.querySelector('.cover-head');
+  if (foldBtn) { foldBtn.click(); await sleep(300); }
+  out.fold.afterClick = {
+    ui: XJ.store.ui.coverCollapsed,
+    cls: covCard2Class(),
+    bigStillVisible: !!document.querySelector('.cover-head .cov-big'),
+    bodyVisible: (function () {
+      var b = document.querySelector('.cover-body');
+      return b ? getComputedStyle(b).display !== 'none' : false;
+    })(),
+    caret: (function () {
+      var c = document.querySelector('.cover-head .cov-caret');
+      return c ? getComputedStyle(c).transform : null;
+    })(),
+  };
+  function covCard2Class() {
+    var el = document.querySelector('.card.cover-collapsed');
+    return el ? 'cover-collapsed' : '';
+  }
+  /* 再点一次应恢复展开 */
+  var foldBtn2 = document.querySelector('.cover-head');
+  if (foldBtn2) { foldBtn2.click(); await sleep(300); }
+  out.fold.afterSecond = {
+    ui: XJ.store.ui.coverCollapsed,
+    cats: document.querySelectorAll('.cover-cat').length,
+  };
+
   /* ---- 持仓卡价格行：主位涨跌% / 次位现价 / 价差已删除 ---- */
   var pxRow = document.querySelector('.hc-intra');
   var pxChg = document.querySelector('.hc-px .chg-lg');
@@ -255,6 +290,16 @@ try {
     if (ac.collapsedIcons === 2 && ac.uiAfterCollapse === '{"essential":true,"quality":false}')
       ok('① 再点品质可单独收起（生存保持展开）');
     else bad('单独收起异常 ' + JSON.stringify(ac));
+
+    const fd = out.fold || {};
+    if (fd.defaultExpanded && fd.catsBefore === 2) ok('① 覆盖卡默认展开（两类分类条在位）');
+    else bad('默认态异常 ' + JSON.stringify(fd));
+    const fc = fd.afterClick || {};
+    if (fc.ui === true && fc.cls === 'cover-collapsed' && fc.bodyVisible === false && fc.bigStillVisible)
+      ok('★ 点标题行折叠：明细收起，X/N 大数字仍保留（' + (fd.bigText || '').trim() + '）');
+    else bad('折叠异常 ' + JSON.stringify(fc));
+    const fs2 = fd.afterSecond || {};
+    if (fs2.ui === false && fs2.cats === 2) ok('① 再点一次恢复展开'); else bad('恢复展开异常 ' + JSON.stringify(fs2));
 
     const px = out.price || {};
     if (px.rowExists && px.chgText && /[+-]?\d/.test(px.chgText)) ok('② 价格行始终显示（涨跌% 主位：' + px.chgText + '）');
