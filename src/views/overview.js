@@ -288,9 +288,11 @@ XJ.views.overview = (function () {
     cov.items.forEach(function (it) { if (it.lit) litKeys[it.key] = true; });
     var nextKey = cov.nextItem ? cov.nextItem.key : null;
 
-    /* 展开态：手风琴 —— 点同一类再次点击即收起（null） */
-    var openCat = (st.ui.coverOpenCat === 'quality') ? 'quality'
-      : (st.ui.coverOpenCat === 'essential' ? 'essential' : null);
+    /* 展开态：两类【各自独立】的布尔集合（可同时展开；默认两类都收起）。
+       ★ 两类明细走同一个 itemIcons()，样式（间距/字号/色值/图标/对齐）天然完全一致。 */
+    var openSet = (st.ui.coverOpenCats && typeof st.ui.coverOpenCats === 'object')
+      ? st.ui.coverOpenCats : {};
+    function isOpen(cat) { return openSet[cat] === true; }
 
     function itemIcons(cat) {
       var list = st.state.expenses.filter(function (e) {
@@ -317,7 +319,7 @@ XJ.views.overview = (function () {
     var cats = COVER_CATS.map(function (c) {
       var g = (cov.groups && cov.groups[c.key]) ||
         { count: 0, litCount: 0, monthlyAmount: 0, progress: 0 };
-      var open = openCat === c.key;
+      var open = isOpen(c.key);
       return '<button class="cover-cat' + (open ? ' open' : '') + (g.count ? '' : ' empty') +
         '" data-act="toggleCoverCat" data-v="' + c.key + '">' +
         '<span class="cc-ico">' + c.icon + '</span>' +
@@ -398,26 +400,29 @@ XJ.views.overview = (function () {
     var min = XJ.store.minuteOf(h.symbol);
     var minToday = min && min.date === U.today();
     var showMin = !!(min && min.points && min.points.length >= 2);
-    var intra = '';
-    if (showMin) {
-      var prev = h.prevClose;
-      var chgAmt = (h.price !== null && h.price !== undefined && prev) ? h.price - prev : null;
-      /* 当日参考盈亏（人民币口径）：持股数 ×（现价 − 昨收）× 该标的币种汇率 */
-      var dayPnl = (chgAmt !== null && h.qty > 0) ? chgAmt * h.qty * (U.n0(h.fxRate) || 1) : null;
-      /* 现价与涨跌额都按 2 位小数（A 股行情惯例，也对齐参考图的「16.20 / -0.18」） */
-      intra = '<div class="hc-intra">' +
-        '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' +
-        '<div class="hc-px">' +
-        '<b data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':px" class="' + U.dirClass(chg) + '">' + (h.price === null ? '—' : U.money(h.price, 2)) + '</b>' +
-        '<span data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':pxamt" class="' + U.dirClass(chgAmt) + '">' +
-        (chgAmt === null ? '' : (chgAmt > 0 ? '+' : '') + U.money(chgAmt, 2)) + '</span>' +
-        (minToday ? '' : '<i class="hc-at">' + U.esc(U.mdShort(min.date)) + '</i>') +
-        '</div>' +
-        /* 当日参考盈亏（金额）：持股数 ×（现价 − 昨收）× 汇率 —— 报价一变就跟着变 */
-        (dayPnl === null ? '' : '<div class="hc-daypnl ' + U.dirClass(dayPnl) + '">当日 ' +
-          U.signMoney(dayPnl, 0) + '</div>') +
-        '</div>';
-    }
+    var prev = h.prevClose;
+    var chgAmt = (h.price !== null && h.price !== undefined && prev) ? h.price - prev : null;
+    /* 当日参考盈亏（人民币口径）：持股数 ×（现价 − 昨收）× 该标的币种汇率 */
+    var dayPnl = (chgAmt !== null && h.qty > 0) ? chgAmt * h.qty * (U.n0(h.fxRate) || 1) : null;
+
+    /* 价格行（2026-10-06 重排）：
+         【主位】涨跌% —— 放大实底徽章（红涨绿跌，白字），一眼看到今天涨跌
+         【次位】实时价格 —— 小号灰色，退为次要信息
+       价差（±金额）已移除；这一行【始终显示】—— 无分时数据时只是没有曲线，
+       停牌 / 无缓存 / 非交易时段也能看到涨跌主信息。 */
+    var intra = '<div class="hc-intra">' +
+      (showMin ? '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' : '') +
+      '<div class="hc-px">' +
+      (chg === null || chg === undefined ? '' : '<span class="chg chg-lg ' + dir +
+        '" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':pxchg">' + U.signPct(chg) + '</span>') +
+      '<b data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':px">' +
+      (h.price === null || h.price === undefined ? '—' : U.money(h.price, 2)) + '</b>' +
+      (showMin && !minToday ? '<i class="hc-at">' + U.esc(U.mdShort(min.date)) + '</i>' : '') +
+      '</div>' +
+      /* 当日参考盈亏（金额）：持股数 ×（现价 − 昨收）× 汇率 —— 报价一变就跟着变 */
+      (dayPnl === null ? '' : '<div class="hc-daypnl ' + U.dirClass(dayPnl) + '">当日 ' +
+        U.signMoney(dayPnl, 0) + '</div>') +
+      '</div>';
 
     /* 卡片主体是「进详情」按钮，删除是独立按钮 —— 不能嵌套 button */
     return '<div class="hold-card">' +
