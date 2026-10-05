@@ -392,7 +392,7 @@ XJ.views.symbol = (function () {
       return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount) * yRate, perShare: U.n0(r.perShareAmount),
                qty: U.n0(r.qtyAtRecord), source: r.source };
     });
-    var txFolded = st.ui.foldTx !== false;      // 默认收起
+    var txFolded = XJ.store.folded('foldTx');   // 默认折叠（util.FOLD.collapsed）
     html += '<div class="card flush" style="margin-bottom:12px">';
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0">' +
       '<button class="fold-head" data-act="toggleFoldTx">' +
@@ -468,7 +468,7 @@ XJ.views.symbol = (function () {
 
     /* ⑩ 分红档案（可折叠） */
     html += '<div class="card flush" style="margin-bottom:12px">';
-    var planFolded = st.ui.foldPlans !== false;      // 默认收起（条数多时很长）
+    var planFolded = XJ.store.folded('foldPlans');   // 默认折叠（util.FOLD.collapsed）
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0">' +
       '<button class="fold-head" data-act="toggleFoldPlans">' +
       '<h2>分红档案</h2>' +
