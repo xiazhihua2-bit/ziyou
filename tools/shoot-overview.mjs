@@ -103,9 +103,12 @@ const PROBE = `(async () => {
   /* ---- 分红覆盖卡整卡折叠：折叠后卡头与 X/N 大数字仍在，明细收起 ---- */
   var covCard = document.querySelector('.card .cover-head') ? document.querySelector('.card .cover-head').closest('.card') : null;
   out.fold = {
-    defaultExpanded: XJ.store.ui.coverCollapsed === false,
+    defaultExpanded: XJ.store.ui.coverCollapsed === true,
     bigText: (document.querySelector('.cover-head .cov-big') || {}).textContent,
-    bodyVisibleBefore: !!document.querySelector('.cover-body'),
+    bodyVisibleBefore: (function () {
+      var b = document.querySelector('.cover-body');
+      return b ? getComputedStyle(b).display !== 'none' : false;
+    })(),
     catsBefore: document.querySelectorAll('.cover-cat').length,
   };
   var foldBtn = document.querySelector('.cover-head');
@@ -132,7 +135,11 @@ const PROBE = `(async () => {
   if (foldBtn2) { foldBtn2.click(); await sleep(300); }
   out.fold.afterSecond = {
     ui: XJ.store.ui.coverCollapsed,
-    cats: document.querySelectorAll('.cover-cat').length,
+    /* 折叠是 CSS 隐藏（display:none），DOM 节点仍在 —— 必须看 computed 而不是节点数 */
+    bodyVisible: (function () {
+      var b = document.querySelector('.cover-body');
+      return b ? getComputedStyle(b).display !== 'none' : false;
+    })(),
   };
 
   /* ---- 持仓卡价格行：主位涨跌% / 次位现价 / 价差已删除 ---- */
@@ -292,14 +299,16 @@ try {
     else bad('单独收起异常 ' + JSON.stringify(ac));
 
     const fd = out.fold || {};
-    if (fd.defaultExpanded && fd.catsBefore === 2) ok('① 覆盖卡默认展开（两类分类条在位）');
+    /* 全站折叠默认值已统一为「默认折叠」（util.FOLD.collapsed） */
+    if (fd.defaultExpanded && fd.bodyVisibleBefore === false)
+      ok('① 覆盖卡默认折叠（明细收起，与全站默认一致）');
     else bad('默认态异常 ' + JSON.stringify(fd));
     const fc = fd.afterClick || {};
-    if (fc.ui === true && fc.cls === 'cover-collapsed' && fc.bodyVisible === false && fc.bigStillVisible)
-      ok('★ 点标题行折叠：明细收起，X/N 大数字仍保留（' + (fd.bigText || '').trim() + '）');
-    else bad('折叠异常 ' + JSON.stringify(fc));
+    if (fc.ui === false && fc.cls === '' && fc.bodyVisible === true && fc.bigStillVisible)
+      ok('★ 点标题行展开：明细出现，X/N 大数字始终保留（' + (fd.bigText || '').trim() + '）');
+    else bad('展开异常 ' + JSON.stringify(fc));
     const fs2 = fd.afterSecond || {};
-    if (fs2.ui === false && fs2.cats === 2) ok('① 再点一次恢复展开'); else bad('恢复展开异常 ' + JSON.stringify(fs2));
+    if (fs2.ui === true && fs2.bodyVisible === false) ok('① 再点一次收起（明细隐藏）'); else bad('收起异常 ' + JSON.stringify(fs2));
 
     const px = out.price || {};
     if (px.rowExists && px.chgText && /[+-]?\d/.test(px.chgText)) ok('② 价格行始终显示（涨跌% 主位：' + px.chgText + '）');
