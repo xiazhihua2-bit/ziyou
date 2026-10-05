@@ -669,6 +669,19 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hs-dot[data-hero="wine"]{ background:#3A1620; }
 .hs-dot[data-hero="plum"]{ background:#221A38; }
 
+/* ---- 分红覆盖卡：整卡折叠（折叠后仍留卡头与 X/N 大数字） ---- */
+.cover-head{
+  display:flex; align-items:baseline; gap:8px; width:100%; text-align:left;
+  padding:6px 0 4px; background:none;
+}
+.cover-head:active{ opacity:.65; }
+.cover-head .cov-caret{
+  margin-left:auto; flex:0 0 auto; color:var(--text-3);
+  transition:transform .22s ease; transform:rotate(90deg);
+}
+.card.cover-collapsed .cover-head .cov-caret{ transform:rotate(0deg); }
+.card.cover-collapsed .cover-body{ display:none; }
+
 /* ---- 分红覆盖 · 两大类（生存 / 品质），点分类条手风琴展开该类明细 ---- */
 .cov-cats{ margin-top:10px; }
 .cover-cat{
