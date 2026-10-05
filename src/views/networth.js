@@ -122,7 +122,7 @@ XJ.views.networth = (function () {
     var metric = (metricV === 'nw' || metricV === 'ret') ? metricV : 'mv';
     var mode = getUI(ns, 'mode') === 'candle' ? 'candle' : 'line';
     var gran = getUI(ns, 'gran') === 'month' ? 'month' : 'day';
-    var collapsed = !!getUI(ns, 'collapsed');
+    var collapsed = XJ.store.folded(keyOf(ns, 'collapsed'));   // 默认折叠（util.FOLD.collapsed）
     var beg = getUI(ns, 'beg') || '';
     var end = getUI(ns, 'end') || '';
     var b = build(st, ns);
