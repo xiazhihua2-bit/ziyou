@@ -988,8 +988,16 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   align-items:flex-end; gap:1px; line-height:1.2;
   font-variant-numeric:tabular-nums;
 }
-.hc-px b{ font-size:15px; font-weight:700; letter-spacing:-.3px; }
-.hc-px span{ font-size:11.5px; font-weight:600; }
+/* 2026-10-06 重排：主位 = 涨跌%（放大实底徽章），次位 = 实时价格（小号灰色）。
+   价差（±金额）已删除，不再占据第二行。 */
+.hc-px .chg-lg{
+  font-size:14px; font-weight:750; padding:2px 9px; border-radius:7px;
+  letter-spacing:-.1px; margin-bottom:1px;
+}
+.hc-px b{
+  font-size:12px; font-weight:600; letter-spacing:0;
+  color:var(--text-2);      /* 次要信息：中性灰，不与涨跌徽章抢视线 */
+}
 /* 分时数据的日期角标：仅当这批分时不是「今天」时出现（隔夜 / 周末看昨天的走势），
    提示这条线是历史而非实时。故意压低对比度，不跟现价抢视线。 */
 .hc-px .hc-at{
