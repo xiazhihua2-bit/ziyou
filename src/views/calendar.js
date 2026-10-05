@@ -26,7 +26,7 @@ XJ.views.calendar = (function () {
 
   function pendingCard(st, pend) {
     if (!pend.count) return '';
-    var collapsed = !!st.ui.pendCollapsed;
+    var collapsed = XJ.store.folded('pendCollapsed');   // 默认折叠（util.FOLD.collapsed）
     return '<div class="pend-card' + (collapsed ? ' collapsed' : '') + '">' +
       '<button class="pend-head" data-act="togglePend">' +
       '<span class="pend-ico">💌</span>' +
