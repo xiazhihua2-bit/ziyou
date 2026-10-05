@@ -1324,6 +1324,11 @@
     S.setUI({ pendCollapsed: !S.ui.pendCollapsed });
   });
 
+  /* 分红覆盖卡：整卡折叠 / 展开（折叠后仍保留卡头与「X/N 项已被覆盖」） */
+  UI.on('toggleCoverCard', function () {
+    S.setUI({ coverCollapsed: !S.ui.coverCollapsed });
+  });
+
   /* 分红覆盖卡：两大类各自独立展开 / 收起（可同时展开） */
   UI.on('toggleCoverCat', function (node) {
     var v = node.getAttribute('data-v');
