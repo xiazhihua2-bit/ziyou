@@ -11172,7 +11172,9 @@ XJ.store = (function () {
       annualYear: null,         // 年度总览选中年份
       annualMonth: null,        // 年度总览选中月份
       calView: 'calendar',      // calendar | annual
-      pendCollapsed: false,     // 分红日历「等待除权」卡片是否折叠
+      /* 分红日历「等待除权」卡片是否折叠 —— 2026-10-06：默认【折叠】，
+         标题行（只数 + 预计可得金额）始终可见，点标题行即展开明细。 */
+      pendCollapsed: true,
       /* 首页「分红覆盖」卡：两类各自独立展开（可同时展开；默认两类都收起） */
       coverOpenCats: { essential: false, quality: false },
       fireSpendMode: 'month',   // FIRE 试算 · 花费显示单位（month | day，纯显示不持久化）
