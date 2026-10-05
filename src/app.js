@@ -1324,10 +1324,13 @@
     S.setUI({ pendCollapsed: !S.ui.pendCollapsed });
   });
 
-  /* 分红覆盖卡：两大类手风琴（点同一类收起，null = 全收起） */
+  /* 分红覆盖卡：两大类各自独立展开 / 收起（可同时展开） */
   UI.on('toggleCoverCat', function (node) {
     var v = node.getAttribute('data-v');
-    S.setUI({ coverOpenCat: S.ui.coverOpenCat === v ? null : v });
+    var cur = (S.ui.coverOpenCats && typeof S.ui.coverOpenCats === 'object') ? S.ui.coverOpenCats : {};
+    var next = Object.assign({}, cur);
+    next[v] = cur[v] !== true;
+    S.setUI({ coverOpenCats: next });
   });
 
   UI.on('setCalView', function (node) {
