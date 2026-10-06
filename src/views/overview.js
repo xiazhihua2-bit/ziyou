@@ -510,9 +510,13 @@ XJ.views.overview = (function () {
     }
 
     html += heroCard(st, s, proj, stat);
-    var dayIn = Math.round(s.monthlyDividend);
+    /* 标语口径：每天睡醒「到账」= 日均分红 = 年预测分红 ÷ 365（不是月均）。
+       ≥0.5 元四舍五入取整；不足 1 元保留 1 位小数（避免出现「0 元」）。 */
+    var dailyIn = s.totalPredicted / 365;
+    var dayTxt = dailyIn >= 0.5 ? U.thousands(Math.round(dailyIn))
+      : (dailyIn > 0 ? U.money(dailyIn, 1) : '0');
     html += '<div class="slogan-bar warm slogan-hero">' +
-      '<div class="sb-main">每天睡醒到账分红 <b class="sb-amt" data-anim="A" data-anim-key="slogan:daily">' + U.thousands(dayIn) + '</b> 元</div>' +
+      '<div class="sb-main">每天睡醒到账分红 <b class="sb-amt" data-anim="A" data-anim-key="slogan:daily">' + dayTxt + '</b> 元</div>' +
       '<div class="sb-sub">' + UI.icon('info', 13) + '<span>' + U.esc(C.slogan()) + '</span></div>' +
       '</div>';
     html += coverageCard(st, cov, ms);
