@@ -1,4 +1,4 @@
-/* 持仓页 CDP 验收：分红覆盖卡两大类（生存/品质，手风琴）+ 顶部大卡片配色自选 + 总分红红字
+/* 持仓页 CDP 验收：分红覆盖卡两大类（生存/品质，手风琴）+ 醒目标语（每天睡醒到账分红 X 元）+ 顶部大卡片配色自选 + 总分红红字
  * 用法： node tools/shoot-overview.mjs
  */
 import fs from 'node:fs';
@@ -159,6 +159,25 @@ const PROBE = `(async () => {
     pxAmtGone: !document.querySelector('[data-anim-key$=":pxamt"]'),
     codeBadgeGone: !document.querySelector('.hc-code .chg'),
     codeText: (document.querySelector('.hc-code') || {}).textContent,
+  };
+
+  /* ---- 标语栏：每天睡醒到账分红 X 元（X=月均分红四舍五入，分红红，首屏醒目） ---- */
+  var sb = document.querySelector('.slogan-bar.slogan-hero');
+  var sbMain = document.querySelector('.slogan-hero .sb-main');
+  var sbAmt = document.querySelector('.slogan-hero .sb-amt');
+  var sbSub = document.querySelector('.slogan-hero .sb-sub');
+  var expectIn = Math.round(XJ.calc.summary(XJ.store.state, XJ.store.acc()).monthlyDividend);
+  out.slogan = {
+    exists: !!sb,
+    visible: sb ? sb.offsetWidth > 0 && sb.offsetHeight > 0 : false,
+    mainText: sbMain ? String(sbMain.textContent).replace(/\\s+/g, '') : null,
+    amtText: sbAmt ? sbAmt.textContent : null,
+    expect: expectIn,
+    amtColor: sbAmt ? getComputedStyle(sbAmt).color : null,
+    amtSize: sbAmt ? parseFloat(getComputedStyle(sbAmt).fontSize) : null,
+    mainSize: sbMain ? parseFloat(getComputedStyle(sbMain).fontSize) : null,
+    hasSub: !!sbSub,
+    subText: sbSub ? String(sbSub.textContent || '').trim() : null,
   };
 
   /* 顶部大卡片：默认配色 + 红字 + 切到藏青 */
@@ -323,6 +342,23 @@ try {
     if (px.pxAmtGone) ok('② 价差（±金额）已删除'); else bad('价差仍在');
     if (px.codeBadgeGone) ok('★ 代码旁涨跌徽章已移除（代码行：' + (px.codeText || '').trim() + '）');
     else bad('代码旁徽章仍在');
+
+    const sl = out.slogan || {};
+    if (sl.exists && sl.visible) ok('⑤ 标语栏首屏可见（暖色渐变卡）'); else bad('标语栏缺失或不可见 ' + JSON.stringify(sl));
+    if (sl.mainText && sl.mainText.indexOf('每天睡醒到账分红') >= 0 && sl.mainText.indexOf('元') > 0)
+      ok('★ 标语主行 =「每天睡醒到账分红 … 元」（' + sl.mainText + '）');
+    else bad('标语主行异常 ' + sl.mainText);
+    if (sl.amtText !== null && sl.amtText !== undefined &&
+        parseInt(String(sl.amtText).replace(/,/g, ''), 10) === sl.expect)
+      ok('★ 金额 = 月均分红四舍五入：' + sl.amtText + ' 元（引擎值 ' + sl.expect + '）');
+    else bad('金额不一致 got=' + sl.amtText + ' want=' + sl.expect);
+    if (sl.amtColor && sl.amtColor.replace(/\s/g, '') === 'rgb(255,90,60)')
+      ok('★ 金额分红红 #FF5A3C（' + sl.amtColor + '）');
+    else bad('金额颜色异常 ' + sl.amtColor);
+    if (sl.amtSize && sl.mainSize && sl.amtSize > sl.mainSize)
+      ok('★ 金额比主行文字更大更醒目：' + sl.amtSize + 'px > ' + sl.mainSize + 'px');
+    else bad('金额字号异常 amt=' + sl.amtSize + ' main=' + sl.mainSize);
+    if (sl.hasSub && sl.subText) ok('⑤ 原鸡汤保留为副行小字（' + sl.subText.slice(0, 14) + '…）'); else bad('副行鸡汤缺失');
 
     const hd = out.hero || {};
     if (hd.exists && hd.dataHero === 'graphite') ok('③ 大卡片默认配色 = 经典石墨'); else bad('默认配色异常 ' + hd.dataHero);
