@@ -161,18 +161,21 @@ const PROBE = `(async () => {
     codeText: (document.querySelector('.hc-code') || {}).textContent,
   };
 
-  /* ---- 标语栏：每天睡醒到账分红 X 元（X=月均分红四舍五入，分红红，首屏醒目） ---- */
+  /* ---- 标语栏：每天睡醒到账分红 X 元（X=日均分红 年÷365，分红红，首屏醒目） ---- */
   var sb = document.querySelector('.slogan-bar.slogan-hero');
   var sbMain = document.querySelector('.slogan-hero .sb-main');
   var sbAmt = document.querySelector('.slogan-hero .sb-amt');
   var sbSub = document.querySelector('.slogan-hero .sb-sub');
-  var expectIn = Math.round(XJ.calc.summary(XJ.store.state, XJ.store.acc()).monthlyDividend);
+  var sumS = XJ.calc.summary(XJ.store.state, XJ.store.acc());
+  var dIn = sumS.totalPredicted / 365;
+  var expectTxt = dIn >= 0.5 ? String(Math.round(dIn)) : (dIn > 0 ? dIn.toFixed(1) : '0');
   out.slogan = {
     exists: !!sb,
     visible: sb ? sb.offsetWidth > 0 && sb.offsetHeight > 0 : false,
     mainText: sbMain ? String(sbMain.textContent).replace(/\\s+/g, '') : null,
     amtText: sbAmt ? sbAmt.textContent : null,
-    expect: expectIn,
+    expectTxt: expectTxt,
+    dailyRaw: dIn,
     amtColor: sbAmt ? getComputedStyle(sbAmt).color : null,
     amtSize: sbAmt ? parseFloat(getComputedStyle(sbAmt).fontSize) : null,
     mainSize: sbMain ? parseFloat(getComputedStyle(sbMain).fontSize) : null,
@@ -349,9 +352,9 @@ try {
       ok('★ 标语主行 =「每天睡醒到账分红 … 元」（' + sl.mainText + '）');
     else bad('标语主行异常 ' + sl.mainText);
     if (sl.amtText !== null && sl.amtText !== undefined &&
-        parseInt(String(sl.amtText).replace(/,/g, ''), 10) === sl.expect)
-      ok('★ 金额 = 月均分红四舍五入：' + sl.amtText + ' 元（引擎值 ' + sl.expect + '）');
-    else bad('金额不一致 got=' + sl.amtText + ' want=' + sl.expect);
+        String(sl.amtText).replace(/,/g, '') === sl.expectTxt)
+      ok('★ 金额 = 日均到账分红（年 ÷ 365 四舍五入）：' + sl.amtText + ' 元（引擎日均值 ' + sl.dailyRaw.toFixed(2) + '）');
+    else bad('金额不一致 got=' + sl.amtText + ' want=' + sl.expectTxt);
     if (sl.amtColor && sl.amtColor.replace(/\s/g, '') === 'rgb(255,90,60)')
       ok('★ 金额分红红 #FF5A3C（' + sl.amtColor + '）');
     else bad('金额颜色异常 ' + sl.amtColor);
