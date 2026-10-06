@@ -510,7 +510,11 @@ XJ.views.overview = (function () {
     }
 
     html += heroCard(st, s, proj, stat);
-    html += '<div class="slogan-bar">' + UI.icon('info', 15) + '<span>' + U.esc(C.slogan()) + '</span></div>';
+    var dayIn = Math.round(s.monthlyDividend);
+    html += '<div class="slogan-bar warm slogan-hero">' +
+      '<div class="sb-main">每天睡醒到账分红 <b class="sb-amt" data-anim="A" data-anim-key="slogan:daily">' + U.thousands(dayIn) + '</b> 元</div>' +
+      '<div class="sb-sub">' + UI.icon('info', 13) + '<span>' + U.esc(C.slogan()) + '</span></div>' +
+      '</div>';
     html += coverageCard(st, cov, ms);
 
     /* ---- 资产走势（市值 / 净资产曲线，卡片自带标题与折叠） ---- */
