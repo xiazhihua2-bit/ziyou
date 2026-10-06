@@ -651,6 +651,18 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   box-shadow:var(--shadow); display:flex; align-items:center; gap:8px;
 }
 .slogan-bar.warm{ background:var(--slogan-grad); color:var(--slogan-warm-fg); box-shadow:none; border:1px solid var(--warn-line); }
+/* 醒目标语：每天睡醒到账分红 X 元（主行大字 + 金额分红红，副行鸡汤小字） */
+.slogan-bar.slogan-hero{ display:block; text-align:center; padding:14px 14px 11px; }
+.slogan-hero .sb-main{ font-size:16px; font-weight:800; letter-spacing:.3px; line-height:1.4; }
+.slogan-hero .sb-amt{
+  font-size:22px; font-weight:800; color:#FF5A3C;
+  padding:0 3px; font-variant-numeric:tabular-nums;
+}
+.slogan-hero .sb-sub{
+  margin-top:5px; font-size:11.5px; opacity:.72;
+  display:flex; align-items:center; justify-content:center; gap:5px;
+}
+.slogan-hero .sb-sub svg{ flex:none; }
 
 /* ==================== 分红覆盖：图标格 ==================== */
 .cover-icons{ display:flex; gap:5px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding:4px 1px 8px; }
@@ -13087,7 +13099,11 @@ XJ.views.overview = (function () {
     }
 
     html += heroCard(st, s, proj, stat);
-    html += '<div class="slogan-bar">' + UI.icon('info', 15) + '<span>' + U.esc(C.slogan()) + '</span></div>';
+    var dayIn = Math.round(s.monthlyDividend);
+    html += '<div class="slogan-bar warm slogan-hero">' +
+      '<div class="sb-main">每天睡醒到账分红 <b class="sb-amt" data-anim="A" data-anim-key="slogan:daily">' + U.thousands(dayIn) + '</b> 元</div>' +
+      '<div class="sb-sub">' + UI.icon('info', 13) + '<span>' + U.esc(C.slogan()) + '</span></div>' +
+      '</div>';
     html += coverageCard(st, cov, ms);
 
     /* ---- 资产走势（市值 / 净资产曲线，卡片自带标题与折叠） ---- */
