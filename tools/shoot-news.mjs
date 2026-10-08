@@ -47,7 +47,7 @@ const P1 = `(async () => {
 
   var nowSec = Math.floor(Date.now() / 1000);
   var seedCache = {
-    v: 1, sweepMs: Date.now(), newestAt: nowSec - 3600, covered: true, via: 'tapp',
+    v: 2, sweepMs: Date.now(), newestAt: nowSec - 3600, covered: true, via: 'tapp',
     hits: [
       { id: 'ths_probe1', title: '伯克希尔宣布完成增持西方石油，斥资10亿美元',
         digest: '伯克希尔·哈撒韦提交的文件显示，加仓已在披露日前完成交割。',
@@ -125,7 +125,7 @@ const P3 = `(async () => {
   var b2 = document.getElementById('view-body');
   out.empty = {
     covered: !!(XJ.store.state.newsCache && XJ.store.state.newsCache.covered),
-    text: (b2.textContent || '').indexOf('近 7 天无相关动态') >= 0,
+    text: (b2.textContent || '').indexOf('近 15 天无相关动态') >= 0,
     hasRefresh: !!b2.querySelector('[data-act="newsRefresh"]'),
     noRows: !b2.querySelector('.news-row'),
   };
