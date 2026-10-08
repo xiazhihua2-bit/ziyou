@@ -38,7 +38,7 @@ const PROBE = `(async () => {
   /* 种一个新鲜 newsCache（covered + 当下 sweepMs）：newsCache 不进 fromImport（红线），
      只能 init 后直写。目的：进新闻 Tab 时 ensureNews 不触发后台检索轮 —— 否则
      48 词离线轮询每 400ms notify 重渲染，会把下面的长按拖拽打断（tabOrder 写不进去）。 */
-  XJ.store.state.newsCache = { v: 3, sweepMs: Date.now(), newestAt: 0, covered: true, via: 'em', hits: [] };
+  XJ.store.state.newsCache = { v: 4, sweepMs: Date.now(), newestAt: 0, covered: true, via: 'em', hits: [] };
   XJ.store.setUI({ tab: 'overview', subPage: null });
   await sleep(400);
 
