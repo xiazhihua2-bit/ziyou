@@ -1,7 +1,7 @@
 /* ==================== 视图：搜索加自选（subPage · 图五） ====================
  * 顶部搜索框（smartbox 联想，fetcher.fetchSymbolSearch）→ 结果行 =
  * 官方 Logo + 名称 + 市场·代码 + 价格 + 涨跌%（涨红跌绿）+ 右侧星标（图五）。
- * 范围：仅 A股 / 港股 / 美股 / ETF（确认过的决策；场外基金与指数排除）。
+ * 范围：A股 / 港股 / 美股(指数成分) / 日股(日经225成分) / ETF（确认过的决策；场外基金与指数排除）。
  * 点星 → 分组选择 sheet（单选 + 新建分组）；已在自选 = 实心星，可换组或移除。
  * 行情走模块级 memo（TTL 60s）；列表在输入态下【局部更新】，不整页重绘（保焦点）。
  */
@@ -16,7 +16,9 @@ XJ.views.search = (function () {
 
   function ensurePx(syms, onDone) {
     var want = syms.filter(function (s) { return !pxMemo.quotes[s]; });
-    if (pxPending || !want.length) { if (onDone) onDone(); return; }
+    /* 无新行情可取（或另一批在途）就不回调：在途批次完成时会自己刷新，无待取时列表已带缓存行情。
+       同步调 onDone 会 listHtml→ensurePx→onDone→listHtml 无限递归（stack overflow） */
+    if (pxPending || !want.length) return;
     pxPending = true;
     XJ.fetcher.fetchQuotes(want).then(function (qs) {
       pxPending = false;
@@ -33,10 +35,13 @@ XJ.views.search = (function () {
     return pxMemo.quotes[sym] || XJ.store.state.quoteCache[sym] || null;
   }
 
-  /** 只放行 A股/港股/美股/ETF；指数与场外基金排除 */
+  /** 只放行 A股/港股/美股/ETF/日股；指数与场外基金排除；
+   *  美股/日股另受指数成分白名单约束（标普500/纳指100/道指30/日经225） */
   function tradable(sym) {
     var mk = XJ.model.marketOf(sym);
-    if (['sh', 'sz', 'bj', 'hk', 'us'].indexOf(mk) < 0) return false;
+    if (['sh', 'sz', 'bj', 'hk', 'us', 'jp'].indexOf(mk) < 0) return false;
+    if (mk === 'us' && !XJ.universe.hasUs(sym)) return false;
+    if (mk === 'jp' && !XJ.universe.hasJp(sym)) return false;
     try {
       var at = XJ.market.assetType(sym);
       if (at === 'of' || at === 'INDEX' || at === '指数') return false;
@@ -53,7 +58,7 @@ XJ.views.search = (function () {
     var pct = chg !== null && q.prevClose ? chg / q.prevClose * 100 : null;
     var dir = chg === null ? '' : (chg >= 0 ? 'c-up' : 'c-down');
     var inWl = XJ.store.wlHas(sym);
-    var mktLabel = { sh: 'SH', sz: 'SZ', bj: 'BJ', hk: 'HK', us: 'US' }[XJ.model.marketOf(sym)] || '';
+    var mktLabel = { sh: 'SH', sz: 'SZ', bj: 'BJ', hk: 'HK', us: 'US', jp: 'JP' }[XJ.model.marketOf(sym)] || '';
     return '<div class="card wl-row srch-row">' +
       '<div class="wl-av">' + UI.avatar(hit.name, sym, 40, C.logoFor(sym)) + '</div>' +
       '<div class="wl-nm"><span>' + U.esc(hit.name) + '</span><b>' + U.esc(hit.code) + ' · ' + mktLabel + '</b></div>' +
@@ -75,7 +80,7 @@ XJ.views.search = (function () {
     }
     if (!memo.hits.length) {
       return '<div class="card" style="text-align:center;padding:30px 18px">' +
-        '<div class="tiny" style="font-size:12.5px">没有匹配的 A股 / 港股 / 美股 / ETF</div></div>';
+        '<div class="tiny" style="font-size:12.5px">没有匹配的 A股 / 港股 / 美股成分 / 日经225成分 / ETF</div></div>';
     }
     var shown = memo.hits.slice(0, 20);
     ensurePx(shown.map(function (h) { return h.symbol; }), function () {
@@ -102,7 +107,18 @@ XJ.views.search = (function () {
       XJ.fetcher.fetchSymbolSearch(kw).then(function (hits) {
         if (memo.kw !== kw) return;                       // 已有更新的输入，丢弃旧结果
         memo.hits = (hits || []).filter(function (h) { return tradable(h.symbol); });
+        /* 腾讯联想不覆盖日股：白名单本地匹配补齐（日股唯一入口、美股兜底） */
+        XJ.universe.searchLocal(kw).forEach(function (h) {
+          if (tradable(h.symbol) && !memo.hits.some(function (x) { return x.symbol === h.symbol; })) memo.hits.push(h);
+        });
         refreshList();
+        /* 搜索行头像：自选/非持仓标的此前不解析 logo → 命中后异步补官方图标，
+           回填走局部刷新（不整页重绘，保输入焦点） */
+        if (XJ.app && XJ.app.ensureLogosFor) {
+          XJ.app.ensureLogosFor(memo.hits.slice(0, 12).map(function (h) { return h.symbol; }), function () {
+            if (memo.kw === kw) refreshList();
+          });
+        }
       });
     }, 260);
   }
@@ -113,7 +129,7 @@ XJ.views.search = (function () {
       '<input id="wl-srch" type="search" placeholder="代码 / 名称 / 拼音" value="' + U.esc(memo.kw) + '" autocomplete="off">' +
       (memo.kw ? '<button class="srch-clear" data-act="srchClear" aria-label="清空">' + UI.icon('close', 13) + '</button>' : '') +
       '</div>' +
-      '<div class="tiny" style="margin-top:8px">仅支持 A股 · 港股 · 美股 · ETF（场外基金暂不支持自选）</div>' +
+      '<div class="tiny" style="margin-top:8px">支持 A股 · 港股 · ETF · 美股（限标普/纳指100/道指成分）· 日股（限日经225成分）；场外基金暂不支持自选</div>' +
       '</div>' +
       '<div id="wl-srch-list">' + listHtml() + '</div>';
   }
