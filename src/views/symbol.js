@@ -72,8 +72,11 @@ XJ.views.symbol = (function () {
     /* ② 没有可用的财年方案 */
     if (!steps.length) {
       return open + head('—') +
-        '<div class="tiny" style="line-height:1.7">还没有可用的年报分红数据。' +
-        '点下方「同步该标的数据」获取分红方案后即可绘制。</div></div>';
+        '<div class="tiny" style="line-height:1.7">' +
+        (st.ui.symLoading === symbol ? '正在同步分红数据…' :
+          '还没有可用的年报分红数据。' +
+          '点下方「同步该标的数据」获取分红方案后即可绘制。') +
+        '</div></div>';
     }
 
     /* ③ 有方案但收盘价缓存还没到位 */
@@ -81,7 +84,7 @@ XJ.views.symbol = (function () {
       return open + head('—',
         '<button class="ghost-btn" data-act="refreshOne" data-symbol="' + U.esc(symbol) + '">刷新</button>') +
         '<div class="tiny" style="line-height:1.7">' +
-        (st.ui.busy ? '正在获取历史收盘价…' : '还没有历史收盘价。点右上「刷新」拉取后即可绘制曲线。') +
+        (st.ui.busy || st.ui.symLoading === symbol ? '正在获取历史收盘价…' : '还没有历史收盘价。点右上「刷新」拉取后即可绘制曲线。') +
         '</div></div>';
     }
 
@@ -478,7 +481,9 @@ XJ.views.symbol = (function () {
       '<div class="spacer"></div>' +
       '<button class="ghost-btn" data-act="openBasisEditor" data-symbol="' + U.esc(symbol) + '">口径</button></div></div>';
     if (!plans.length) {
-      html += '<div style="padding:0 16px 16px" class="tiny">暂无分红数据，点下方「同步该标的数据」获取。</div>';
+      html += '<div style="padding:0 16px 16px" class="tiny">' +
+        (st.ui.symLoading === symbol ? '正在同步分红数据…' : '暂无分红数据，点下方「同步该标的数据」获取。') +
+        '</div>';
     } else if (planFolded) {
       html += '<div style="padding:0 16px 14px" class="tiny">已收起，共 ' + plans.length +
         ' 条方案与预案 · 点标题展开查看</div>';
