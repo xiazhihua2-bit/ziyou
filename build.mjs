@@ -30,11 +30,14 @@ const JS_FILES = [
   'src/sync-transport.js', // 传输层（换后端只改这个文件）
   'src/sync.js',           // 编排层（依赖 store / storage / sync-core）
   'src/ui.js',
+  'src/dnd.js',            // 长按拖拽排序引擎（Tab / 分组管理共用）
   'src/views/overview.js',
   'src/views/networth.js',
   'src/views/calendar.js',
   'src/views/plan.js',
   'src/views/divsummary.js',
+  'src/views/watchlist.js',
+  'src/views/news.js',
   'src/views/mine.js',
   'src/views/analysis.js',
   'src/views/symbol.js',
