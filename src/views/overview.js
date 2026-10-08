@@ -105,8 +105,10 @@ XJ.views.common = (function () {
 
   /* ---------------- 个股详情：跳转到独立页（见 views/symbol.js） ---------------- */
   function openSymbolDetail(symbol) {
+    if (XJ.app && XJ.app.openSymbolPage) { XJ.app.openSymbolPage(symbol); return; }
     XJ.store.setUI({ subPage: 'symbol', subArg: symbol, floatOpen: false });
     window.scrollTo(0, 0);
+    if (XJ.app && XJ.app.ensureSymbolDividends) XJ.app.ensureSymbolDividends(symbol);
   }
 
   return {
