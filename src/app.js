@@ -2,15 +2,26 @@
 (function () {
   var U = XJ.util, UI = XJ.ui, M = XJ.model, S = XJ.store, C = XJ.calc;
 
+  /* 六 Tab（2026-10-08 改版）：顺序 = 默认顺序；用户长按拖拽后的顺序存 settings.tabOrder
+     （跨设备同步）。图标 = 图一风格的填充式字形（ui.js 的 tab-* 系列）。 */
   var TABS = [
-    { id: 'overview', label: '持仓', icon: 'overview' },
-    { id: 'calendar', label: '分红日历', icon: 'calendar' },
-    { id: 'find', label: 'FIRE', icon: 'flame' },
-    { id: 'mine', label: '我的', icon: 'mine' },
+    { id: 'overview', label: '持仓', icon: 'tab-hold' },
+    { id: 'watchlist', label: '自选', icon: 'tab-watch' },
+    { id: 'calendar', label: '日历', icon: 'tab-cal' },
+    { id: 'news', label: '新闻', icon: 'tab-news' },
+    { id: 'find', label: 'FIRE', icon: 'tab-fire' },
+    { id: 'mine', label: '我的', icon: 'tab-mine' },
   ];
+  var TAB_DEFAULT_ORDER = M.TAB_IDS.slice();
+  var TAB_BY_ID = {};
+  TABS.forEach(function (t) { TAB_BY_ID[t.id] = t; });
 
-  /* 「发现」Tab 当前复用规划视图（息覆生活 / 展望未来 / 股息统计）。
-     自选盯盘为后续待办；股票筛选器已按需求移除，不再列入任何一期范围。 */
+  function tabOrderList() {
+    return (M.normalizeTabOrder(S.state.settings.tabOrder) || TAB_DEFAULT_ORDER)
+      .map(function (id) { return TAB_BY_ID[id]; })
+      .filter(Boolean);
+  }
+
   XJ.views.find = XJ.views.plan;
 
   /* ---------------- 骨架 ---------------- */
@@ -68,7 +79,9 @@
 
     var meta = {
       overview: ['自由', '股息收入追踪'],
+      watchlist: ['自选', '分组盯盘 · 官方图标'],
       calendar: ['分红日历', '股权登记 · 除权除息 · 派息日'],
+      news: ['新闻', '传奇投资者 · 已成交动态'],
       find: ['FIRE', '被动收入 · 财务自由试算'],
       mine: ['我的', '账户 · 数据 · 设置'],
     }[S.ui.tab] || ['自由', ''];
@@ -95,9 +108,10 @@
 
   function tabsHtml() {
     if (S.ui.subPage) return '';
-    return TABS.map(function (t) {
-      return '<button class="tab' + (S.ui.tab === t.id ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '">' +
-        UI.icon(t.icon, 24, S.ui.tab === t.id ? 1.9 : 1.6) +
+    return tabOrderList().map(function (t) {
+      var act = S.ui.tab === t.id;
+      return '<button class="tab' + (act ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '" aria-label="' + t.label + '">' +
+        UI.icon(t.icon, 23) +
         '<span>' + t.label + '</span></button>';
     }).join('');
   }
@@ -133,6 +147,15 @@
     top.innerHTML = topHtml();
     body.innerHTML = viewHtml();
     tabs.innerHTML = tabsHtml();
+    if (XJ.dnd) {
+      XJ.dnd.bind(tabs, {
+        itemSel: '.tab',
+        attr: 'data-tab',
+        onCommit: function (order) {
+          S.commit(function (s) { s.settings.tabOrder = order; });
+        },
+      });
+    }
     if (tabSwitched) {
       body.classList.remove('view-enter');
       void body.offsetWidth;
@@ -765,6 +788,8 @@
 
   /* ---------------- 交互动作 ---------------- */
   UI.on('gotoTab', function (node) {
+    /* 拖拽排序刚结束的 350ms 内吞掉点击（dnd 已在捕获层拦，这里双保险） */
+    if (XJ.dnd && XJ.dnd.isJustDragged()) return;
     S.setUI({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
     window.scrollTo(0, 0);
   });
