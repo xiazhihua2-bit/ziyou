@@ -6,17 +6,20 @@
  * 结构：规则横幅 + 「仅查看自选」开关（ui.wlNewsOnly，默认关）+ 时间轴列表
  *       （左列日期同日仅首条显示 + 绿点 + 竖线，北京时间）+ 空态 + 红线页脚。
  * 与旧版（同花顺 tapp 全量翻页回看）的差异：请求量 3000+ 条 → ~400 条；
- *   每条自带来源媒体与原文链接；冷词会翻出数月前旧闻，靠 15 天时间下限挡。
+ *   每条自带来源媒体与原文链接；冷词会翻出数年前旧闻，靠一年时间下限挡。
+ * 回看窗口一年（10-08 用户拍板）：深扫每词翻页（≤8 页）直到覆盖 cutoff；
+ *   增量轮（TTL 到期）只扫每词第 1 页，新条目天然在头部。
  */
 XJ.views.news = (function () {
   var U = XJ.util, UI = XJ.ui;
 
-  var PER_SIZE = 8;              // 每主体词取东财最新 N 条（fetcher.NEWS_SEARCH_PER_SIZE 同源）
+  var PER_SIZE = 20;             // 每页条数（fetcher.NEWS_SEARCH_PER_SIZE 同源默认值）
+  var NEWS_MAX_PAGES = 8;        // 深扫每词翻页上限（20×8=160 条/词，请求预算兜底）
   var SINA_MAX_PAGES = 3;        // 新浪兜底翻页上限（总库存仅约 900 条）
   var INCR_TTL = 10 * 60 * 1000; // 增量拉取间隔：进页 10 分钟内不重复请求
-  var CAP = 200;                 // 缓存命中上限（防极端行情日撑爆 localStorage）
-  var LOOKBACK_DAYS = 15;        // 时间下限：冷词检索会翻出数月前旧闻，15 天外一律丢弃
-  var CACHE_V = 3;               // 缓存口径版本：词表/窗口/主源变更后 +1，旧缓存整轮重扫
+  var CAP = 500;                 // 缓存命中上限（一年窗口下 200 会截断热主体）
+  var LOOKBACK_DAYS = 365;       // 时间下限：冷词检索会翻出数年前旧闻，一年外一律丢弃
+  var CACHE_V = 4;               // 缓存口径版本：词表/窗口/主源变更后 +1，旧缓存整轮重扫
 
   var pulling = false;           // 本轮检索（含兜底）进行中
   var live = null;               // 本轮累积命中（已合并排序）；收尾后归 null
@@ -32,20 +35,21 @@ XJ.views.news = (function () {
     return c && Array.isArray(c.hits) ? c.hits : [];
   }
 
-  /** 进页自动补数：没跑过 / 缓存口径过期 / 过 TTL → 重跑一轮检索。
-   *  东财 sort=time 返回的天然是最新条目，增量靠 newsMerge 按 id 去重。 */
+  /** 进页自动补数：没跑过 / 缓存口径过期 → 翻页深扫；过 TTL → 只扫每词第 1 页
+   *  （sort=time 的新条目都在头部，增量轮不必翻页）。 */
   function ensureNews() {
     if (pulling) return;
     var c = XJ.store.state.newsCache;
-    if (!c || !c.covered || c.v !== CACHE_V || Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull();
+    if (!c || !c.covered || c.v !== CACHE_V) { runPull(true); return; }
+    if (Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull(false);
   }
 
   /**
-   * 检索轮：searchTerms 逐词查东财，每词命中即渐进渲染；收尾才 commitNow 落盘
-   * （中途关页丢弃本轮，下次进页重来——与「宁缺勿滥」同口径）。
+   * 检索轮：searchTerms 逐词查东财（deep 时翻页到覆盖一年），每页命中即渐进渲染；
+   * 收尾才 commitNow 落盘（中途关页丢弃本轮，下次进页重来——与「宁缺勿滥」同口径）。
    * 旧命中先铺底：列表不闪断。
    */
-  function runPull() {
+  function runPull(deep) {
     pulling = true;
     prog = { done: 0, total: 0, via: '' };
     live = XJ.calc.newsMerge(cacheHits(), [], cutoffSec(), CAP);
@@ -66,7 +70,7 @@ XJ.views.news = (function () {
         live.push({
           id: raw.id, title: raw.title, digest: raw.digest, url: raw.url,
           source: raw.source, tags: (raw.tags || []).slice(0, 3),
-          ents: m.hits.slice(0, 3), ctime: raw.ctime,
+          ents: m.hits.slice(0, 3), feat: m.feat ? 1 : 0, ctime: raw.ctime,
         });
         if (raw.ctime > newest) newest = raw.ctime;
       });
@@ -92,10 +96,15 @@ XJ.views.news = (function () {
     }
 
     XJ.fetcher.fetchNewsSearchMulti(terms, PER_SIZE, function (items) {
-      prog.done++;
-      if (items && items.length) emOk++;
       absorb(items);
-      notify();                                      // 每词先渲染出去（动效层 400ms 节流兜着）
+      notify();                                      // 每页先渲染出去（动效层 400ms 节流兜着）
+    }, {
+      deep: deep, cutoffSec: cutoffSec(), maxPages: NEWS_MAX_PAGES,
+      onWord: function (kw, count) {                 // 每词收尾才推进进度（深扫一词多页）
+        prog.done++;
+        if (count) emOk++;
+        notify();
+      },
     }).then(function () {
       if (emOk > 0) { publish(true, 'em'); return; }
       /* 东财整轮颗粒无收（接口挂/全词失败）→ 新浪 7x24 兜底，1 页有数据才续 2~3 页 */
@@ -116,10 +125,10 @@ XJ.views.news = (function () {
     }).catch(function () { publish(true, 'em'); });
   }
 
-  /** 手动刷新（空态按钮 / 详情页脚）：强制全量重检 */
+  /** 手动刷新（空态按钮 / 详情页脚）：强制全量深扫重检 */
   function refresh() {
     if (pulling) { UI.toast('正在检索中，请稍候…'); return; }
-    runPull();
+    runPull(true);
   }
 
   /* ---------------- 渲染 ---------------- */
@@ -142,10 +151,12 @@ XJ.views.news = (function () {
     return names;
   }
 
-  /** 时间轴行：左列日期（同日仅首条显示，传 null 则占位空）+ 绿点 + 竖线 */
+  /** 时间轴行：左列日期（同日仅首条显示，传 null 则占位空）+ 绿点 + 竖线。
+   *  重点主体（李嘉诚家族/伯克希尔）加金色「★ 重点」徽章 + 行金描边，不置顶 */
   function rowHtml(h, day, names) {
     var rel = XJ.calc.newsWlHits(h, names);
     var pills = '';
+    if (h.feat) pills += '<span class="pill gold">★ 重点</span>';
     (h.ents || []).forEach(function (e) {
       pills += '<span class="pill blue">' + U.esc(e) + '</span>';
     });
@@ -154,7 +165,7 @@ XJ.views.news = (function () {
       pills += '<span class="pill gold">' + U.esc(n) + '</span>';
     });
     if (h.source) pills += '<span class="tl-src">' + U.esc(h.source) + '</span>';
-    return '<div class="news-row" data-act="newsOpen" data-id="' + U.esc(h.id) + '" role="button">' +
+    return '<div class="news-row' + (h.feat ? ' feat' : '') + '" data-act="newsOpen" data-id="' + U.esc(h.id) + '" role="button">' +
       '<div class="tl-side">' +
       '<div class="tl-date">' + (day ? U.esc(day) : '') + '</div>' +
       '<div class="tl-dot"></div><div class="tl-line"></div></div>' +
@@ -193,7 +204,7 @@ XJ.views.news = (function () {
 
     if (pulling) {
       html += '<div class="news-prog">' + UI.icon('refresh', 13) +
-        '<span>正在按 ' + prog.total + ' 个监控主体检索近 ' + LOOKBACK_DAYS + ' 天动态… ' +
+        '<span>正在按 ' + prog.total + ' 个监控主体检索近一年动态… ' +
         prog.done + '/' + prog.total + (prog.via === 'sina' ? '（新浪兜底）' : '') +
         '</span></div>';
     }
@@ -203,7 +214,7 @@ XJ.views.news = (function () {
         html += '<div class="card" style="text-align:center;padding:30px 18px">' +
           '<div class="tiny">正在按硬规则筛选检索结果，命中的动态会陆续出现在这里…</div></div>';
       } else {
-        html += UI.emptyState('📰', '近 ' + LOOKBACK_DAYS + ' 天无相关动态',
+        html += UI.emptyState('📰', '近一年无相关动态',
           '硬规则只收已成交的可核验事实，宁缺勿滥。',
           '<button class="btn-block" data-act="newsRefresh" style="max-width:220px;margin:14px auto 0">手动刷新</button>');
       }
@@ -225,19 +236,21 @@ XJ.views.news = (function () {
     return html;
   }
 
-  /** 点行 → 详情 sheet（全文 + 来源 + 时间 + 标签 + 原文链接） */
-  function openDetail(id) {
+  /** 点行 → 详情 sheet（全文 + 来源 + 时间 + 标签 + 原文链接）。
+   *  fromHist = popstate 还原重开，不再压栈 */
+  function openDetail(id, fromHist) {
     var h = null;
     (live || cacheHits()).forEach(function (x) { if (x.id === id) h = x; });
     if (!h) { UI.toast('条目已过期，请刷新后再试'); return; }
     var full = XJ.calc.newsTimeText(h.ctime);
-    var tags = (h.tags || []).map(function (t) {
+    var tags = (h.feat ? '<span class="pill gold">★ 重点</span>' : '') + (h.tags || []).map(function (t) {
       return '<span class="pill gray">' + U.esc(t) + '</span>';
     }).join('') + (h.ents || []).map(function (e) {
       return '<span class="pill blue">' + U.esc(e) + '</span>';
     }).join('');
     UI.openSheet({
       title: '快讯详情',
+      hist: fromHist ? null : 'news', histArg: id,
       html: '<div class="nd-tt">' + U.esc(h.title) + '</div>' +
         '<div class="nd-meta">' + U.esc(full) + ' · ' + U.esc(h.source || '快讯') + '</div>' +
         (tags ? '<div class="nr-meta" style="margin-top:10px">' + tags + '</div>' : '') +
