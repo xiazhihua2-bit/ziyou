@@ -47,7 +47,7 @@ const P1 = `(async () => {
 
   var nowSec = Math.floor(Date.now() / 1000);
   var seedCache = {
-    v: 3, sweepMs: Date.now(), newestAt: nowSec - 3600, covered: true, via: 'em',
+    v: 4, sweepMs: Date.now(), newestAt: nowSec - 3600, covered: true, via: 'em',
     hits: [
       { id: 'em_probe1', title: '伯克希尔宣布完成增持西方石油，斥资10亿美元',
         digest: '伯克希尔·哈撒韦提交的文件显示，加仓已在披露日前完成交割。',
@@ -62,7 +62,12 @@ const P1 = `(async () => {
   };
   XJ.store.state.newsCache = seedCache;
   window.SEED_CACHE = seedCache;      /* 留给 320px 环节重新铺底 */
-  XJ.store.setUI({ tab: 'news', subPage: null });
+  /* ★ 必须用真实点击切 tab（走 navTo 写入 history 基准）。直接 setUI 不入栈，
+   *   详情 sheet 关闭时 history.back() 会退回初始 overview —— P2/P3/P4 全线视图漂移。 */
+  var __tabs = document.querySelectorAll('[data-tab]');
+  for (var __i = 0; __i < __tabs.length; __i++) {
+    if (__tabs[__i].getAttribute('data-tab') === 'news') __tabs[__i].click();
+  }
   await sleep(420);
 
   var body = document.getElementById('view-body');
@@ -131,7 +136,7 @@ const P3 = `(async () => {
   out.empty = {
     covered: !!(XJ.store.state.newsCache && XJ.store.state.newsCache.covered),
     via: (XJ.store.state.newsCache || {}).via || '',
-    text: (b2.textContent || '').indexOf('近 15 天无相关动态') >= 0,
+    text: (b2.textContent || '').indexOf('近一年无相关动态') >= 0,
     hasRefresh: !!b2.querySelector('[data-act="newsRefresh"]'),
     noRows: !b2.querySelector('.news-row'),
   };
@@ -275,7 +280,7 @@ try {
   const em = (out3.empty || {});
   if (em.covered) ok('⑤ 离线检索轮快速收尾（covered=true，不留悬挂进度）'); else bad('检索轮未收尾');
   if (em.via === 'sina') ok('★ 东财整轮离线失败 → 走新浪兜底（via=sina）'); else bad('兜底路径异常 via=' + em.via);
-  if (em.text) ok('★ 空态文案「近 15 天无相关动态」'); else bad('空态文案缺失');
+  if (em.text) ok('★ 空态文案「近一年无相关动态」'); else bad('空态文案缺失');
   if (em.hasRefresh) ok('★ 空态带手动刷新按钮'); else bad('空态缺刷新按钮');
   if (em.noRows) ok('★ 空态无残留行'); else bad('空态仍有残留行');
   await shot(browser, sessionId, 'news-empty.png');
