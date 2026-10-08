@@ -131,14 +131,18 @@ XJ.ui = (function () {
       为什么不用「先加 closing 类再延时移除」：那会把 closeSheet 变成异步语义，
       开 A→关 A→开 B 的流程里 B 会被挂起的清场定时器一起删掉（实测 uitest 全线挂）。
       immediate=true 或 reduced-motion：不播动画。 */
-  function closeSheet(immediate) {
+  var sheetHist = null;
+
+  function closeSheet(immediate, silentHist) {
     var root = document.getElementById('modal-root');
     if (!root) return;
     var mask = root.querySelector('.mask');
     if (!mask) return;
+    var hid = sheetHist && sheetHist.id;
     var animate = !immediate && !(XJ.anim && XJ.anim.reduced());
     var ghost = animate ? mask.cloneNode(true) : null;
     root.innerHTML = '';
+    sheetHist = null;
     if (ghost) {
       ghost.classList.add('closing');
       var host = document.createElement('div');
@@ -148,11 +152,15 @@ XJ.ui = (function () {
       document.body.appendChild(host);
       setTimeout(function () { if (host.parentNode) host.parentNode.removeChild(host); }, 240);
     }
+    /* 入栈的内容型 sheet 被 UI 关闭时通知 app 弹掉对应历史条目（栈与画面同步）；
+       silentHist = 调用方自己在同步栈（openSheet 顶替旧层 / popstate 还原），不要再 back() */
+    if (hid && !silentHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(hid);
   }
 
   function openSheet(opts) {
     opts = opts || {};
-    closeSheet();
+    var prevHist = sheetHist && sheetHist.id;
+    closeSheet(false, true);
     var root = document.getElementById('modal-root');
     var mask = document.createElement('div');
     mask.className = 'mask';
@@ -162,10 +170,19 @@ XJ.ui = (function () {
     mask.innerHTML = '<div class="sheet">' + inner + '</div>';
     mask.addEventListener('click', function (e) { if (e.target === mask) closeSheet(); });
     root.appendChild(mask);
+    sheetHist = opts.hist ? { id: opts.hist, arg: opts.histArg === undefined ? null : opts.histArg } : null;
     var sheet = mask.querySelector('.sheet');
     if (opts.onMount) opts.onMount(sheet);
+    /* 入栈 sheet 被无栈 sheet 顶替（如分组选择里点「新建分组」开表单）：
+       旧 sheet 不会再回来，静默弹掉它的历史条目，保持栈与画面同步 */
+    if (prevHist && !sheetHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(prevHist);
+    if (sheetHist && XJ.app && XJ.app.onSheetOpen) XJ.app.onSheetOpen(sheetHist.id);
     return sheet;
   }
+
+  /** 当前打开的入栈 sheet 标识（history 还原用；未入栈 sheet 为 null） */
+  function sheetHistId() { return sheetHist ? sheetHist.id : null; }
+  function sheetHistArg() { return sheetHist ? sheetHist.arg : null; }
 
   function confirmDialog(opts) {
     return new Promise(function (resolve) {
@@ -246,6 +263,8 @@ XJ.ui = (function () {
     toast: toast,
     openSheet: openSheet,
     closeSheet: closeSheet,
+    sheetHistId: sheetHistId,
+    sheetHistArg: sheetHistArg,
     confirm: confirmDialog,
     on: on,
     installDelegation: installDelegation,
