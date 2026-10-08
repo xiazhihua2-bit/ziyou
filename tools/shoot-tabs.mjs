@@ -35,6 +35,10 @@ const PROBE = `(async () => {
 
   XJ.store.init(XJ.model.fromImport(SEED_JSON));
   XJ.store.ui.accountId = XJ.calc.ALL;
+  /* 种一个新鲜 newsCache（covered + 当下 sweepMs）：newsCache 不进 fromImport（红线），
+     只能 init 后直写。目的：进新闻 Tab 时 ensureNews 不触发后台检索轮 —— 否则
+     48 词离线轮询每 400ms notify 重渲染，会把下面的长按拖拽打断（tabOrder 写不进去）。 */
+  XJ.store.state.newsCache = { v: 3, sweepMs: Date.now(), newestAt: 0, covered: true, via: 'em', hits: [] };
   XJ.store.setUI({ tab: 'overview', subPage: null });
   await sleep(400);
 
@@ -78,7 +82,7 @@ const PROBE = `(async () => {
   out.newsPage = {
     hasSlogan: !!nd.querySelector('.slogan-bar'),
     hasSwitch: !!nd.querySelector('.news-ctl .switch'),
-    hasBody: !!nd.querySelector('.news-list') || (nd.textContent || '').indexOf('无相关动态') >= 0 || (nd.textContent || '').indexOf('正在回看') >= 0,
+    hasBody: !!nd.querySelector('.news-tl') || !!nd.querySelector('.news-row') || (nd.textContent || '').indexOf('无相关动态') >= 0 || (nd.textContent || '').indexOf('个监控主体检索') >= 0,
     hasFooter: (nd.textContent || '').indexOf('不构成投资建议') >= 0,
   };
   clickTab('overview'); await sleep(300);
