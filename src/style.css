@@ -1835,6 +1835,8 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   border-bottom:.5px solid var(--line); cursor:pointer; }
 .news-row:last-child{ border-bottom:0; }
 .news-row:active{ background:rgba(120,120,128,.06); }
+/* 重点主体行（李嘉诚家族/伯克希尔）：金色左描边 + 淡金底，仅视觉强调、不改变时间序 */
+.news-row.feat{ background:rgba(240,163,10,.07); box-shadow:inset 3px 0 0 var(--dividend); }
 .tl-side{ flex:0 0 48px; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
 .tl-date{ font-size:11px; color:var(--text-3); font-variant-numeric:tabular-nums;
   line-height:1.3; white-space:nowrap; }
