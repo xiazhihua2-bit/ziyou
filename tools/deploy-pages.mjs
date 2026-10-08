@@ -50,6 +50,7 @@ const FILES = [
   ['tools/shoot-overview.mjs', 'tools/shoot-overview.mjs'],
   ['tools/shoot-tabs.mjs', 'tools/shoot-tabs.mjs'],
   ['tools/shoot-watchlist.mjs', 'tools/shoot-watchlist.mjs'],
+  ['tools/shoot-news.mjs', 'tools/shoot-news.mjs'],
   ['tools/shoot-theme.mjs', 'tools/shoot-theme.mjs'],
   ['tools/sync-e2e.mjs', 'tools/sync-e2e.mjs'],
   ['tools/deploy-pages.mjs', 'tools/deploy-pages.mjs'],
