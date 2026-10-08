@@ -31,7 +31,8 @@ XJ.fetcher = (function () {
     var q = XJ.market.parseQuoteFields(symbol, raw);
     if (q) {
       q.nameRaw = raw.split('~')[1] || '';
-      q.name = cleanName(q.nameRaw);
+      /* 日股：market 已把腾讯英文名换成分名白名单里的中文名，不要用原始英文名覆盖回去 */
+      if (XJ.market.marketOf(symbol) !== 'jp' || !q.name) q.name = cleanName(q.nameRaw);
     }
     return q;
   }
@@ -1599,12 +1600,12 @@ XJ.fetcher = (function () {
 
   /** 东财按词检索：fetch 主路（CORS 全开）→ 9s 未回转 JSONP 注入兜底；
    *  两路都失败返回 []，绝不 reject（下游串行循环不希望被单词打断） */
-  function fetchNewsSearch(kw, size) {
+  function fetchNewsSearch(kw, size, pageIndex) {
     size = size || NEWS_SEARCH_PER_SIZE;
     var param = encodeURIComponent(JSON.stringify({
       uid: '', keyword: String(kw || ''), type: ['cmsArticleWebOld'],
       client: 'web', clientType: 'web', clientVersion: 'curr',
-      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: 1, pageSize: size, preTag: '<em>', postTag: '</em>' } },
+      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: pageIndex || 1, pageSize: size, preTag: '<em>', postTag: '</em>' } },
     }));
     return new Promise(function (resolve) {
       var phase = 'fetch';                       // fetch → jsonp → done
@@ -1637,23 +1638,64 @@ XJ.fetcher = (function () {
     });
   }
 
+  /** 按词翻页深扫（一年回看窗口用）：sort=time 降序，逐页往回翻。
+   *  终止条件三选一先到即停：空页 / 本页末条已早于 cutoff（窗口已覆盖）/ maxPages 上限。
+   *  onPage(items, kw, page) 每页回调（视图渐进渲染）；resolve(该词全部原始条目)。 */
+  function fetchNewsSearchPaged(kw, opts, onPage) {
+    var o = opts || {};
+    var pageSize = o.pageSize || NEWS_SEARCH_PER_SIZE;
+    var maxPages = o.maxPages || 8;
+    var cutoff = o.cutoffSec || 0;
+    var out = [];
+    var page = 0;
+    function step() {
+      if (page >= maxPages) return Promise.resolve(out);
+      page++;
+      return fetchNewsSearch(kw, pageSize, page).then(function (items) {
+        items = items || [];
+        out = out.concat(items);
+        if (onPage) { try { onPage(items, kw, page); } catch (e) { /* 渲染层异常不拦取数 */ } }
+        if (!items.length) return out;
+        if (cutoff) {
+          var last = items[items.length - 1];       // sort=time 降序：末条即本页最旧
+          if ((last && last.ctime || 0) < cutoff) return out;
+        }
+        if (page >= maxPages) return out;
+        return new Promise(function (r) { setTimeout(r, 120); }).then(step);
+      });
+    }
+    return step();
+  }
+
   /** 按词表逐个检索（串行 + 120ms 间隔防限流，参考页实测安全值）。
-   *  onEach(items, kw)：每词完成即回调 —— 视图用它做渐进渲染。
+   *  onEach(items, kw)：每页/每词完成即回调 —— 视图用它做渐进渲染。
+   *  opts.deep：翻页深扫（否则每词只取第 1 页的增量快扫）；
+   *  opts.cutoffSec / opts.maxPages：深扫终止参数；opts.onWord(kw, count) 每词收尾回调。
    *  resolve(全部原始条目)；单词失败只跳过该词，不打断整轮。 */
-  function fetchNewsSearchMulti(keywords, perSize, onEach) {
+  function fetchNewsSearchMulti(keywords, perSize, onEach, opts) {
     var list = (keywords || []).filter(Boolean);
+    var o = opts || {};
     var out = [];
     var i = 0;
     return new Promise(function (resolve) {
       function step() {
         if (i >= list.length) return resolve(out);
         var kw = list[i++];
-        fetchNewsSearch(kw, perSize).then(function (items) {
+        var got = 0;
+        function pageCb(items) {
           items = items || [];
+          got += items.length;
           out = out.concat(items);
           if (onEach) { try { onEach(items, kw); } catch (e) { /* 渲染层异常不拦取数 */ } }
+        }
+        function wordDone() {
+          if (o.onWord) { try { o.onWord(kw, got); } catch (e) { /* 同上 */ } }
           setTimeout(step, 120);
-        }).catch(function () { setTimeout(step, 120); });
+        }
+        var pr = o.deep
+          ? fetchNewsSearchPaged(kw, { pageSize: perSize, maxPages: o.maxPages, cutoffSec: o.cutoffSec }, pageCb)
+          : fetchNewsSearch(kw, perSize).then(pageCb);
+        pr.then(wordDone).catch(wordDone);
       }
       step();
     });
@@ -1710,6 +1752,7 @@ XJ.fetcher = (function () {
     hkReportDate: hkReportDate,
     fetchDividends: fetchDividends,
     fetchNewsSearch: fetchNewsSearch,
+    fetchNewsSearchPaged: fetchNewsSearchPaged,
     fetchNewsSearchMulti: fetchNewsSearchMulti,
     fetchNewsSinaPage: fetchNewsSinaPage,
     parseNewsEm: parseNewsEm,
