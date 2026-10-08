@@ -11529,10 +11529,12 @@ XJ.calc = (function () {
 
   /* ==================== 新闻硬规则（六 Tab 三期） ====================
    * 用户拍板（2026-10-08 决策 10）：纯关键词硬规则，弃 GLM ——
-   * 「已成交可核验」的事实才收录，宁缺勿滥。三道闸依次为：
+   * 「已成交可核验」的事实才收录，宁缺勿滥。四道闸依次为：
    *   ① 传闻排除词 —— 一票否决（据悉/拟/或将/知情人士…，凡是「还没发生」的一律不收）
-   *   ② 实体词表命中 —— 必过（传奇投资者与其旗下平台，图七监控清单）
-   *   ③ 完成时态 / 金额结构词 —— 必过（宣布/完成/斥资/亿/%…没有动作与量级的不收）
+   *   ② 指数排除词 —— 一票否决（10-08 追加：指数行情/指标类报道一律不收，
+   *      含「巴菲特指标」这类宏观数据——它不是投资者的动作）
+   *   ③ 实体词表命中 —— 必过（传奇投资者与其旗下平台，图七监控清单）
+   *   ④ 完成时态 / 金额结构词 —— 必过（宣布/完成/斥资/亿/%…没有动作与量级的不收）
    * 词表刻意做成可维护配置：新增实体只需往 NEWS_RULES.entities 加一个词。 */
 
   var NEWS_RULES = {
@@ -11541,8 +11543,10 @@ XJ.calc = (function () {
       /* 伯克希尔系 */
       '巴菲特', '伯克希尔', '波克夏', '哈撒韦', 'BRK', '芒格',
       '阿贝尔', '康布斯', 'Todd Combs', 'Weschler',
-      /* 长和系（四平台）+ 李氏家族 */
-      '李嘉诚', '李泽钜', '李泽楷', '长和', '长江实业', '长实集团', '和黄', '电能实业',
+      /* 长和系（四平台）+ 李氏家族。★ '长和' 裸词不进表：
+         中文动词短语「断粮仍能长和生存」会子串误伤（真实数据踩过），只收明确后缀 */
+      '李嘉诚', '李泽钜', '李泽楷', '长和系', '长和集团', '长和实业',
+      '长江实业', '长实集团', '和黄', '电能实业',
       'CK Hutchison', 'CK Asset', 'CK Infrastructure', 'Power Assets',
       /* 海外传奇投资机构 */
       'Exor', 'LVMH', '路威酩轩', '阿尔诺', 'Arnault',
@@ -11567,13 +11571,25 @@ XJ.calc = (function () {
       '计划', '筹备', '磋商', '洽谈', '探讨', '评估中', '知情人士', '消息称',
       '消息人士', '接近', '有望', '预计', '或以', '意在', '据说',
     ],
+    /* 指数排除词：一票否决（10-08 用户追加）。指数行情/指数编制/宏观察指标
+       都不是「投资者的动作」；'指数' 一词整体否决是最稳的口径 —— 命中实体的
+       快讯里只要顺带提到指数也不收，宁缺勿滥。'综指' 单列：韩国综指等不带"数"字。 */
+    indexWords: [
+      '指数', '综指', '股指', '大盘', '巴菲特指标', '沪深京', '沪指', '深成指', '创业板',
+      '恒指', '国指', '纳指', '道指', '标普', '日内涨', '日内跌',
+    ],
+    /* 误报排除词：一票否决（真实数据里发现的子串误伤，10-08） */
+    blocklist: [
+      '三星堆',      /* 电影《三星堆》命中「三星」 */
+    ],
   };
 
-  /** 词表命中：纯中文走 indexOf；拉丁词（含空格/点）按不区分大小写正则匹配 */
+  /** 词表命中：纯中文走 indexOf；拉丁词按不区分大小写 + 词边界匹配
+   *  （★ \b 必须有：否则 GIC 会命中 Ma[gic]9、PIF 会命中任意英文子串 —— 真实数据踩过） */
   function newsTextHas(text, word) {
     if (!word) return false;
     if (/^[A-Za-z0-9][A-Za-z0-9 .&·'-]*$/.test(word)) {
-      var re = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      var re = new RegExp('\\b' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
       return re.test(text);
     }
     return text.indexOf(word) >= 0;
@@ -11581,7 +11597,8 @@ XJ.calc = (function () {
 
   /**
    * 硬规则判定。返回 null（不收）或 { hits: [命中的实体词...] }（按词表序）。
-   * 判定顺序刻意固定：传闻否决 → 实体 → 结构。测试与行为都依赖这个顺序。
+   * 判定顺序刻意固定：传闻否决 → 指数否决 → 误报否决 → 实体 → 结构。
+   * 测试与行为都依赖这个顺序。
    */
   function newsFilter(item) {
     if (!item) return null;
@@ -11590,6 +11607,12 @@ XJ.calc = (function () {
     var i;
     for (i = 0; i < NEWS_RULES.rumors.length; i++) {
       if (newsTextHas(text, NEWS_RULES.rumors[i])) return null;
+    }
+    for (i = 0; i < NEWS_RULES.indexWords.length; i++) {
+      if (newsTextHas(text, NEWS_RULES.indexWords[i])) return null;
+    }
+    for (i = 0; i < NEWS_RULES.blocklist.length; i++) {
+      if (newsTextHas(text, NEWS_RULES.blocklist[i])) return null;
     }
     var hits = [];
     for (i = 0; i < NEWS_RULES.entities.length; i++) {
@@ -16116,11 +16139,12 @@ XJ.views.search = (function () {
 XJ.views.news = (function () {
   var U = XJ.util, UI = XJ.ui;
 
-  var MAX_PAGES = 18;            // 回看翻页上限：实测 7 天 ≈ 12~15 页（100 条/页），留余量
+  var MAX_PAGES = 30;            // 回看翻页上限：15 天 ≈ 25~30 页（100 条/页）
   var SINA_MAX_PAGES = 3;        // 新浪兜底的翻页上限（总库存仅约 900 条）
   var INCR_TTL = 10 * 60 * 1000; // 增量拉取间隔：进页 10 分钟内不重复请求
   var CAP = 200;                 // 缓存命中上限（防极端行情日撑爆 localStorage）
-  var LOOKBACK_DAYS = 7;
+  var LOOKBACK_DAYS = 15;        // 回看窗口（10-08 用户追加：7 → 15 天）
+  var CACHE_V = 2;               // 缓存口径版本：词表/窗口变更后 +1，旧缓存整轮重扫
 
   var pulling = false;           // 本轮回看（含增量）进行中
   var live = null;               // 回看期间的累积命中（已合并排序）；收尾后归 null
@@ -16129,18 +16153,18 @@ XJ.views.news = (function () {
   function cutoffSec() { return Math.floor(Date.now() / 1000) - LOOKBACK_DAYS * 86400; }
   function notify() { XJ.store.setUI({ newsTick: Date.now() }); }
 
-  function newCache() { return { v: 1, sweepMs: 0, newestAt: 0, covered: false, via: '', hits: [] }; }
+  function newCache() { return { v: CACHE_V, sweepMs: 0, newestAt: 0, covered: false, via: '', hits: [] }; }
 
   function cacheHits() {
     var c = XJ.store.state.newsCache;
     return c && Array.isArray(c.hits) ? c.hits : [];
   }
 
-  /** 进页自动补数：没覆盖过 7 天窗口 → 全量回看；覆盖过但过了 TTL → 只拉增量 */
+  /** 进页自动补数：没覆盖过窗口 / 缓存口径过期 → 全量回看；覆盖过但过了 TTL → 只拉增量 */
   function ensureNews() {
     if (pulling) return;
     var c = XJ.store.state.newsCache;
-    if (!c || !c.covered) { runPull('sweep'); return; }
+    if (!c || !c.covered || c.v !== CACHE_V) { runPull('sweep'); return; }
     if (Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull('incr');
   }
 
@@ -16164,7 +16188,7 @@ XJ.views.news = (function () {
     function publish(final) {
       if (final) {
         var c = XJ.store.state.newsCache || newCache();
-        c.v = 1;
+        c.v = CACHE_V;
         c.sweepMs = Date.now();
         c.newestAt = Math.max(c.newestAt || 0, newest);
         c.covered = true;
