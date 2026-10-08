@@ -1814,3 +1814,41 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .sync-card code{ font-size:11.5px; background:var(--fill); padding:1px 4px; border-radius:4px; }
 
 
+
+
+/* ==================== 新闻页（六 Tab 三期） ==================== */
+/* 「仅查看自选」控制卡：iOS 开关复用全局 .switch */
+.news-ctl{ display:flex; align-items:center; gap:12px; padding:13px 16px; }
+.news-ctl .row-main{ flex:1; min-width:0; }
+.news-ctl .row-t{ font-size:14.5px; font-weight:600; }
+.news-ctl .row-s{ font-size:12px; color:var(--text-3); margin-top:2px; }
+/* 自选相关 pill：分红金（与 .pill.blue 实体蓝成对） */
+.pill.gold{ background:rgba(240,163,10,.15); color:var(--dividend); }
+/* 回看进度条 */
+.news-prog{ display:flex; align-items:center; gap:6px; justify-content:center;
+  font-size:12px; color:var(--text-3); padding:2px 0 10px; }
+.news-prog svg{ animation:spin 1.1s linear infinite; }
+/* 时间轴：日期头（左右细线夹住标签）+ 行（左时间右内容，图六快讯风） */
+.news-list{ display:flex; flex-direction:column; }
+.news-day{ margin:14px 4px 8px; font-size:12.5px; font-weight:650; color:var(--text-3);
+  display:flex; align-items:center; gap:10px; }
+.news-day::after{ content:''; flex:1; height:1px; background:var(--line); }
+.news-row{ display:flex; align-items:flex-start; gap:12px; padding:13px 14px;
+  margin-bottom:8px; cursor:pointer; }
+.news-row:active{ transform:scale(.985); }
+.nr-time{ flex:0 0 auto; font-size:12.5px; color:var(--text-3);
+  font-variant-numeric:tabular-nums; padding-top:3px; }
+.nr-main{ flex:1; min-width:0; }
+.news-row > svg{ flex:0 0 auto; color:var(--text-3); margin-top:4px; }
+.nr-tt{ font-size:14.5px; font-weight:600; line-height:1.5; word-break:break-word; }
+.nr-ds{ font-size:12.5px; color:var(--text-2); line-height:1.55; margin-top:3px;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.nr-meta{ margin-top:7px; display:flex; gap:6px; flex-wrap:wrap; }
+/* 详情 sheet */
+.nd-tt{ font-size:16px; font-weight:700; line-height:1.55; word-break:break-word; }
+.nd-meta{ font-size:12.5px; color:var(--text-3); margin-top:6px;
+  font-variant-numeric:tabular-nums; }
+.nd-ds{ font-size:14px; line-height:1.8; color:var(--text-2); margin-top:12px;
+  white-space:pre-wrap; word-break:break-word; }
+/* 红线页脚 */
+.news-foot{ text-align:center; font-size:11.5px; color:var(--text-3); padding:14px 0 6px; }
