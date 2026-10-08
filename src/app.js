@@ -387,6 +387,78 @@
   }
 
   /**
+   * 批量补齐任意标的（含自选非持仓）的公司图标 —— 修「搜索行/自选行显示汉字头像」。
+   * 与 resolveLogosNow 的差异：不限持仓、由调用方指定 symbol 清单、完成后回调 onDone
+   * （搜索页用它做列表局部刷新，保住输入框焦点）。
+   * 去重：已有 ok 结论 / 今天已试过 / 在途请求，一律跳过（logoStale 同口径）。
+   */
+  var logoPending = {};
+  function ensureLogosFor(syms, onDone) {
+    /* 只在真拿到新图标时回调：空结果也回调会让调用方（搜索列表）反复重渲染再入本函数 */
+    function finish(got) { if (got && onDone) { try { onDone(got); } catch (e) { /* 渲染层异常不拦取数 */ } } return got; }
+    if (!S.state) return Promise.resolve(finish(0));
+    var today = U.today();
+    var algo = XJ.fetcher.LOGO_ALGO;
+    var need = [];
+    (syms || []).forEach(function (sym) {
+      if (!sym || logoPending[sym]) return;
+      var rec = S.state.symbols[sym];
+      if (!rec) {
+        /* 无任何 logo 数据源的市场（日股/场外基金/ETF）不建壳、不解析 —— 保持汉字头像 */
+        if (!XJ.market.orgInfoQuery(sym) && !XJ.market.thsF10Url(sym)) return;
+        /* 直接建壳、不走 S.commit：commit 会同步重绘 → 搜索列表再次调用本函数造成递归；
+           结尾的 commitNow 会把记录一并落盘 */
+        rec = S.state.symbols[sym] = M.symbolRecord(sym, {});
+      }
+      if (!XJ.market.logoStale(rec, today, algo)) return;
+      logoPending[sym] = 1;
+      need.push({ symbol: sym, domain: rec.domain || null });
+    });
+    if (!need.length) return Promise.resolve(finish(0));
+
+    return Promise.resolve().then(function () {
+      /* 自选股没走过持仓的域名抓取：先补官网域名（A/港/美有 F10 源），再验真候选 */
+      var miss = need.filter(function (it) { return !it.domain; }).map(function (it) { return it.symbol; });
+      if (!miss.length) return null;
+      return XJ.fetcher.fetchCompanyDomains(miss).then(function (m) {
+        need.forEach(function (it) {
+          if (!it.domain && m && m[it.symbol]) {
+            it.domain = m[it.symbol];
+            var r = S.state.symbols[it.symbol];
+            if (r) r.domain = m[it.symbol];
+          }
+        });
+      }).catch(function () { });
+    }).then(function () {
+      return XJ.fetcher.resolveLogos(need, 2);
+    }).then(function (hits) {
+      var got = 0;
+      need.forEach(function (it) {
+        delete logoPending[it.symbol];
+        var rec = S.state.symbols[it.symbol];
+        if (!rec) return;
+        var hit = hits[it.symbol];
+        rec.logoResolvedOn = today;
+        rec.logoAlgo = algo;
+        if (hit && hit.url) {
+          rec.logoUrl = hit.url;
+          rec.logoSource = hit.source;
+          rec.logoState = 'ok';
+          got++;
+        } else if (rec.logoState !== 'ok') {
+          rec.logoUrl = null;
+          rec.logoState = 'bad';
+        }
+      });
+      S.commitNow(null);
+      return finish(got);
+    }).catch(function () {
+      need.forEach(function (it) { delete logoPending[it.symbol]; });
+      return finish(0);
+    });
+  }
+
+  /**
    * 保证对比指数有历史日线（每天刷新一次，缓存落在 state.indexHistory）。
    * 只在「收益率」曲线被打开时才需要，避免无谓请求。
    */
@@ -756,6 +828,48 @@
     });
   }
 
+  /**
+   * 打开自选（非持仓）标的详情时自动补分红数据 —— 修「股息率/分红档案/分红记录全空白」。
+   * 根因：state.plans / received / yieldHistory 只由 refreshAll（仅持仓）填充，
+   * 而 symbol 页纯读缓存不发请求。这里按单只补齐：方案 + 长历史收盘（股息率曲线）+ 实时行情。
+   * 去重：已有方案 / 在途请求直接跳过；美股日股无分红源 → 不拉，详情页走警示卡。
+   */
+  var divPending = {};
+  function ensureSymbolDividends(sym) {
+    if (!S.state || !sym) return;
+    if (!XJ.market.dividendSource(sym)) return;
+    if (divPending[sym]) return;
+    if ((C.plansOf(S.state, sym) || []).length) return;
+    divPending[sym] = 1;
+    S.setUI({ symLoading: sym });
+    var ycodes = {};
+    var yrec = S.state.symbols[sym];
+    if (yrec && yrec.quoteCode) ycodes[sym] = yrec.quoteCode;
+    var yPr = XJ.market.supportsYieldCurve(sym)
+      ? XJ.fetcher.fetchYieldHistory([sym], { codes: ycodes }).then(function (map) {
+        var pack = map && map[sym];
+        if (pack && pack.day && pack.day.length >= 2) {
+          S.state.yieldHistory[sym] = { v: 2, at: U.today(), day: pack.day };
+        }
+      }).catch(function () { /* 曲线取数失败不拦档案 */ })
+      : Promise.resolve();
+    Promise.all([
+      XJ.fetcher.fetchQuotes([sym]).then(function (q) {
+        if (S.mergeQuotes(q)) S.commitNow(null);
+      }).catch(function () { }),
+      pullPlansFor(sym),
+      yPr,
+    ]).then(function () {
+      C.applyAutoReceived(S.state);
+      delete divPending[sym];
+      S.commitNow(null);
+      S.setUI({ symLoading: null });
+    }).catch(function () {
+      delete divPending[sym];
+      S.setUI({ symLoading: null });
+    });
+  }
+
   /* ---------------- 通用表单辅助 ---------------- */
   function accountOptions(selected) {
     return S.accounts().map(function (a) {
@@ -793,17 +907,83 @@
   }
 
   /* ---------------- 交互动作 ---------------- */
+  /* ==================== 手机端侧滑返回：history 返回栈 ====================
+   * 应用原是纯状态驱动 show/hide，完全没有历史条目 —— 手机端侧滑（浏览器返回）
+   * 会直接退出 app。这里给每次「打开新层级」（切 Tab / 二级页 / 内容型 sheet）
+   * push 一条历史，popstate 时按 state 还原 UI；最初首页处用 guard 条目接住
+   * 第一次侧滑提示「再滑一次退出」，窗口内第二次才真正退出（系统默认行为）。
+   * pushState 传 '' 不动 URL，#xjsync= 配对的 hashchange 不受影响；
+   * file:// 等 pushState 抛错的环境降级为现状（只 setUI 不入栈）。 */
+  var NAV_BASE = null, navTop = null, navExitAt = 0;
+  function navSnap(id) {
+    return {
+      xj: 1, id: id || 'nav',
+      tab: S.ui.tab, sub: S.ui.subPage || null, arg: S.ui.subArg || null,
+      sheet: XJ.ui.sheetHistId(), sheetArg: XJ.ui.sheetHistArg(),
+    };
+  }
+  function navPush() {
+    try { var s = navSnap('nav'); history.pushState(s, ''); navTop = s; } catch (e) { /* 降级 */ }
+  }
+  function navTo(patch) { S.setUI(patch); navPush(); }
+  function mkGuard() { return navSnap('guard'); }
+
+  /* 内容型 sheet 的「按 id 重开」注册表（popstate 还原栈上 sheet 用） */
+  var SHEET_OPENERS = {
+    news: function (arg) { if (XJ.views.news && XJ.views.news.openDetail) XJ.views.news.openDetail(arg, true); },
+    wlManage: function () { openManageSheet(true); },
+    wlGroup: function (arg) { openStarGroupSheet(arg && arg.sym, arg && arg.name, true); },
+  };
+  function applyNav(s) {
+    navTop = s;
+    S.setUI({ tab: s.tab, subPage: s.sub, subArg: s.arg });
+    var cur = XJ.ui.sheetHistId();
+    var want = s.sheet || null;
+    if (cur !== want) {
+      if (cur) XJ.ui.closeSheet(true, true);
+      if (want && SHEET_OPENERS[want]) { try { SHEET_OPENERS[want](s.sheetArg); } catch (e) { } }
+    }
+  }
+  function onPopState(e) {
+    var s = (e.state && e.state.xj) ? e.state : NAV_BASE;
+    if (!s || !s.id) s = NAV_BASE;
+    if (s.id === 'base') {
+      var now = Date.now();
+      if (navExitAt && now - navExitAt < 2500) {       // 二次侧滑 → 交还系统行为退出
+        navExitAt = 0;
+        try { history.back(); } catch (err) { }
+        return;
+      }
+      navExitAt = now;
+      UI.toast('再滑一次退出');
+      try { var g = mkGuard(); history.pushState(g, ''); navTop = g; } catch (err) { }
+      return;
+    }
+    navExitAt = 0;
+    applyNav(s);
+  }
+  /* ui.openSheet(opts.hist) 的回调：sheet 已挂 DOM，此时压栈正好带上 sheet 标识。
+     同一 sheet 被就地重建（管理分组拖拽排序后重开等）不重复入栈 */
+  function onSheetOpen(id) {
+    if (navTop && navTop.sheet === id) return;
+    navPush();
+  }
+  /* sheet 被 UI 关闭（点遮罩/按钮）时，栈顶若仍是它则弹掉，保持栈与画面同步 */
+  function onSheetClose(id) {
+    if (navTop && navTop.sheet === id) { try { history.back(); } catch (e) { } }
+  }
+
   UI.on('gotoTab', function (node) {
     /* 拖拽排序刚结束的 350ms 内吞掉点击（dnd 已在捕获层拦，这里双保险） */
     if (XJ.dnd && XJ.dnd.isJustDragged()) return;
-    S.setUI({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
+    navTo({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
     window.scrollTo(0, 0);
   });
 
   /* ==================== 自选（watchlist · 二期） ==================== */
 
   UI.on('openSearch', function () {
-    S.setUI({ subPage: 'search', floatOpen: false });
+    navTo({ subPage: 'search', floatOpen: false });
   });
 
   UI.on('srchClear', function () {
@@ -833,8 +1013,9 @@
   }
   UI.on('openWlGroups', openGroupSheet);
 
-  /* 管理模式：改名 / 删除 / 拖拽排序（XJ.dnd axis:'y'，把手 ≡） */
-  function openManageSheet() {
+  /* 管理模式：改名 / 删除 / 拖拽排序（XJ.dnd axis:'y'，把手 ≡）。
+     fromHist = popstate 还原重开，不再压栈；内部重建（拖拽/删组后）靠 onSheetOpen 去重不重复入栈 */
+  function openManageSheet(fromHist) {
     var groups = S.wlGroups();
     var isDefault = function (id) {
       return XJ.model.WL_DEFAULT_GROUPS.some(function (d) { return d.groupId === id; });
@@ -852,6 +1033,7 @@
       '<div class="tiny" style="margin-top:8px;text-align:center">长按 ≡ 拖动调整分组顺序</div>';
     UI.openSheet({
       title: '管理分组', html: html,
+      hist: fromHist ? null : 'wlManage',
       onMount: function () {
         var list = document.getElementById('wl-gm-list');
         if (list && XJ.dnd) {
@@ -867,7 +1049,7 @@
       },
     });
   }
-  UI.on('openWlManage', openManageSheet);
+  UI.on('openWlManage', function () { openManageSheet(false); });
 
   UI.on('wlGroupCreate', function (node) {
     var starSym = node ? node.getAttribute('data-star-sym') : null;
@@ -947,8 +1129,10 @@
   });
 
   UI.on('wlOpenSymbol', function (node) {
-    S.setUI({ subPage: 'symbol', subArg: node.getAttribute('data-sym'), floatOpen: false });
+    var sym = node.getAttribute('data-sym');
+    navTo({ subPage: 'symbol', subArg: sym, floatOpen: false });
     window.scrollTo(0, 0);
+    ensureSymbolDividends(sym);
   });
 
   UI.on('wlRemoveItem', function (node) {
@@ -956,10 +1140,9 @@
     UI.toast('已从自选移除');
   });
 
-  /* 图五：搜索结果点星 → 分组选择 sheet（单选 + 新建 + 移除） */
-  UI.on('wlStar', function (node) {
-    var sym = node.getAttribute('data-sym');
-    var name = node.getAttribute('data-name') || '';
+  /* 图五：搜索结果点星 → 分组选择 sheet（单选 + 新建 + 移除）。
+     fromHist = popstate 还原栈上 sheet 时重开，不再压栈 */
+  function openStarGroupSheet(sym, name, fromHist) {
     var groups = S.wlGroups();
     var cur = S.wlGroupOf(sym);
     var html = '<div class="wl-ggrid">' + groups.map(function (g) {
@@ -971,7 +1154,13 @@
       '" data-star-name="' + U.esc(name) + '">＋ 新建分组</button>' +
       '</div>' +
       (cur ? '<button class="btn-block danger" data-act="wlStarRemove" data-sym="' + U.esc(sym) + '">从自选移除</button>' : '');
-    UI.openSheet({ title: '加入自选 · ' + name, html: html });
+    UI.openSheet({
+      title: '加入自选 · ' + name, html: html,
+      hist: fromHist ? null : 'wlGroup', histArg: { sym: sym, name: name },
+    });
+  }
+  UI.on('wlStar', function (node) {
+    openStarGroupSheet(node.getAttribute('data-sym'), node.getAttribute('data-name') || '');
   });
 
   UI.on('wlStarPick', function (node) {
@@ -990,6 +1179,8 @@
     var gName = (S.wlGroups().filter(function (x) { return x.groupId === g; })[0] || {}).name || '';
     UI.toast('已加入「' + gName + '」');
     if (XJ.views.search) XJ.views.search.refreshList();
+    /* 自选（非持仓）标的此前从不走图标解析 → 加自选后立即补官方 logo */
+    ensureSymbolAssets(sym);
   });
 
   UI.on('wlStarRemove', function (node) {
@@ -1018,11 +1209,13 @@
 
   /* ---- 子页面路由 ---- */
   UI.on('openAnalysis', function () {
-    S.setUI({ subPage: 'analysis' });
+    navTo({ subPage: 'analysis' });
     window.scrollTo(0, 0);
   });
 
   UI.on('closeSubPage', function () {
+    /* 返回箭头与侧滑同路：栈顶是我们压入的条目就 back()，否则直接清 subPage */
+    if (navTop && navTop.id === 'nav') { try { history.back(); return; } catch (e) { } }
     S.setUI({ subPage: null, subArg: null });
   });
 
@@ -1390,8 +1583,10 @@
   });
 
   UI.on('openSymbol', function (node) {
-    S.setUI({ subPage: 'symbol', subArg: node.getAttribute('data-symbol'), floatOpen: false });
+    var sym = node.getAttribute('data-symbol');
+    navTo({ subPage: 'symbol', subArg: sym, floatOpen: false });
     window.scrollTo(0, 0);
+    ensureSymbolDividends(sym);
   });
 
   /* ---- 补录分红记录 ---- */
@@ -1676,11 +1871,11 @@
   }
 
   UI.on('viewDivRecords', function () {
-    UI.closeSheet();
-    S.setUI({ subPage: 'divsummary', floatOpen: false });
+    UI.closeSheet(true, true);   /* 静默关：sheet 的历史条目留给下面的 navTo 顶替 */
+    navTo({ subPage: 'divsummary', floatOpen: false });
   });
 
-  UI.on('openDivSum', function () { S.setUI({ subPage: 'divsummary', floatOpen: false }); });
+  UI.on('openDivSum', function () { navTo({ subPage: 'divsummary', floatOpen: false }); });
 
   UI.on('setDivsumRange', function (node) {
     var v = node.getAttribute('data-v');
@@ -2597,6 +2792,14 @@
    */
   function ensureSymbolAssets(sym) {
     if (!S.state.symbols[sym]) return Promise.resolve(false);
+    /* 已有 ok 结论 / 今天已试过 → 不重复拉（点星换组等重复触发场景） */
+    if (!XJ.market.logoStale(S.state.symbols[sym], U.today(), XJ.fetcher.LOGO_ALGO)) {
+      return Promise.resolve(false);
+    }
+    /* 已有有效结论（或今天已试过）不重复拉慢接口；新记录 logoStale 恒真 */
+    if (!XJ.market.logoStale(S.state.symbols[sym], U.today(), XJ.fetcher.LOGO_ALGO)) {
+      return Promise.resolve(false);
+    }
     return Promise.resolve().then(function () {
       if (S.state.symbols[sym].domain) return null;
       return XJ.fetcher.fetchCompanyDomains([sym]).then(function (m) {
@@ -4134,6 +4337,15 @@
       }
       S.ui.accountId = C.ALL;
       UI.installDelegation();
+      /* 侧滑返回栈基线：base 条目 + 其上压一条 guard（首页第一次侧滑被 guard 接住） */
+      NAV_BASE = navSnap('base');
+      try {
+        history.replaceState(NAV_BASE, '');
+        var navGuard = mkGuard();
+        history.pushState(navGuard, '');
+        navTop = navGuard;
+      } catch (e) { navTop = NAV_BASE; }
+      window.addEventListener('popstate', onPopState);
       applyTheme();          // 外观（跟随系统 / 浅 / 深）必须在首屏渲染前落地，否则会闪一下
       S.subscribe(render);
       injectManifest();
@@ -4179,6 +4391,23 @@
       UI.toast('本地存储初始化异常，数据将仅保留在本次会话中');
     });
   }
+
+  /* 视图层需要的少量 app 能力（图标回填 / 分红回填 / 导航栈），避免视图伸进 app 内部 */
+  /* 统一的「打开个股详情」入口（视图层经 XJ.app 调用，保证入栈 + 分红补拉） */
+  function openSymbolPage(sym) {
+    navTo({ subPage: 'symbol', subArg: sym, floatOpen: false });
+    window.scrollTo(0, 0);
+    ensureSymbolDividends(sym);
+  }
+
+  XJ.app = {
+    ensureLogosFor: ensureLogosFor,
+    ensureSymbolAssets: ensureSymbolAssets,
+    ensureSymbolDividends: ensureSymbolDividends,
+    openSymbolPage: openSymbolPage,
+    onSheetOpen: onSheetOpen,
+    onSheetClose: onSheetClose,
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
