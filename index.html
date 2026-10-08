@@ -690,6 +690,126 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .slogan-hero .sb-sub svg{ flex:none; }
 
+/* ==================== 自选（watchlist · 图二/三/四/五） ==================== */
+/* 顶栏：左指数卡（统一深色卡，图三）+ 右搜索框 */
+.wl-topbar{ display:flex; gap:10px; margin-bottom:12px; }
+.wl-index{
+  flex:1.2; min-width:0; text-align:left;
+  display:flex; flex-direction:column; gap:2px;
+  padding:10px 14px; border-radius:16px;
+  background:linear-gradient(150deg,#26262C,#1B1B20);
+  color:#F2F2F7; border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 6px 18px rgba(0,0,0,.14);
+}
+.wi-name{ font-size:11px; color:#9A9AA2; display:flex; align-items:center; gap:3px; }
+.wi-caret{ opacity:.7; }
+.wi-main{ display:flex; align-items:baseline; gap:8px; min-width:0; }
+.wi-main b{ font-size:20px; font-weight:750; letter-spacing:-.3px; font-variant-numeric:tabular-nums; }
+.wi-main span{ font-size:11px; font-weight:600; white-space:nowrap; }
+.wl-index .c-up{ color:#FF6B6B; }
+.wl-index .c-down{ color:#3ED47F; }
+.wl-search{
+  flex:.8; display:flex; align-items:center; justify-content:center; gap:6px;
+  border-radius:16px; background:var(--fill); color:var(--text-2);
+  font-size:12.5px; min-width:0; padding:0 10px;
+}
+.wl-search span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* 分组 chips（图二）：横向滚动；选中 = 深色实底白字 */
+.wl-chips{ display:flex; gap:7px; overflow-x:auto; scrollbar-width:none; padding:1px 1px 10px; }
+.wl-chips::-webkit-scrollbar{ display:none; }
+.wl-chip{
+  flex:0 0 auto; padding:7px 15px; border-radius:999px;
+  background:var(--card); border:1px solid var(--glass-border);
+  color:var(--text-2); font-size:12.5px; font-weight:550;
+  transition:background .16s ease,color .16s ease;
+}
+.wl-chip.active{ background:var(--text); color:var(--bg); border-color:var(--text); font-weight:650; }
+.wl-more{ display:flex; align-items:center; padding:7px 11px; }
+
+/* 列表行（图二）：logo + 名称/代码 + 分时迷你曲线 + 实底价格徽章 + 涨跌 */
+.wl-row{ display:flex; align-items:center; gap:10px; padding:12px; cursor:pointer; }
+.wl-row:active{ opacity:.75; }
+.wl-av{ flex:0 0 auto; }
+.wl-nm{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.wl-nm span{ font-size:13.5px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wl-nm b{ font-size:11px; font-weight:500; color:var(--text-3); }
+.wl-tag{
+  font-style:normal; font-size:9px; font-weight:650; color:var(--blue);
+  background:var(--blue-soft); border-radius:4px; padding:1px 4px;
+  margin-left:4px; vertical-align:1px;
+}
+.wl-spark{ flex:0 0 64px; height:24px; opacity:.92; }
+.wl-px{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+.wl-price{
+  display:inline-block; min-width:64px; text-align:center;
+  padding:3px 8px; border-radius:8px;
+  font-size:13px; font-weight:700; font-variant-numeric:tabular-nums;
+  color:#FFFFFF;
+}
+.wl-price.wl-up{ background:var(--up); }
+.wl-price.wl-down{ background:var(--down); }
+.wl-price.wl-flat{ background:var(--fill); color:var(--text-2); }
+.wl-chg{ font-size:10.5px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.wl-del{
+  flex:0 0 auto; width:22px; height:22px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--fill); color:var(--text-3); margin-left:-4px;
+}
+
+/* 分组宫格（图四 sheet / 指数切换 / 星标落组） */
+.wl-ggrid{ display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:4px 0 14px; }
+.wl-gcell{
+  padding:11px 0; border-radius:14px;
+  background:var(--fill); color:var(--text);
+  font-size:13.5px; font-weight:600;
+}
+.wl-gcell.active{ background:var(--text); color:var(--bg); }
+.wl-gnew{ color:var(--text-2); font-weight:550; }
+.wl-gops{ display:flex; gap:9px; border-top:1px solid var(--line); padding-top:13px; }
+.wl-gop{
+  flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+  padding:10px 0; border-radius:12px; background:var(--fill);
+  color:var(--text-2); font-size:13px; font-weight:550;
+}
+
+/* 分组管理行（纵向拖拽，把手 ≡） */
+.wl-gm-row{
+  display:flex; align-items:center; gap:8px;
+  padding:11px 10px; border-radius:12px; background:var(--fill);
+  margin-bottom:8px; touch-action:none;
+}
+.gm-drag{ color:var(--text-3); display:flex; cursor:grab; }
+.gm-name{ flex:1; font-size:13.5px; font-weight:600; }
+.gm-btn{
+  padding:5px 11px; border-radius:8px; background:var(--card);
+  font-size:11.5px; color:var(--text-2); border:1px solid var(--glass-border);
+}
+.gm-btn.danger{ color:var(--up); }
+.gm-btn:disabled{ opacity:.4; }
+
+/* 搜索页（图五） */
+.srch-box{
+  display:flex; align-items:center; gap:8px;
+  background:var(--fill); border-radius:12px; padding:10px 12px;
+  color:var(--text-3);
+}
+.srch-box input{
+  flex:1; min-width:0; border:none; outline:none; background:transparent;
+  font-size:14.5px; color:var(--text);
+}
+.srch-clear{ color:var(--text-3); display:flex; padding:2px; }
+.wl-star{ flex:0 0 auto; color:var(--text-3); display:flex; padding:4px; }
+.wl-star.on{ color:#F0A30A; }
+
+/* sheet 输入框（新建 / 重命名分组） */
+.sheet-input{
+  width:100%; box-sizing:border-box;
+  padding:11px 13px; border-radius:12px;
+  border:1px solid var(--glass-border); background:var(--fill);
+  color:var(--text); font-size:14.5px; outline:none; margin-bottom:12px;
+}
+
 /* ==================== 分红覆盖：图标格 ==================== */
 .cover-icons{ display:flex; gap:5px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding:4px 1px 8px; }
 .cover-icons::-webkit-scrollbar{ display:none; }
@@ -2949,6 +3069,7 @@ XJ.model = (function () {
         },
       },
       quoteCache: {},       // symbol -> quote
+      watchlist: makeWatchlist(),   // 自选（分组 + 条目），跨设备同步
       snapshots: {},        // 'YYYY-MM-DD' -> { mv, cost, pred, recv, fx }
       priceHistory: {},     // symbol -> { at:'YYYY-MM-DD', points:[['YYYY-MM-DD', price], ...] }
       indexHistory: {},     // indexKey -> { at:'YYYY-MM-DD', bars:[['YYYY-MM-DD', o, h, l, c], ...] }
@@ -3127,6 +3248,9 @@ XJ.model = (function () {
       state.benchHistory = bhPts.length >= 2 ? { at: state.benchHistory.at || null, points: bhPts } : null;
     }
 
+    /* 自选容器（六 Tab 二期）：老数据 / 坏数据 / 被删掉的默认组都补回来 */
+    ensureWatchlist(state);
+
     /* ---- v5 新增容器：跨设备同步元数据 ----
        只补容器、不动数据。这里【绝不从「导入的 JSON」里读 syncMeta】——
        换设备导入别人的备份时不该把对方的同步连接信息带进来（token 会被误用）。
@@ -3230,6 +3354,47 @@ XJ.model = (function () {
    * 所有创建 symbols[sym] 的地方都必须走这里：**成本口径要跟着记录一起落库**。
    * 早先有 8 处各自手写对象、都没写 costMethod，于是那些标的（尤其 OCR 导入与交易录入建的仓）
    * 落到 calc 的兜底「加权平均」上 —— 分红就不会摊薄成本，用户看到的就是「成本不自动下降」。 */
+  /* ---------------- 自选（六 Tab 二期） ----------------
+   * groups：自定义分组（预置 美股/港股/A股）；「全部」「持仓」是虚拟组，不落库
+   *         ——「全部」= items 并集，「持仓」= 实时跟随真实持仓，两处都由视图派生。
+   * items：自选条目（groupId + symbol），同一组内同一 symbol 唯一（store 层保证）。
+   * ★ 与 tabOrder 一样参与跨设备同步（sync-core 的 wgrp / witem 两条记录流）。 */
+  var WL_DEFAULT_GROUPS = [
+    { groupId: 'wlg_us', name: '美股', sortOrder: 1 },
+    { groupId: 'wlg_hk', name: '港股', sortOrder: 2 },
+    { groupId: 'wlg_cn', name: 'A股', sortOrder: 3 },
+  ];
+
+  function makeWatchlist() {
+    var now = U.nowStamp();
+    return {
+      groups: WL_DEFAULT_GROUPS.map(function (g) {
+        return { groupId: g.groupId, name: g.name, sortOrder: g.sortOrder, createdAt: now };
+      }),
+      items: [],
+    };
+  }
+
+  /** 自愈：容器缺失 / 形状损坏 / 默认组被误删都补回来（幂等，跑两遍结果全等） */
+  function ensureWatchlist(state) {
+    if (!state.watchlist || typeof state.watchlist !== 'object') state.watchlist = makeWatchlist();
+    var w = state.watchlist;
+    if (!Array.isArray(w.groups)) w.groups = [];
+    if (!Array.isArray(w.items)) w.items = [];
+    var have = {};
+    w.groups.forEach(function (g) { if (g && g.groupId) have[g.groupId] = true; });
+    WL_DEFAULT_GROUPS.forEach(function (dg) {
+      if (!have[dg.groupId]) w.groups.push({ groupId: dg.groupId, name: dg.name, sortOrder: dg.sortOrder, createdAt: U.nowStamp() });
+    });
+    w.groups = w.groups.filter(function (g) {
+      return g && typeof g === 'object' && g.groupId && typeof g.name === 'string';
+    });
+    w.items = w.items.filter(function (it) {
+      return it && typeof it === 'object' && it.itemId && it.symbol && it.groupId;
+    });
+    return w;
+  }
+
   function symbolRecord(symbol, extra) {
     var rec = {
       symbol: symbol,
@@ -3365,6 +3530,7 @@ XJ.model = (function () {
         return s;
       })(),
       quoteCache: state.quoteCache,
+      watchlist: state.watchlist,
       priceHistory: state.priceHistory,
       indexHistory: state.indexHistory,
       klineCache: state.klineCache,
@@ -3397,6 +3563,7 @@ XJ.model = (function () {
     if (raw.projection && typeof raw.projection === 'object') out.projection = Object.assign(out.projection, raw.projection);
     if (raw.settings && typeof raw.settings === 'object') out.settings = Object.assign(out.settings, raw.settings);
     if (raw.quoteCache && typeof raw.quoteCache === 'object') out.quoteCache = raw.quoteCache;
+    if (raw.watchlist && typeof raw.watchlist === 'object') out.watchlist = raw.watchlist;
     if (raw.priceHistory && typeof raw.priceHistory === 'object') out.priceHistory = raw.priceHistory;
     if (raw.indexHistory && typeof raw.indexHistory === 'object') out.indexHistory = raw.indexHistory;
     if (raw.klineCache && typeof raw.klineCache === 'object') out.klineCache = raw.klineCache;
@@ -3474,6 +3641,9 @@ XJ.model = (function () {
     HERO_COLOR_DEFAULT: HERO_COLOR_DEFAULT,
     TAB_IDS: TAB_IDS,
     normalizeTabOrder: normalizeTabOrder,
+    makeWatchlist: makeWatchlist,
+    ensureWatchlist: ensureWatchlist,
+    WL_DEFAULT_GROUPS: WL_DEFAULT_GROUPS,
     EMOJI_GROUPS: EMOJI_GROUPS,
     KEY_EMOJI: KEY_EMOJI,
     DEFAULT_OCR_KEY: DEFAULT_OCR_KEY,
@@ -4232,6 +4402,23 @@ XJ.syncCore = (function () {
       oncePerId: true,
       canAdd: true,
     },
+    /* ---- 自选（六 Tab 二期）：分组 + 条目两条记录流 ----
+       ★ witem 的 hash 刻意不含 addedAt（设备间时钟差会让同一条目天天互推）；
+         sortOrder 不在 items 上（组内顺序 = addedAt）；分组排序在 wgrp.sortOrder 上。 */
+    wgrp: {
+      key: 'groupId',
+      all: function (s) { var w = s.watchlist || {}; return idsOf(w.groups || [], 'groupId'); },
+      get: function (s, id) { return byId((s.watchlist || {}).groups || [], 'groupId', id); },
+      hash: function (r) { return hash(stable(pick(r, ['name', 'sortOrder']))); },
+      canAdd: true,
+    },
+    witem: {
+      key: 'itemId',
+      all: function (s) { var w = s.watchlist || {}; return idsOf(w.items || [], 'itemId'); },
+      get: function (s, id) { return byId((s.watchlist || {}).items || [], 'itemId', id); },
+      hash: function (r) { return hash(stable(pick(r, ['groupId', 'symbol']))); },
+      canAdd: true,
+    },
     set: {
       key: null,
       all: function () { return ['app_settings']; },
@@ -4252,7 +4439,7 @@ XJ.syncCore = (function () {
     },
   };
 
-  var TYPES = ['tx', 'rec', 'acc', 'exp', 'sym', 'snap', 'set', 'proj'];
+  var TYPES = ['tx', 'rec', 'acc', 'exp', 'sym', 'snap', 'wgrp', 'witem', 'set', 'proj'];
 
   function vid(t, id) { return t + ':' + id; }
 
@@ -4514,6 +4701,10 @@ XJ.syncCore = (function () {
     if (type === 'rec') return state.received;
     if (type === 'acc') return state.accounts;
     if (type === 'exp') return state.expenses;
+    if (type === 'wgrp' || type === 'witem') {
+      var w = state.watchlist || (state.watchlist = { groups: [], items: [] });
+      return type === 'wgrp' ? w.groups : w.items;
+    }
     return null;
   }
 
@@ -4528,6 +4719,11 @@ XJ.syncCore = (function () {
     if (type === 'rec') { state.received.push(next); return true; }
     if (type === 'acc') { state.accounts.push(next); return true; }
     if (type === 'exp') { state.expenses.push(next); return true; }
+    if (type === 'wgrp' || type === 'witem') {
+      var list = containerList(state, type);
+      list.push(next);
+      return true;
+    }
     var map = containerMap(state, type);
     if (map) { map[id] = next; return true; }
     return false;
@@ -4688,7 +4884,8 @@ XJ.syncCore = (function () {
   function buildSnapshot(state) {
     var snap = {
       accounts: [], symbols: {}, transactions: [], received: [],
-      expenses: [], snapshots: {}, settings: {}, projection: {},
+      expenses: [], snapshots: {}, watchlist: { groups: [], items: [] },
+      settings: {}, projection: {},
     };
     for (var ti = 0; ti < TYPES.length; ti++) {
       var type = TYPES[ti];
@@ -4709,6 +4906,8 @@ XJ.syncCore = (function () {
         else if (type === 'rec') snap.received.push(copy);
         else if (type === 'acc') snap.accounts.push(copy);
         else if (type === 'exp') snap.expenses.push(copy);
+        else if (type === 'wgrp') snap.watchlist.groups.push(copy);
+        else if (type === 'witem') snap.watchlist.items.push(copy);
       }
     }
     /* ★ settings 只带白名单字段：绝不让 OCR Key 上路 */
@@ -4773,6 +4972,7 @@ XJ.syncCore = (function () {
       state.expenses = [];
       state.symbols = {};
       state.snapshots = {};
+      state.watchlist = { groups: [], items: [] };
       /* ★ 覆盖式对齐也要作废 set/proj 的【本机戳】——实测踩过：
          tick 开头的 diffToOps(noQueue) 会给「账本里还没有」的 settings 盖本地 seed 戳，
          随后 applyOps 的 newer() 认为「本机不比云端旧」而跳过 set —— 表现就是
@@ -11478,6 +11678,125 @@ XJ.store = (function () {
     FOLD: FOLD,
     folded: folded,
     isOpen: isOpen,
+
+    /* ==================== 自选（watchlist · 六 Tab 二期） ====================
+     * 全部写操作走 commit（落盘钩子自动算同步增量；wgrp/witem 指纹见 sync-core）。
+     * 虚拟组：'all'（items 并集）与 'holding'（实时跟随真实持仓）不落库，
+     *         视图层直接派生；groupId 一律是 'wlg_*' 字符串。 */
+
+    wlGroups: function () {
+      var M = XJ.model;
+      M.ensureWatchlist(this.state);
+      return this.state.watchlist.groups.slice().sort(function (a, b) {
+        return (a.sortOrder || 99) - (b.sortOrder || 99);
+      });
+    },
+
+    wlItems: function (groupId) {
+      XJ.model.ensureWatchlist(this.state);
+      var items = this.state.watchlist.items || [];
+      if (!groupId || groupId === 'all') return items.slice();
+      if (groupId === 'holding') {
+        var hs = XJ.calc.holdings(this.state, this.acc());
+        return hs.map(function (h) { return { itemId: 'hold:' + h.symbol, groupId: 'holding', symbol: h.symbol, holding: true }; });
+      }
+      return items.filter(function (it) { return it.groupId === groupId; });
+    },
+
+    /** 该 symbol 是否已在自选（任意分组） */
+    wlHas: function (symbol) {
+      return (this.state.watchlist.items || []).some(function (it) { return it.symbol === symbol; });
+    },
+
+    /** 该 symbol 所在的分组（无则 null） */
+    wlGroupOf: function (symbol) {
+      var it = (this.state.watchlist.items || []).filter(function (x) { return x.symbol === symbol; })[0];
+      return it ? it.groupId : null;
+    },
+
+    /** 加自选：同组同代码唯一；顺手建 symbols 记录（联想名），行情刷新会自动补全 */
+    wlAdd: function (groupId, symbol, name) {
+      var ok = false;
+      this.commit(function (s) {
+        XJ.model.ensureWatchlist(s);
+        var w = s.watchlist;
+        if (!groupId || groupId === 'all' || groupId === 'holding') return;
+        if (!w.groups.some(function (g) { return g.groupId === groupId; })) return;
+        if (w.items.some(function (it) { return it.groupId === groupId && it.symbol === symbol; })) return;
+        w.items.push({ itemId: XJ.util.uid('wli'), groupId: groupId, symbol: symbol, addedAt: XJ.util.nowStamp() });
+        if (!s.symbols[symbol]) s.symbols[symbol] = XJ.model.symbolRecord(symbol, { name: name || '' });
+        else if (name && !s.symbols[symbol].name) s.symbols[symbol].name = name;
+        ok = true;
+      });
+      return ok;
+    },
+
+    wlRemove: function (itemId) {
+      this.commit(function (s) {
+        XJ.model.ensureWatchlist(s);
+        s.watchlist.items = s.watchlist.items.filter(function (it) { return it.itemId !== itemId; });
+      });
+    },
+
+    /** 换组（搜索页星标二次点 / 移动） */
+    wlMove: function (itemId, toGroupId) {
+      this.commit(function (s) {
+        XJ.model.ensureWatchlist(s);
+        var it = s.watchlist.items.filter(function (x) { return x.itemId === itemId; })[0];
+        if (!it) return;
+        if (s.watchlist.items.some(function (x) { return x.itemId !== itemId && x.groupId === toGroupId && x.symbol === it.symbol; })) return;
+        it.groupId = toGroupId;
+      });
+    },
+
+    wlGroupAdd: function (name) {
+      var id = null;
+      this.commit(function (s) {
+        XJ.model.ensureWatchlist(s);
+        var nm = String(name || '').trim().slice(0, 12);
+        if (!nm) return;
+        var maxSort = 0;
+        s.watchlist.groups.forEach(function (g) { maxSort = Math.max(maxSort, g.sortOrder || 0); });
+        var g = { groupId: XJ.util.uid('wlg'), name: nm, sortOrder: maxSort + 1, createdAt: XJ.util.nowStamp() };
+        s.watchlist.groups.push(g);
+        id = g.groupId;
+      });
+      return id;
+    },
+
+    wlGroupRename: function (groupId, name) {
+      this.commit(function (s) {
+        XJ.model.ensureWatchlist(s);
+        var g = s.watchlist.groups.filter(function (x) { return x.groupId === groupId; })[0];
+        var nm = String(name || '').trim().slice(0, 12);
+        if (g && nm) g.name = nm;
+      });
+    },
+
+    /** 删组：组内条目一并删除（同步层各发各的墓碑，删除必胜语义天然成立） */
+    wlGroupRemove: function (groupId) {
+      this.commit(function (s) {
+        XJ.model.ensureWatchlist(s);
+        if (XJ.model.WL_DEFAULT_GROUPS.some(function (d) { return d.groupId === groupId; })) return; // 默认组不可删
+        s.watchlist.groups = s.watchlist.groups.filter(function (g) { return g.groupId !== groupId; });
+        s.watchlist.items = s.watchlist.items.filter(function (it) { return it.groupId !== groupId; });
+      });
+    },
+
+    /** 组排序：orderedIds 必须是现有组的完整排列（视图层保证） */
+    wlGroupReorder: function (orderedIds) {
+      this.commit(function (s) {
+        XJ.model.ensureWatchlist(s);
+        var byId = {};
+        s.watchlist.groups.forEach(function (g) { byId[g.groupId] = g; });
+        var next = [];
+        (orderedIds || []).forEach(function (id, i) {
+          if (byId[id]) { next.push(Object.assign(byId[id], { sortOrder: i + 1 })); delete byId[id]; }
+        });
+        Object.keys(byId).forEach(function (id) { next.push(byId[id]); });
+        s.watchlist.groups = next;
+      });
+    },
   };
 
   return app;
@@ -12434,6 +12753,10 @@ XJ.ui = (function () {
     chevron: '<path d="M9.2 5.4 15.8 12l-6.6 6.6"/>',
     back: '<path d="M14.8 5.4 8.2 12l6.6 6.6"/>',
     close: '<path d="M6.4 6.4l11.2 11.2M17.6 6.4 6.4 17.6"/>',
+    menu: '<path d="M4 6.6h16M4 12h16M4 17.4h16"/>',
+    /* 自选星标：空心（stroke）与实心（fill）两个形态，图五搜索结果用 */
+    star: '<path d="M12 3.8l2.5 5.1 5.7.8-4.1 4 1 5.6L12 16.6l-5.1 2.7 1-5.6-4.1-4 5.7-.8z"/>',
+    starF: '<path fill="currentColor" stroke="none" d="M12 3.8l2.5 5.1 5.7.8-4.1 4 1 5.6L12 16.6l-5.1 2.7 1-5.6-4.1-4 5.7-.8z"/>',
     trash: '<path d="M4.2 7h15.6"/><path d="M9.4 7V5.2a1.2 1.2 0 0 1 1.2-1.2h2.8a1.2 1.2 0 0 1 1.2 1.2V7"/><path d="M6.6 7l.8 12.1a2 2 0 0 0 2 1.9h5.2a2 2 0 0 0 2-1.9L17.4 7"/>',
     edit: '<path d="M4 20h4.2L20 8.2A2.8 2.8 0 0 0 16 4.2L4.2 16v4z"/>',
     download: '<path d="M12 3.4v11.8"/><path d="M7.6 10.6 12 15l4.4-4.4"/><path d="M4.2 20h15.6"/>',
@@ -12716,6 +13039,10 @@ XJ.dnd = (function () {
     opts = opts || {};
     var itemSel = opts.itemSel || '.tab';
     var attr = opts.attr || 'data-tab';
+    var AXIS = opts.axis === 'y' ? 'y' : 'x';       // 'x' 横向（Tab）/ 'y' 纵向（分组管理）
+    var POS = AXIS === 'y' ? 'offsetTop' : 'offsetLeft';
+    var SIZE = AXIS === 'y' ? 'offsetHeight' : 'offsetWidth';
+    var T = AXIS === 'y' ? 'translateY' : 'translateX';
 
     /* 长按拖拽时不要弹出系统菜单/选择 */
     container.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -12729,7 +13056,7 @@ XJ.dnd = (function () {
     function measure() {
       var els = Array.prototype.slice.call(container.querySelectorAll(itemSel));
       var all = els.map(function (el) {
-        return { el: el, id: el.getAttribute(attr), x: el.offsetLeft, w: el.offsetWidth };
+        return { el: el, id: el.getAttribute(attr), x: el[POS], w: el[SIZE] };
       });
       var gap = all.length > 1 ? (all[1].x - (all[0].x + all[0].w)) : 0;
       return { all: all, gap: gap };
@@ -12755,7 +13082,7 @@ XJ.dnd = (function () {
         if (r.id === st.id) continue;
         var j = order.indexOf(r.id);
         var dx = slotX(m, order, j) - r.x;
-        r.el.style.transform = dx ? 'translateX(' + dx + 'px)' : '';
+        r.el.style.transform = dx ? T + '(' + dx + 'px)' : '';
       }
     }
 
@@ -12777,7 +13104,8 @@ XJ.dnd = (function () {
 
     function moveDrag(e) {
       var dx = e.clientX - st.startX;
-      st.item.style.transform = 'translateX(' + dx + 'px) scale(' + DRAG_SCALE + ')';
+      if (AXIS === 'y') dx = e.clientY - st.startY;
+      st.item.style.transform = T + '(' + dx + 'px) scale(' + DRAG_SCALE + ')';
       /* 槽位判定：拖拽项当前中心，压过多少个其它项的（已补位）中心 → 目标槽位。
          相等也算越过（>=）：拖到某项正中心 = 取代它的位置（把该项挤向反方向）。 */
       var m = st.m;
@@ -12815,7 +13143,7 @@ XJ.dnd = (function () {
             var base = findById(m, itemId);
             /* finalDx = 新槽位中心 − 原中心 */
             var finalDx = (slotX(m, order, order.indexOf(itemId)) + base.w / 2) - (base.x + base.w / 2);
-            item.style.transform = 'translateX(' + finalDx + 'px) scale(1)';
+            item.style.transform = T + '(' + finalDx + 'px) scale(1)';
             opts.onCommit(order.slice());
             /* commit → 上层重渲染（同步）→ 新 DOM 上播放落位弹跳 */
             var fresh = container.querySelector('[' + attr + '="' + itemId + '"]');
@@ -15058,27 +15386,398 @@ XJ.views.divsummary = (function () {
 
 
 /* ==================== src/views/watchlist.js ==================== */
-/* ==================== 自选（Tab · 二期上线占位） ====================
- * 完整形态（已确认方案，见 .workbuddy/memory/2026-10-08.md）：
- *   分组 chips（全部/持仓虚拟组 + 美股/港股/A股）· 指数栏 · 分组管理 sheet ·
- *   搜索加自选（空心星→实心星）· 行内分时懒加载 · 点行进个股档案。
- * 一期先给六 Tab 完整骨架，页面本体随二期交付。 */
+/* ==================== 视图：自选（六 Tab 二期） ====================
+ * 顶栏（图三 + 需求 6）：左 = 指数卡（点卡片弹 8 指数 chips 切换），右 = 搜索框（进搜索子页）。
+ * 分组行（图二）：全部 / 持仓（虚拟组）+ 自定义组 + 三条杠（分组弹层）。
+ * 列表行：官方 Logo + 名称/代码 + 当日分时迷你曲线（懒加载 5 分钟缓存）+
+ *         实底色块白字价格 + 涨跌额/涨跌%（涨红跌绿）。
+ * 行情 / 分时走模块级 memo（TTL 缓存，不落盘、不进同步）；自选数据本身走 store 的
+ * wgrp/witem（跨设备同步）。
+ */
 XJ.views.watchlist = (function () {
-  var UI = XJ.ui;
+  var U = XJ.util, UI = XJ.ui, C = XJ.views.common;
+
+  /* ---------------- 指数（图三） ---------------- */
+  var WL_INDEXES = [
+    { key: 'sh000001', name: '上证指数' },
+    { key: 'sz399001', name: '深证成指' },
+    { key: 'sz399006', name: '创业板指' },
+    { key: 'sh000300', name: '沪深300' },
+    { key: 'hkHSI', name: '恒生指数' },
+    { key: 'hkHSTECH', name: '恒生科技' },
+    { key: 'usDJI', name: '道琼斯' },
+    { key: 'usIXIC', name: '纳斯达克' },
+  ];
+  var IDX_TTL = 60000;
+  var idxMemo = { at: 0, quotes: {} };
+  var idxPending = false;
+
+  function ensureIndexQuotes() {
+    if (idxPending || Date.now() - idxMemo.at < IDX_TTL) return;
+    idxPending = true;
+    XJ.fetcher.fetchQuotes(WL_INDEXES.map(function (i) { return i.key; })).then(function (qs) {
+      idxPending = false;
+      var got = 0;
+      Object.keys(qs || {}).forEach(function (k) {
+        if (qs[k]) { idxMemo.quotes[k] = qs[k]; got++; }
+      });
+      if (got) { idxMemo.at = Date.now(); XJ.store.setUI({ wlTick: Date.now() }); }
+    }).catch(function () { idxPending = false; });
+  }
+
+  /* ---------------- 自选行情（价格徽章） ---------------- */
+  var PX_TTL = 60000;
+  var pxMemo = { at: 0, quotes: {} };
+  var pxPending = false;
+
+  function ensurePxQuotes(syms) {
+    var want = syms.filter(function (s) {
+      return !(pxMemo.quotes[s] && Date.now() - pxMemo.at < PX_TTL);
+    });
+    if (pxPending || !want.length) return;
+    pxPending = true;
+    XJ.fetcher.fetchQuotes(want).then(function (qs) {
+      pxPending = false;
+      var got = 0;
+      Object.keys(qs || {}).forEach(function (k) {
+        if (qs[k]) { pxMemo.quotes[k] = qs[k]; got++; }
+      });
+      if (got) {
+        pxMemo.at = Date.now();
+        /* 合并进 quoteCache：个股档案页（无持仓自选标的）直接读它拿价格/名称 */
+        try { XJ.store.mergeQuotes(qs); } catch (e) { /* 忽略 */ }
+        XJ.store.setUI({ wlTick: Date.now() });
+      }
+    }).catch(function () { pxPending = false; });
+  }
+
+  /* ---------------- 当日分时迷你曲线（懒加载 · 5 分钟缓存） ----------------
+   * 占位节点 .wl-spark[data-pending="1"] 由 bind() 里的 IntersectionObserver 监听，
+   * 进入视口才逐只拉分时（美股走东财 trends，A股/港股走腾讯 minute，见 fetcher）。
+   * 拉完直接写 memo + 就地填 DOM —— 不触发整页重绘，滚动不跳。 */
+  var SPARK_TTL = 300000;
+  var sparkMemo = {};         // sym -> { at, svg }
+  var sparkPending = {};      // sym -> true（请求去重）
+  var sparkObserver = null;
+
+  function sparkOf(sym) {
+    var hit = sparkMemo[sym];
+    if (hit && Date.now() - hit.at < SPARK_TTL) return hit.svg;
+    return null;
+  }
+
+  function buildSparkSvg(points, prevClose) {
+    if (!points || points.length < 2) return '';
+    var w = 64, h = 24, pad = 1;
+    var lo = Infinity, hi = -Infinity;
+    points.forEach(function (p) {
+      if (p.p < lo) lo = p.p;
+      if (p.p > hi) hi = p.p;
+    });
+    if (prevClose) { if (prevClose < lo) lo = prevClose; if (prevClose > hi) hi = prevClose; }
+    if (!isFinite(lo) || hi - lo < 1e-9) { hi = lo + 1; lo -= 1; }
+    var span = hi - lo;
+    var step = (w - pad * 2) / (points.length - 1);
+    var pts = points.map(function (p, i) {
+      var x = (pad + i * step).toFixed(1);
+      var y = (pad + (hi - p.p) / span * (h - pad * 2)).toFixed(1);
+      return x + ',' + y;
+    });
+    var last = points[points.length - 1].p;
+    var up = prevClose ? last >= prevClose : true;
+    var color = up ? 'var(--up)' : 'var(--down)';
+    var baseLine = '';
+    if (prevClose && prevClose >= lo && prevClose <= hi) {
+      var by = (pad + (hi - prevClose) / span * (h - pad * 2)).toFixed(1);
+      baseLine = '<line x1="' + pad + '" y1="' + by + '" x2="' + (w - pad) + '" y2="' + by +
+        '" stroke="var(--text-3)" stroke-width=".6" stroke-dasharray="2 2" opacity=".55"/>';
+    }
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h +
+      '" fill="none" aria-hidden="true">' + baseLine +
+      '<polyline points="' + pts.join(' ') + '" stroke="' + color + '" stroke-width="1.2" ' +
+      'stroke-linejoin="round" stroke-linecap="round" fill="none"/></svg>';
+  }
+
+  function loadSpark(sym, prevClose) {
+    if (sparkPending[sym] || sparkMemo[sym]) return;
+    sparkPending[sym] = true;
+    XJ.fetcher.fetchMinutes([sym]).then(function (map) {
+      delete sparkPending[sym];
+      var m = map && map[sym];
+      if (!m || !m.points || m.points.length < 2) { sparkMemo[sym] = { at: Date.now(), svg: '' }; return; }
+      var svg = buildSparkSvg(m.points, prevClose);
+      sparkMemo[sym] = { at: Date.now(), svg: svg };
+      /* 就地填充（不整页重绘，滚动不跳） */
+      var el = document.querySelector('.wl-spark[data-spark="' + sym + '"]');
+      if (el) { el.innerHTML = svg; el.removeAttribute('data-pending'); }
+    }).catch(function () { delete sparkPending[sym]; });
+  }
+
+  /** 视图渲染后钩子（app.render 调用）：观察进视口的 spark 占位并懒加载 */
+  function bind() {
+    if (sparkObserver) sparkObserver.disconnect();
+    var spots = Array.prototype.slice.call(document.querySelectorAll('.wl-spark[data-pending="1"]'));
+    if (!spots.length) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      spots.forEach(function (el) {
+        var s0 = el.getAttribute('data-spark');
+        var q0 = quoteOf(s0);
+        loadSpark(s0, q0 && q0.prevClose != null ? q0.prevClose : null);
+      });
+      return;
+    }
+    sparkObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var sym = en.target.getAttribute('data-spark');
+        sparkObserver.unobserve(en.target);
+        var q = quoteOf(sym);
+        loadSpark(sym, q && q.prevClose != null ? q.prevClose : null);
+      });
+    }, { rootMargin: '40px' });
+    spots.forEach(function (el) { sparkObserver.observe(el); });
+  }
+
+  /* ---------------- 渲染 ---------------- */
+
+  function quoteOf(sym) {
+    return pxMemo.quotes[sym] || XJ.store.state.quoteCache[sym] || null;
+  }
+
+  function indexBar(st) {
+    var cur = st.ui.wlIndex || WL_INDEXES[0].key;
+    var meta = WL_INDEXES.filter(function (i) { return i.key === cur; })[0] || WL_INDEXES[0];
+    var q = idxMemo.quotes[meta.key] || null;
+    var chg = q && q.price != null && q.prevClose != null ? q.price - q.prevClose : null;
+    var pct = q && chg !== null && q.prevClose ? chg / q.prevClose * 100 : null;
+    var dir = chg === null ? '' : (chg >= 0 ? 'c-up' : 'c-down');
+    ensureIndexQuotes();
+    return '<div class="wl-topbar">' +
+      '<button class="wl-index" data-act="wlIndexPick" aria-label="切换指数">' +
+      '<div class="wi-name">' + U.esc(meta.name) +
+      '<svg class="wi-caret" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9.5l6 6 6-6"/></svg></div>' +
+      '<div class="wi-main"><b class="' + dir + '">' + (q && q.price != null ? U.money(q.price, 2) : '—') + '</b>' +
+      '<span class="' + dir + '">' + (chg === null ? '' : (chg >= 0 ? '+' : '') + U.money(chg, 2) + (pct === null ? '' : ' · ' + U.signPct(pct))) + '</span></div>' +
+      '</button>' +
+      '<button class="wl-search" data-act="openSearch" aria-label="搜索加自选">' +
+      UI.icon('search', 15) + '<span>代码 / 名称</span></button>' +
+      '</div>';
+  }
+
+  function chipsBar(st, groups, cur) {
+    var chips = [{ id: 'all', name: '全部' }, { id: 'holding', name: '持仓' }].concat(
+      groups.map(function (g) { return { id: g.groupId, name: g.name }; }));
+    return '<div class="wl-chips">' + chips.map(function (c) {
+      return '<button class="wl-chip' + (cur === c.id ? ' active' : '') +
+        '" data-act="wlPickGroup" data-g="' + U.esc(c.id) + '">' + U.esc(c.name) + '</button>';
+    }).join('') +
+      '<button class="wl-chip wl-more" data-act="openWlGroups" aria-label="管理分组">' +
+      UI.icon('menu', 14) + '</button></div>';
+  }
+
+  function rowHtml(st, it) {
+    var sym = it.symbol;
+    var q = quoteOf(sym);
+    var name = st.symbolName(sym);
+    var code = XJ.model.codeOf(sym);
+    var price = q && q.price != null
+      ? U.money(q.price, q.price < 10 ? 3 : 2)
+      : '—';
+    var chg = q && q.price != null && q.prevClose != null ? q.price - q.prevClose : null;
+    var pct = chg !== null && q.prevClose ? chg / q.prevClose * 100 : null;
+    var dir = chg === null ? '' : (chg >= 0 ? 'up' : 'down');
+    var chgTxt = chg === null ? '' :
+      (chg >= 0 ? '+' : '') + U.money(chg, 2) + (pct === null ? '' : '  ' + U.signPct(pct));
+    var spark = sparkOf(sym);
+    return '<div class="card wl-row" data-sym="' + U.esc(sym) + '" data-act="wlOpenSymbol">' +
+      '<div class="wl-av">' + UI.avatar(name, sym, 40, C.logoFor(sym)) + '</div>' +
+      '<div class="wl-nm"><span>' + U.esc(name) + '</span><b>' + U.esc(code) + '</b>' +
+      (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</div>' +
+      '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (spark === null ? ' data-pending="1"' : '') + '>' +
+      (spark || '') + '</div>' +
+      '<div class="wl-px">' +
+      '<b class="wl-price wl-' + (dir || 'flat') + '">' + price + '</b>' +
+      '<div class="wl-chg ' + (dir === 'up' ? 'c-up' : dir === 'down' ? 'c-down' : '') + '">' + chgTxt + '</div>' +
+      '</div>' +
+      (it.holding ? '' : '<button class="wl-del" data-act="wlRemoveItem" data-item="' + U.esc(it.itemId) +
+        '" aria-label="从自选移除">' + UI.icon('close', 12) + '</button>') +
+      '</div>';
+  }
 
   function render() {
+    var st = XJ.store;
+    var groups = st.wlGroups();
+    var cur = st.ui.wlGroup || 'all';
+    var items = st.wlItems(cur);
+    /* 组内顺序 = 加入时间（addedAt）；「持仓」虚拟组按 sortOrder 稳定序 */
+    var rows = items.slice().sort(function (a, b) {
+      return String(a.addedAt || '').localeCompare(String(b.addedAt || ''));
+    });
+
     var html = '';
-    html += '<div class="slogan-bar warm">' + UI.icon('info', 15) +
-      '<span>自选盯盘搭建中：分组、指数栏与搜索加自选将在下一期上线</span></div>';
-    html += '<div class="card" style="text-align:center;padding:42px 18px">' +
-      '<div style="font-size:42px;line-height:1">⭐</div>' +
-      '<div style="font-size:15px;font-weight:650;margin-top:12px">自选清单还没建好</div>' +
-      '<div class="tiny" style="margin-top:6px;line-height:1.6">二期将支持：分组管理 · 官方图标 · 分时迷你曲线 · 指数行情</div>' +
-      '</div>';
+    html += indexBar(st);
+    html += chipsBar(st, groups, cur);
+
+    if (!rows.length) {
+      var gName = cur === 'all' || cur === 'holding' ? '' :
+        ((groups.filter(function (g) { return g.groupId === cur; })[0] || {}).name || '') + ' ';
+      var tip = cur === 'holding' ? '还没有持仓记录' : (gName + '自选还是空的');
+      html += '<div class="card" style="text-align:center;padding:38px 18px">' +
+        '<div style="font-size:40px;line-height:1">⭐</div>' +
+        '<div style="font-size:15px;font-weight:650;margin-top:10px">' + U.esc(tip) + '</div>' +
+        '<div class="tiny" style="margin-top:6px">点上方「代码 / 名称」搜索股票，点星加入自选。</div>' +
+        '</div>';
+      return html;
+    }
+
+    ensurePxQuotes(rows.map(function (it) { return it.symbol; }));
+    html += '<div class="wl-list">' + rows.map(function (it) { return rowHtml(st, it); }).join('') + '</div>';
     return html;
   }
 
-  return { render: render };
+  return { render: render, bind: bind };
+})();
+
+
+/* ==================== src/views/search.js ==================== */
+/* ==================== 视图：搜索加自选（subPage · 图五） ====================
+ * 顶部搜索框（smartbox 联想，fetcher.fetchSymbolSearch）→ 结果行 =
+ * 官方 Logo + 名称 + 市场·代码 + 价格 + 涨跌%（涨红跌绿）+ 右侧星标（图五）。
+ * 范围：仅 A股 / 港股 / 美股 / ETF（确认过的决策；场外基金与指数排除）。
+ * 点星 → 分组选择 sheet（单选 + 新建分组）；已在自选 = 实心星，可换组或移除。
+ * 行情走模块级 memo（TTL 60s）；列表在输入态下【局部更新】，不整页重绘（保焦点）。
+ */
+XJ.views.search = (function () {
+  var U = XJ.util, UI = XJ.ui, C = XJ.views.common;
+
+  var PX_TTL = 60000;
+  var pxMemo = { at: 0, quotes: {} };
+  var pxPending = false;
+  var memo = { kw: '', hits: [], shown: 0 };
+  var debounceTimer = null;
+
+  function ensurePx(syms, onDone) {
+    var want = syms.filter(function (s) { return !pxMemo.quotes[s]; });
+    if (pxPending || !want.length) { if (onDone) onDone(); return; }
+    pxPending = true;
+    XJ.fetcher.fetchQuotes(want).then(function (qs) {
+      pxPending = false;
+      var got = 0;
+      Object.keys(qs || {}).forEach(function (k) {
+        if (qs[k]) { pxMemo.quotes[k] = qs[k]; got++; }
+      });
+      if (got) pxMemo.at = Date.now();
+      if (onDone) onDone();
+    }).catch(function () { pxPending = false; if (onDone) onDone(); });
+  }
+
+  function quoteOf(sym) {
+    return pxMemo.quotes[sym] || XJ.store.state.quoteCache[sym] || null;
+  }
+
+  /** 只放行 A股/港股/美股/ETF；指数与场外基金排除 */
+  function tradable(sym) {
+    var mk = XJ.model.marketOf(sym);
+    if (['sh', 'sz', 'bj', 'hk', 'us'].indexOf(mk) < 0) return false;
+    try {
+      var at = XJ.market.assetType(sym);
+      if (at === 'of' || at === 'INDEX' || at === '指数') return false;
+    } catch (e) { /* 判定失败放行 */ }
+    return true;
+  }
+
+  /* ---------------- 行渲染 ---------------- */
+
+  function rowHtml(hit) {
+    var sym = hit.symbol;
+    var q = quoteOf(sym);
+    var chg = q && q.price != null && q.prevClose != null ? q.price - q.prevClose : null;
+    var pct = chg !== null && q.prevClose ? chg / q.prevClose * 100 : null;
+    var dir = chg === null ? '' : (chg >= 0 ? 'c-up' : 'c-down');
+    var inWl = XJ.store.wlHas(sym);
+    var mktLabel = { sh: 'SH', sz: 'SZ', bj: 'BJ', hk: 'HK', us: 'US' }[XJ.model.marketOf(sym)] || '';
+    return '<div class="card wl-row srch-row">' +
+      '<div class="wl-av">' + UI.avatar(hit.name, sym, 40, C.logoFor(sym)) + '</div>' +
+      '<div class="wl-nm"><span>' + U.esc(hit.name) + '</span><b>' + U.esc(hit.code) + ' · ' + mktLabel + '</b></div>' +
+      '<div class="wl-px">' +
+      '<b class="wl-price wl-' + (chg === null ? 'flat' : chg >= 0 ? 'up' : 'down') + '">' +
+      (q && q.price != null ? U.money(q.price, q.price < 10 ? 3 : 2) : '—') + '</b>' +
+      '<div class="wl-chg ' + dir + '">' + (pct === null ? '' : U.signPct(pct)) + '</div>' +
+      '</div>' +
+      '<button class="wl-star' + (inWl ? ' on' : '') + '" data-act="wlStar" data-sym="' + U.esc(sym) +
+      '" data-name="' + U.esc(hit.name) + '" aria-label="' + (inWl ? '管理自选' : '加入自选') + '">' +
+      UI.icon(inWl ? 'starF' : 'star', 19) + '</button>' +
+      '</div>';
+  }
+
+  function listHtml() {
+    if (!memo.kw) {
+      return '<div class="card" style="text-align:center;padding:30px 18px">' +
+        '<div class="tiny" style="font-size:12.5px;line-height:1.7">输入代码、名称或拼音首字母搜索<br>点右侧 <b class="c-up">☆→★</b> 加入自选分组</div></div>';
+    }
+    if (!memo.hits.length) {
+      return '<div class="card" style="text-align:center;padding:30px 18px">' +
+        '<div class="tiny" style="font-size:12.5px">没有匹配的 A股 / 港股 / 美股 / ETF</div></div>';
+    }
+    var shown = memo.hits.slice(0, 20);
+    ensurePx(shown.map(function (h) { return h.symbol; }), function () {
+      /* 行情到达后局部重绘（若 input 仍在聚焦，列表区刷新不影响输入） */
+      refreshList();
+    });
+    return shown.map(rowHtml).join('');
+  }
+
+  /** 局部刷新列表（不整页重绘，保住输入框焦点） */
+  function refreshList() {
+    var el = document.getElementById('wl-srch-list');
+    if (el) el.innerHTML = listHtml();
+  }
+
+  /* ---------------- 输入与联想 ---------------- */
+
+  function onInput(e) {
+    var kw = String(e.target.value || '').trim();
+    memo.kw = kw;
+    if (debounceTimer) clearTimeout(debounceTimer);
+    if (!kw) { memo.hits = []; refreshList(); return; }
+    debounceTimer = setTimeout(function () {
+      XJ.fetcher.fetchSymbolSearch(kw).then(function (hits) {
+        if (memo.kw !== kw) return;                       // 已有更新的输入，丢弃旧结果
+        memo.hits = (hits || []).filter(function (h) { return tradable(h.symbol); });
+        refreshList();
+      });
+    }, 260);
+  }
+
+  function render() {
+    return '<div class="card srch-card">' +
+      '<div class="srch-box">' + UI.icon('search', 16) +
+      '<input id="wl-srch" type="search" placeholder="代码 / 名称 / 拼音" value="' + U.esc(memo.kw) + '" autocomplete="off">' +
+      (memo.kw ? '<button class="srch-clear" data-act="srchClear" aria-label="清空">' + UI.icon('close', 13) + '</button>' : '') +
+      '</div>' +
+      '<div class="tiny" style="margin-top:8px">仅支持 A股 · 港股 · 美股 · ETF（场外基金暂不支持自选）</div>' +
+      '</div>' +
+      '<div id="wl-srch-list">' + listHtml() + '</div>';
+  }
+
+  function bind() {
+    var inp = document.getElementById('wl-srch');
+    if (inp) {
+      inp.addEventListener('input', onInput);
+      try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
+    }
+  }
+
+  /** 清空搜索（右上 × / 重新进入） */
+  function clear() {
+    memo.kw = '';
+    memo.hits = [];
+    var inp = document.getElementById('wl-srch');
+    if (inp) inp.value = '';
+    refreshList();
+  }
+
+  return { render: render, bind: bind, refreshList: refreshList, clear: clear };
 })();
 
 
@@ -16245,6 +16944,7 @@ XJ.views.symbol = (function () {
       var subTitle = {
         analysis: '账户分析',
         divsummary: '分红汇总',
+        search: '添加自选',
         symbol: S.ui.subArg ? S.symbolName(S.ui.subArg) : '个股详情',
       }[S.ui.subPage] || '';
       return '<div class="topbar-row">' +
@@ -16344,6 +17044,11 @@ XJ.views.symbol = (function () {
     if (shell) shell.style.paddingBottom = S.ui.subPage ? '24px' : '';
     renderFloat();
     if (XJ.chart) XJ.chart.bind();
+    /* 视图级渲染后钩子（自选页 sparkline 懒加载 / 搜索页输入绑定） */
+    var curView = S.ui.subPage ? XJ.views[S.ui.subPage] : XJ.views[S.ui.tab];
+    if (curView && typeof curView.bind === 'function') {
+      try { curView.bind(); } catch (e) { console.error('[bind]', e); }
+    }
     if (prevAnim && XJ.anim) XJ.anim.diffAndPlay(prevAnim);   // ③④ 比对 → 分档播放
   }
 
@@ -16969,6 +17674,207 @@ XJ.views.symbol = (function () {
     if (XJ.dnd && XJ.dnd.isJustDragged()) return;
     S.setUI({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
     window.scrollTo(0, 0);
+  });
+
+  /* ==================== 自选（watchlist · 二期） ==================== */
+
+  UI.on('openSearch', function () {
+    S.setUI({ subPage: 'search', floatOpen: false });
+  });
+
+  UI.on('srchClear', function () {
+    if (XJ.views.search && XJ.views.search.clear) XJ.views.search.clear();
+  });
+
+  UI.on('wlPickGroup', function (node) {
+    S.setUI({ wlGroup: node.getAttribute('data-g') });
+    UI.closeSheet();
+  });
+
+  /* 图四：三条杠 → 分组选择弹层（宫格 + 管理分组 / 新增分组） */
+  function openGroupSheet() {
+    var groups = S.wlGroups();
+    var cur = S.ui.wlGroup || 'all';
+    var cells = [{ id: 'all', name: '全部' }, { id: 'holding', name: '持仓' }].concat(
+      groups.map(function (g) { return { id: g.groupId, name: g.name }; }));
+    var html = '<div class="wl-ggrid">' + cells.map(function (c) {
+      return '<button class="wl-gcell' + (cur === c.id ? ' active' : '') +
+        '" data-act="wlPickGroup" data-g="' + U.esc(c.id) + '">' + U.esc(c.name) + '</button>';
+    }).join('') + '</div>' +
+      '<div class="wl-gops">' +
+      '<button class="wl-gop" data-act="openWlManage">' + UI.icon('edit', 14) + ' 管理分组</button>' +
+      '<button class="wl-gop" data-act="wlGroupCreate">' + UI.icon('plus', 14) + ' 新增分组</button>' +
+      '</div>';
+    UI.openSheet({ title: '自选分组', html: html });
+  }
+  UI.on('openWlGroups', openGroupSheet);
+
+  /* 管理模式：改名 / 删除 / 拖拽排序（XJ.dnd axis:'y'，把手 ≡） */
+  function openManageSheet() {
+    var groups = S.wlGroups();
+    var isDefault = function (id) {
+      return XJ.model.WL_DEFAULT_GROUPS.some(function (d) { return d.groupId === id; });
+    };
+    var html = '<div id="wl-gm-list">' + groups.map(function (g) {
+      return '<div class="wl-gm-row" data-g="' + U.esc(g.groupId) + '">' +
+        '<span class="gm-drag">' + UI.icon('menu', 15) + '</span>' +
+        '<span class="gm-name">' + U.esc(g.name) + '</span>' +
+        '<button class="gm-btn" data-act="wlGroupRename" data-g="' + U.esc(g.groupId) + '">改名</button>' +
+        '<button class="gm-btn danger" data-act="wlGroupRemove" data-g="' + U.esc(g.groupId) + '"' +
+        (isDefault(g.groupId) ? ' disabled title="默认分组不可删除"' : '') + '>删除</button>' +
+        '</div>';
+    }).join('') + '</div>' +
+      '<button class="btn-block" data-act="closeSheet">完成</button>' +
+      '<div class="tiny" style="margin-top:8px;text-align:center">长按 ≡ 拖动调整分组顺序</div>';
+    UI.openSheet({
+      title: '管理分组', html: html,
+      onMount: function () {
+        var list = document.getElementById('wl-gm-list');
+        if (list && XJ.dnd) {
+          XJ.dnd.bind(list, {
+            itemSel: '.wl-gm-row', attr: 'data-g', axis: 'y',
+            onCommit: function (order) {
+              S.wlGroupReorder(order);
+              /* sheet 不在整页重渲染范围内，重建管理列表让新顺序立即呈现 */
+              openManageSheet();
+            },
+          });
+        }
+      },
+    });
+  }
+  UI.on('openWlManage', openManageSheet);
+
+  UI.on('wlGroupCreate', function (node) {
+    var starSym = node ? node.getAttribute('data-star-sym') : null;
+    var starName = node ? node.getAttribute('data-star-name') : null;
+    S.setUI({ wlSheetCtx: starSym ? { starSym: starSym, starName: starName } : null });
+    var html = '<input id="wl-gnew" class="sheet-input" type="text" maxlength="12" placeholder="分组名称（如：红利 ETF）">' +
+      '<button class="btn-block" data-act="wlGroupCreateSave">保存</button>';
+    UI.openSheet({
+      title: starSym ? '新建分组并加入' : '新增分组', html: html,
+      onMount: function () { try { document.getElementById('wl-gnew').focus(); } catch (e) { /* 忽略 */ } },
+    });
+  });
+
+  UI.on('wlGroupCreateSave', function () {
+    var inp = document.getElementById('wl-gnew');
+    var name = inp ? inp.value : '';
+    var id = S.wlGroupAdd(name);
+    var ctx = S.ui.wlSheetCtx || {};
+    if (id && ctx.starSym) {
+      S.wlAdd(id, ctx.starSym, ctx.starName);
+      if (XJ.views.search) XJ.views.search.refreshList();
+    }
+    S.setUI({ wlSheetCtx: null });
+    UI.closeSheet();
+    UI.toast(id ? '分组已创建' : '名称不能为空');
+  });
+
+  UI.on('wlGroupRename', function (node) {
+    var g = node.getAttribute('data-g');
+    var grp = S.wlGroups().filter(function (x) { return x.groupId === g; })[0];
+    var html = '<input id="wl-grn" class="sheet-input" type="text" maxlength="12" value="' + U.esc(grp ? grp.name : '') + '">' +
+      '<button class="btn-block" data-act="wlGroupRenameSave" data-g="' + U.esc(g) + '">保存</button>';
+    UI.openSheet({
+      title: '重命名分组', html: html,
+      onMount: function () { try { document.getElementById('wl-grn').focus(); } catch (e) { /* 忽略 */ } },
+    });
+  });
+
+  UI.on('wlGroupRenameSave', function (node) {
+    var inp = document.getElementById('wl-grn');
+    S.wlGroupRename(node.getAttribute('data-g'), inp ? inp.value : '');
+    UI.closeSheet();
+    UI.toast('分组已重命名');
+  });
+
+  UI.on('wlGroupRemove', function (node) {
+    var g = node.getAttribute('data-g');
+    var grp = S.wlGroups().filter(function (x) { return x.groupId === g; })[0];
+    if (!grp) return;
+    UI.confirm({
+      title: '删除分组「' + grp.name + '」？',
+      message: '组内的自选将一并移除。',
+      danger: true, confirmText: '删除',
+    }).then(function (ok) {
+      if (!ok) return;
+      S.wlGroupRemove(g);
+      if (S.ui.wlGroup === g) S.setUI({ wlGroup: 'all' });
+      openManageSheet();
+    });
+  });
+
+  UI.on('wlIndexPick', function () {
+    var cur = S.ui.wlIndex || 'sh000001';
+    var IDX = [['sh000001', '上证指数'], ['sz399001', '深证成指'], ['sz399006', '创业板指'],
+    ['sh000300', '沪深300'], ['hkHSI', '恒生指数'], ['hkHSTECH', '恒生科技'],
+    ['usDJI', '道琼斯'], ['usIXIC', '纳斯达克']];
+    var html = '<div class="wl-ggrid">' + IDX.map(function (p) {
+      return '<button class="wl-gcell' + (cur === p[0] ? ' active' : '') +
+        '" data-act="wlIndexSet" data-k="' + p[0] + '">' + p[1] + '</button>';
+    }).join('') + '</div>';
+    UI.openSheet({ title: '切换指数', html: html });
+  });
+
+  UI.on('wlIndexSet', function (node) {
+    S.setUI({ wlIndex: node.getAttribute('data-k'), wlTick: Date.now() });
+    UI.closeSheet();
+  });
+
+  UI.on('wlOpenSymbol', function (node) {
+    S.setUI({ subPage: 'symbol', subArg: node.getAttribute('data-sym'), floatOpen: false });
+    window.scrollTo(0, 0);
+  });
+
+  UI.on('wlRemoveItem', function (node) {
+    S.wlRemove(node.getAttribute('data-item'));
+    UI.toast('已从自选移除');
+  });
+
+  /* 图五：搜索结果点星 → 分组选择 sheet（单选 + 新建 + 移除） */
+  UI.on('wlStar', function (node) {
+    var sym = node.getAttribute('data-sym');
+    var name = node.getAttribute('data-name') || '';
+    var groups = S.wlGroups();
+    var cur = S.wlGroupOf(sym);
+    var html = '<div class="wl-ggrid">' + groups.map(function (g) {
+      return '<button class="wl-gcell' + (cur === g.groupId ? ' active' : '') +
+        '" data-act="wlStarPick" data-sym="' + U.esc(sym) + '" data-name="' + U.esc(name) +
+        '" data-g="' + U.esc(g.groupId) + '">' + U.esc(g.name) + (cur === g.groupId ? ' ✓' : '') + '</button>';
+    }).join('') +
+      '<button class="wl-gcell wl-gnew" data-act="wlGroupCreate" data-star-sym="' + U.esc(sym) +
+      '" data-star-name="' + U.esc(name) + '">＋ 新建分组</button>' +
+      '</div>' +
+      (cur ? '<button class="btn-block danger" data-act="wlStarRemove" data-sym="' + U.esc(sym) + '">从自选移除</button>' : '');
+    UI.openSheet({ title: '加入自选 · ' + name, html: html });
+  });
+
+  UI.on('wlStarPick', function (node) {
+    var sym = node.getAttribute('data-sym');
+    var name = node.getAttribute('data-name');
+    var g = node.getAttribute('data-g');
+    var cur = S.wlGroupOf(sym);
+    if (cur === g) { UI.closeSheet(); return; }
+    if (cur) {
+      var old = (S.state.watchlist.items || []).filter(function (x) { return x.symbol === sym; })[0];
+      if (old) S.wlMove(old.itemId, g);
+    } else {
+      S.wlAdd(g, sym, name);
+    }
+    UI.closeSheet();
+    var gName = (S.wlGroups().filter(function (x) { return x.groupId === g; })[0] || {}).name || '';
+    UI.toast('已加入「' + gName + '」');
+    if (XJ.views.search) XJ.views.search.refreshList();
+  });
+
+  UI.on('wlStarRemove', function (node) {
+    var sym = node.getAttribute('data-sym');
+    var it = (S.state.watchlist.items || []).filter(function (x) { return x.symbol === sym; })[0];
+    if (it) S.wlRemove(it.itemId);
+    UI.closeSheet();
+    UI.toast('已从自选移除');
+    if (XJ.views.search) XJ.views.search.refreshList();
   });
 
   /* ---- 子页面路由 ---- */
