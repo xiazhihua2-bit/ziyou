@@ -2943,6 +2943,125 @@ XJ.calc = (function () {
     return out;
   }
 
+  /* ==================== 新闻硬规则（六 Tab 三期） ====================
+   * 用户拍板（2026-10-08 决策 10）：纯关键词硬规则，弃 GLM ——
+   * 「已成交可核验」的事实才收录，宁缺勿滥。三道闸依次为：
+   *   ① 传闻排除词 —— 一票否决（据悉/拟/或将/知情人士…，凡是「还没发生」的一律不收）
+   *   ② 实体词表命中 —— 必过（传奇投资者与其旗下平台，图七监控清单）
+   *   ③ 完成时态 / 金额结构词 —— 必过（宣布/完成/斥资/亿/%…没有动作与量级的不收）
+   * 词表刻意做成可维护配置：新增实体只需往 NEWS_RULES.entities 加一个词。 */
+
+  var NEWS_RULES = {
+    /* 传奇投资者与旗下平台（图七监控清单，可继续增补）。拉丁词按不区分大小写匹配 */
+    entities: [
+      /* 伯克希尔系 */
+      '巴菲特', '伯克希尔', '波克夏', '哈撒韦', 'BRK', '芒格',
+      '阿贝尔', '康布斯', 'Todd Combs', 'Weschler',
+      /* 长和系（四平台）+ 李氏家族 */
+      '李嘉诚', '李泽钜', '李泽楷', '长和', '长江实业', '长实集团', '和黄', '电能实业',
+      'CK Hutchison', 'CK Asset', 'CK Infrastructure', 'Power Assets',
+      /* 海外传奇投资机构 */
+      'Exor', 'LVMH', '路威酩轩', '阿尔诺', 'Arnault',
+      '橡树资本', 'Oaktree', '霍华德·马克斯', 'Howard Marks',
+      '高瓴', 'Hillhouse', 'HHLR', '段永平',
+      /* 日本五大商社 */
+      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红', '五大商社',
+      /* 其它主权基金 / 传奇企业 */
+      'Reliance', '信实工业', '安巴尼', 'Ambani', 'PIF', '沙特公共投资基金',
+      'Mubadala', '穆巴达拉', '三星', '淡马锡', 'Temasek', 'GIC',
+    ],
+    /* 完成时态 / 金额结构词：有了实体还不够，必须有「动作 + 量级」才像已成交事实 */
+    facts: [
+      '完成', '宣布', '达成', '签署', '交割', '公告', '披露', '公布', '落定', '敲定',
+      '斥资', '增持', '减持', '回购', '买入', '购入', '卖出', '出售', '收购', '中标',
+      '派息', '宣派', '分红', '除净', '派发', '上调', '获批',
+      ' 亿', '亿元', '亿美元', '亿港元', '%',
+    ],
+    /* 传闻排除词：一票否决，优先级最高（宁缺勿滥） */
+    rumors: [
+      '据悉', '据称', '据传', '传闻', '传言', '或将', '拟', '有意', '考虑', '寻求',
+      '计划', '筹备', '磋商', '洽谈', '探讨', '评估中', '知情人士', '消息称',
+      '消息人士', '接近', '有望', '预计', '或以', '意在', '据说',
+    ],
+  };
+
+  /** 词表命中：纯中文走 indexOf；拉丁词（含空格/点）按不区分大小写正则匹配 */
+  function newsTextHas(text, word) {
+    if (!word) return false;
+    if (/^[A-Za-z0-9][A-Za-z0-9 .&·'-]*$/.test(word)) {
+      var re = new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      return re.test(text);
+    }
+    return text.indexOf(word) >= 0;
+  }
+
+  /**
+   * 硬规则判定。返回 null（不收）或 { hits: [命中的实体词...] }（按词表序）。
+   * 判定顺序刻意固定：传闻否决 → 实体 → 结构。测试与行为都依赖这个顺序。
+   */
+  function newsFilter(item) {
+    if (!item) return null;
+    var text = String(item.title || '') + '\n' + String(item.digest || '');
+    if (!text.replace(/\s/g, '')) return null;
+    var i;
+    for (i = 0; i < NEWS_RULES.rumors.length; i++) {
+      if (newsTextHas(text, NEWS_RULES.rumors[i])) return null;
+    }
+    var hits = [];
+    for (i = 0; i < NEWS_RULES.entities.length; i++) {
+      if (newsTextHas(text, NEWS_RULES.entities[i])) hits.push(NEWS_RULES.entities[i]);
+    }
+    if (!hits.length) return null;
+    for (i = 0; i < NEWS_RULES.facts.length; i++) {
+      if (newsTextHas(text, NEWS_RULES.facts[i])) return { hits: hits };
+    }
+    return null;
+  }
+
+  /**
+   * 「仅查看自选」的命中：条目正文里出现自选 / 持仓标的的名称（≥2 字）即相关。
+   * 返回命中的名称数组（空数组 = 不相关）。纯函数，视图层每轮渲染现算。
+   */
+  function newsWlHits(item, names) {
+    var text = String(item && item.title || '') + '\n' + String(item && item.digest || '');
+    var out = [];
+    (names || []).forEach(function (n) {
+      if (n && String(n).length >= 2 && text.indexOf(n) >= 0) out.push(n);
+    });
+    return out;
+  }
+
+  /**
+   * Unix 秒 → 'YYYY-MM-DD HH:MM'。
+   * ★ 固定按北京时间（UTC+8）格式化：新闻是境内市场语境，不跟设备时区走，
+   *   海外设备的用户看到的也是同一串北京时间。手写 UTC 分量拼接，不经过 toLocaleString。
+   */
+  function newsTimeText(ctime) {
+    var t = U.num(ctime);
+    if (t === null || t <= 0) return '';
+    var d = new Date((t + 8 * 3600) * 1000);
+    return d.getUTCFullYear() + '-' + U.pad2(d.getUTCMonth() + 1) + '-' + U.pad2(d.getUTCDate()) +
+      ' ' + U.pad2(d.getUTCHours()) + ':' + U.pad2(d.getUTCMinutes());
+  }
+
+  /**
+   * 合并新闻命中：按 id 去重（新的优先）、ctime 降序、裁掉 cutoff 之前的旧闻、裁到 cap 条。
+   * 用于「上一轮缓存 + 本轮新命中」的合并，两边谁先谁后结果一致。
+   */
+  function newsMerge(oldHits, newHits, cutoffSec, cap) {
+    var seen = {};
+    var out = [];
+    (newHits || []).concat(oldHits || []).forEach(function (it) {
+      if (!it || !it.id || seen[it.id]) return;
+      if (cutoffSec && (U.num(it.ctime) || 0) < cutoffSec) return;
+      seen[it.id] = true;
+      out.push(it);
+    });
+    out.sort(function (a, b) { return (U.num(b.ctime) || 0) - (U.num(a.ctime) || 0); });
+    if (cap && out.length > cap) out = out.slice(0, cap);
+    return out;
+  }
+
   return {
     ALL: ALL,
     alignMinute: alignMinute,
@@ -3048,5 +3167,11 @@ XJ.calc = (function () {
     withLiveWeek: withLiveWeek,
     weekLiveBar: weekLiveBar,
     bollSignal: bollSignal,
+    /* v7 新增（六 Tab 三期）：新闻硬规则 */
+    NEWS_RULES: NEWS_RULES,
+    newsFilter: newsFilter,
+    newsWlHits: newsWlHits,
+    newsTimeText: newsTimeText,
+    newsMerge: newsMerge,
   };
 })();
