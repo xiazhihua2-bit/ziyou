@@ -1846,21 +1846,28 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .news-prog{ display:flex; align-items:center; gap:6px; justify-content:center;
   font-size:12px; color:var(--text-3); padding:2px 0 10px; }
 .news-prog svg{ animation:spin 1.1s linear infinite; }
-/* 时间轴：日期头（左右细线夹住标签）+ 行（左时间右内容，图六快讯风） */
-.news-list{ display:flex; flex-direction:column; }
-.news-day{ margin:14px 4px 8px; font-size:12.5px; font-weight:650; color:var(--text-3);
-  display:flex; align-items:center; gap:10px; }
-.news-day::after{ content:''; flex:1; height:1px; background:var(--line); }
-.news-row{ display:flex; align-items:flex-start; gap:12px; padding:13px 14px;
-  margin-bottom:8px; cursor:pointer; }
-.news-row:active{ transform:scale(.985); }
-.nr-time{ flex:0 0 auto; font-size:12.5px; color:var(--text-3);
-  font-variant-numeric:tabular-nums; padding-top:3px; }
-.nr-main{ flex:1; min-width:0; }
-.news-row > svg{ flex:0 0 auto; color:var(--text-3); margin-top:4px; }
-.nr-tt{ font-size:14.5px; font-weight:600; line-height:1.5; word-break:break-word; }
-.nr-ds{ font-size:12.5px; color:var(--text-2); line-height:1.55; margin-top:3px;
+/* 时间轴（图六快讯风）：左列日期（同日仅首条）+ 品牌绿点 + 竖线 + 右侧内容。
+   绿点是时间轴装饰（非涨跌语义），用 Tab 品牌绿与选中态同源 */
+.news-tl{ padding:6px 0 2px; }
+.news-row{ display:flex; gap:11px; padding:11px 14px 11px 12px;
+  border-bottom:.5px solid var(--line); cursor:pointer; }
+.news-row:last-child{ border-bottom:0; }
+.news-row:active{ background:rgba(120,120,128,.06); }
+.tl-side{ flex:0 0 48px; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
+.tl-date{ font-size:11px; color:var(--text-3); font-variant-numeric:tabular-nums;
+  line-height:1.3; white-space:nowrap; }
+.tl-dot{ width:9px; height:9px; border-radius:50%;
+  background:var(--tab-accent); box-shadow:0 0 0 3px rgba(0,181,120,.14);
+  flex:0 0 auto; margin-right:-1px; }
+.tl-line{ flex:1; width:1.5px; background:var(--line); margin-right:2.5px; min-height:8px; }
+.news-row:last-child .tl-line{ display:none; }
+.tl-body{ flex:1; min-width:0; padding-bottom:2px; }
+.tl-body .row-t{ font-size:14.5px; font-weight:600; line-height:1.45; word-break:break-word;
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.tl-sum{ font-size:12px; color:var(--text-2); margin-top:3px; line-height:1.5;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.tl-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px; }
+.tl-src{ font-size:10.5px; color:var(--text-3); }
 .nr-meta{ margin-top:7px; display:flex; gap:6px; flex-wrap:wrap; }
 /* 详情 sheet */
 .nd-tt{ font-size:16px; font-weight:700; line-height:1.55; word-break:break-word; }
@@ -7073,19 +7080,21 @@ XJ.fetcher = (function () {
     });
   }
 
-  /* ---------------- 新闻快讯（六 Tab 三期） ----------------
-   * 主源：同花顺 tapp 快讯（JSONP，2026-10-08 实测 200 有数据）。
-   *   news.10jqka.com.cn/tapp/news/push/stock/?page=N&tag=&track=website&pagesize=100&callback=cbx
-   *   字段 id/title/digest/url/tags[]/ctime(Unix 秒)；pagesize=100 有效，
-   *   实测约 100 条/页、回看 7 天 ≈ 12~15 页（分页探针数据见 2026-10-08 快照）。
+  /* ---------------- 新闻快讯（10-08 重做版） ----------------
+   * 主源：东财资讯检索 search-api-web（10-08 实测 HTTP 200 + CORS 全开 + JSONP 兜底；
+   *   此前 WAF 拦截的是 np-listapi 资讯列表接口，搜索接口是另一条通道）。
+   *   按 calc.NEWS_RULES.searchTerms 主体词逐个检索（sort=time 最新 N 条），
+   *   自带 date/title/content/mediaName/url —— 天然满足「时间可核验 + 有来源 + 有原文」。
+   *   注意东财相关性很松（正文命中也返回，实测搜「伯克希尔」返回红利策略文章），
+   *   精度由 calc.newsFilter 的标题二次命中把关。
    * Fallback：新浪 7x24（zhibo_id=152）。响应被 try{cb(...)}catch(e){} 包裹 ——
    *   <script> 注入照样执行；数据在 result.data.feed.list[]，字段 rich_text /
    *   create_time('YYYY-MM-DD HH:MM:SS' 北京时间)。总库存仅约 900 条，
-   *   支撑不了 7 天深回看，只在 tapp 失效时兜底近况。
+   *   只在东财整轮失败时兜底近况。
    * 两源统一成 { id, title, digest, url, source, tags, ctime }（ctime = Unix 秒）；
    * 去重与过滤交给 calc.newsMerge / calc.newsFilter（纯函数，verify 可独立复算）。 */
-  var NEWS_TAPP_URL = 'https://news.10jqka.com.cn/tapp/news/push/stock/';
-  var NEWS_TAPP_PAGESIZE = 100;
+  var NEWS_SEARCH_URL = 'https://search-api-web.eastmoney.com/search/jsonp';
+  var NEWS_SEARCH_PER_SIZE = 8;   /* 每词最新 N 条（sort=time） */
   var NEWS_SINA_URL = 'https://zhibo.sina.com.cn/api/zhibo/feed';
   var NEWS_SINA_PAGESIZE = 50;
 
@@ -7099,24 +7108,44 @@ XJ.fetcher = (function () {
     return isNaN(ms) ? null : Math.floor(ms / 1000);
   }
 
-  /** 纯解析：tapp JSONP payload → 统一新闻条目数组 */
-  function parseNewsTapp(payload) {
-    var data = payload && payload.data;
-    var list = data && Array.isArray(data.list) ? data.list : [];
+  /** 剥 HTML 标记与东财高亮 <em>、反转义、折叠空白（title/content 都带 <em>） */
+  function stripEmTags(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** 解包 JSONP 文本 `cb({...})` → 对象（非 JSONP 的纯 JSON 也兼容） */
+  function parseJsonpText(text) {
+    var t = String(text || '').trim();
+    var m = t.match(/^[\w$]+\(([\s\S]*)\)\s*;?\s*$/);
+    if (m) t = m[1];
+    try { return JSON.parse(t); } catch (e) { return null; }
+  }
+
+  /** 纯解析：东财检索 payload → 统一新闻条目数组（digest 截 500 字防缓存膨胀） */
+  function parseNewsEm(payload) {
+    var arr = payload && payload.result && payload.result.cmsArticleWebOld;
+    if (!Array.isArray(arr)) return [];
     var out = [];
-    list.forEach(function (row) {
-      if (!row || row.id === undefined || !row.title) return;
-      var ctime = U.num(row.ctime);
-      if (ctime === null || ctime <= 0) return;
+    arr.forEach(function (a) {
+      if (!a || !a.title) return;
+      var ctime = beijingStamp(a.date);
+      if (ctime === null) return;
       out.push({
-        id: 'ths' + row.id,
-        title: String(row.title),
-        digest: String(row.digest || row.short || ''),
-        url: String(row.url || row.appUrl || ''),
-        source: String(row.source || '同花顺'),
-        tags: (Array.isArray(row.tags) ? row.tags : []).map(function (t) {
-          return t && t.name ? String(t.name) : '';
-        }).filter(function (s) { return s; }),
+        id: 'em' + String(a.code || a.url || a.date),
+        title: stripEmTags(a.title).slice(0, 120),
+        digest: stripEmTags(a.content).slice(0, 500),
+        url: String(a.url || ''),
+        source: String(a.mediaName || '东财'),
+        tags: [],
         ctime: ctime,
       });
     });
@@ -7169,14 +7198,65 @@ XJ.fetcher = (function () {
     }).catch(function () { return null; });
   }
 
-  /** 同花顺 tapp 第 N 页（1 起）→ 统一条目数组（失败返回 []） */
-  function fetchNewsTappPage(page) {
-    var cbName = 'xjnwt_' + (++cbSeq) + '_' + Date.now().toString(36);
-    var url = NEWS_TAPP_URL +
-      '?page=' + (page > 0 ? page : 1) + '&tag=&track=website&pagesize=' + NEWS_TAPP_PAGESIZE +
-      '&callback=' + cbName;
-    return fetchNewsJsonp(url, cbName).then(function (res) {
-      return res ? parseNewsTapp(res) : [];
+  /** 东财按词检索：fetch 主路（CORS 全开）→ 9s 未回转 JSONP 注入兜底；
+   *  两路都失败返回 []，绝不 reject（下游串行循环不希望被单词打断） */
+  function fetchNewsSearch(kw, size) {
+    size = size || NEWS_SEARCH_PER_SIZE;
+    var param = encodeURIComponent(JSON.stringify({
+      uid: '', keyword: String(kw || ''), type: ['cmsArticleWebOld'],
+      client: 'web', clientType: 'web', clientVersion: 'curr',
+      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: 1, pageSize: size, preTag: '<em>', postTag: '</em>' } },
+    }));
+    return new Promise(function (resolve) {
+      var phase = 'fetch';                       // fetch → jsonp → done
+      function done(list) {
+        if (phase === 'done') return;
+        phase = 'done';
+        resolve(Array.isArray(list) ? list : []);
+      }
+      function jsonp() {
+        if (phase !== 'fetch') return;
+        phase = 'jsonp';
+        var cbName = 'xjnew_' + (++cbSeq) + '_' + Date.now().toString(36);
+        window[cbName] = function (res) { done(parseNewsEm(res)); };
+        loadScript(NEWS_SEARCH_URL + '?cb=' + cbName + '&param=' + param, null, 9000, function (ok) {
+          try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+          if (!ok) { done([]); return; }
+          /* onload 但回调没触发（被 try{}catch 包裹/返回非 JSON）→ 宽限后放弃 */
+          setTimeout(function () { if (phase === 'jsonp') done([]); }, 500);
+        });
+      }
+      setTimeout(jsonp, 9000);                   // fetch 主路超时闸
+      try {
+        fetch(NEWS_SEARCH_URL + '?cb=cb&param=' + param).then(function (r) {
+          return r.text();
+        }).then(function (t) {
+          if (phase !== 'fetch') return;
+          done(parseNewsEm(parseJsonpText(t)));
+        }).catch(jsonp);
+      } catch (e) { jsonp(); }
+    });
+  }
+
+  /** 按词表逐个检索（串行 + 120ms 间隔防限流，参考页实测安全值）。
+   *  onEach(items, kw)：每词完成即回调 —— 视图用它做渐进渲染。
+   *  resolve(全部原始条目)；单词失败只跳过该词，不打断整轮。 */
+  function fetchNewsSearchMulti(keywords, perSize, onEach) {
+    var list = (keywords || []).filter(Boolean);
+    var out = [];
+    var i = 0;
+    return new Promise(function (resolve) {
+      function step() {
+        if (i >= list.length) return resolve(out);
+        var kw = list[i++];
+        fetchNewsSearch(kw, perSize).then(function (items) {
+          items = items || [];
+          out = out.concat(items);
+          if (onEach) { try { onEach(items, kw); } catch (e) { /* 渲染层异常不拦取数 */ } }
+          setTimeout(step, 120);
+        }).catch(function () { setTimeout(step, 120); });
+      }
+      step();
     });
   }
 
@@ -7189,26 +7269,6 @@ XJ.fetcher = (function () {
     return fetchNewsJsonp(url, cbName).then(function (res) {
       return res ? parseNewsSina(res) : [];
     });
-  }
-
-  /**
-   * 新闻源探测（只调第一页）：tapp 有数据 → 'tapp'；tapp 空颗粒无收 → 试新浪。
-   * 返回 { items, via }，via ∈ 'tapp' | 'sina' | 'none'。
-   * 回看循环据此锁定整轮的源（避免「tapp 第 15 页翻到底」被误判成主源失效）。
-   */
-  function fetchNewsFirst() {
-    return fetchNewsTappPage(1).then(function (items) {
-      if (items.length) return { items: items, via: 'tapp' };
-      return fetchNewsSinaPage(1).then(function (alt) {
-        return { items: alt, via: alt.length ? 'sina' : 'none' };
-      });
-    });
-  }
-
-  /** 按已锁定的源翻第 N 页（view 回看循环用） */
-  function fetchNewsPage(via, page) {
-    if (via === 'sina') return fetchNewsSinaPage(page);
-    return fetchNewsTappPage(page);
   }
 
   return {
@@ -7250,14 +7310,15 @@ XJ.fetcher = (function () {
     parseHkPerShare: parseHkPerShare,
     hkReportDate: hkReportDate,
     fetchDividends: fetchDividends,
-    fetchNewsFirst: fetchNewsFirst,
-    fetchNewsPage: fetchNewsPage,
-    fetchNewsTappPage: fetchNewsTappPage,
+    fetchNewsSearch: fetchNewsSearch,
+    fetchNewsSearchMulti: fetchNewsSearchMulti,
     fetchNewsSinaPage: fetchNewsSinaPage,
-    parseNewsTapp: parseNewsTapp,
+    parseNewsEm: parseNewsEm,
     parseNewsSina: parseNewsSina,
+    stripEmTags: stripEmTags,
+    parseJsonpText: parseJsonpText,
     beijingStamp: beijingStamp,
-    NEWS_TAPP_PAGESIZE: NEWS_TAPP_PAGESIZE,
+    NEWS_SEARCH_PER_SIZE: NEWS_SEARCH_PER_SIZE,
     NEWS_SINA_PAGESIZE: NEWS_SINA_PAGESIZE,
     fetchFundDivPage: fetchFundDivPage,
     fetchFundDivYear: fetchFundDivYear,
@@ -11527,49 +11588,104 @@ XJ.calc = (function () {
     return out;
   }
 
-  /* ==================== 新闻硬规则（六 Tab 三期） ====================
-   * 用户拍板（2026-10-08 决策 10）：纯关键词硬规则，弃 GLM ——
-   * 「已成交可核验」的事实才收录，宁缺勿滥。四道闸依次为：
+  /* ==================== 新闻硬规则（六 Tab 三期 · 10-08 重做版） ====================
+   * 用户拍板（2026-10-08 二次确认）：纯关键词硬规则，弃 GLM ——
+   * 「已成交可核验」的事实才收录，宁缺勿滥。五道闸依次为：
    *   ① 传闻排除词 —— 一票否决（据悉/拟/或将/知情人士…，凡是「还没发生」的一律不收）
-   *   ② 指数排除词 —— 一票否决（10-08 追加：指数行情/指标类报道一律不收，
+   *   ② 指数排除词 —— 一票否决（指数行情/指标类报道一律不收，
    *      含「巴菲特指标」这类宏观数据——它不是投资者的动作）
-   *   ③ 实体词表命中 —— 必过（传奇投资者与其旗下平台，图七监控清单）
-   *   ④ 完成时态 / 金额结构词 —— 必过（宣布/完成/斥资/亿/%…没有动作与量级的不收）
-   * 词表刻意做成可维护配置：新增实体只需往 NEWS_RULES.entities 加一个词。 */
+   *   ③ 误报排除词 —— 一票否决（真实数据里发现的子串误伤）
+   *   ④ 实体词表命中 —— 必过（图七监控清单，严格按清单主体；别名只保留
+   *      同一主体的代称——创始人/标准译名，图七之外的主体一律不进）
+   *   ⑤ 完成时态 / 金额结构词 —— 必过（宣布/完成/斥资/亿/%…没有动作与量级的不收）
+   * 主源换成东财 search-api-web 按词检索后：
+   *   - entities = 命中词表（newsFilter 对标题判定的口径，含主体别名）；
+   *   - searchTerms = 检索词表（每主体 1 个主词，控制东财请求数 ≈ 48 次/轮）。
+   *   两表分离：检索召回靠东财全文相关性，精度靠标题二次命中。 */
 
   var NEWS_RULES = {
-    /* 传奇投资者与旗下平台（图七监控清单，可继续增补）。拉丁词按不区分大小写匹配 */
+    /* 图七监控清单（严格版，10-08 用户拍板）。同一主体的别名同行注释；
+       拉丁词按不区分大小写 + 词边界匹配 */
     entities: [
-      /* 伯克希尔系 */
-      '巴菲特', '伯克希尔', '波克夏', '哈撒韦', 'BRK', '芒格',
-      '阿贝尔', '康布斯', 'Todd Combs', 'Weschler',
-      /* 长和系（四平台）+ 李氏家族。★ '长和' 裸词不进表：
+      /* 北美 */
+      '伯克希尔', '巴菲特', '波克夏', '哈撒韦', 'BRK', 'Berkshire',   /* Berkshire */
+      '布鲁克菲尔德', 'Brookfield',
+      '黑石', 'Blackstone',
+      'KKR',
+      '阿波罗', 'Apollo',                                             /* Apollo/Athene */
+      '新纪元能源', 'NextEra',
+      '星座能源', 'Constellation Energy',
+      '加拿大自然资源',
+      '森科能源', 'Suncor',
+      'Cenovus',
+      '卡梅科', 'Cameco',
+      /* 欧洲 */
+      'Exor',
+      'LVMH', '路威酩轩', '阿尔诺',
+      '西门子', 'Siemens',
+      '施耐德', 'Schneider',
+      'E.ON', '意昂',
+      'RWE', '莱茵集团',
+      'National Grid', '英国国家电网',   /* ★ 不收裸'国家电网'：会误伤中国国家电网 */
+      '罗氏', 'Roche',
+      '诺华', 'Novartis',
+      '雀巢', 'Nestle',
+      '英力士', 'INEOS',
+      /* 日本 */
+      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红',
+      '软银', 'SoftBank',
+      '丰田', 'Toyota',
+      '三菱日联', 'MUFG',
+      '三井住友', 'SMFG',
+      '东京电子', 'Tokyo Electron',
+      '信越', 'Shin-Etsu',
+      '基恩士', 'Keyence',
+      '发那科', 'FANUC',
+      /* 大中华/香港：长和系四平台 + 李氏家族代称。★ '长和' 裸词不进表：
          中文动词短语「断粮仍能长和生存」会子串误伤（真实数据踩过），只收明确后缀 */
-      '李嘉诚', '李泽钜', '李泽楷', '长和系', '长和集团', '长和实业',
-      '长江实业', '长实集团', '和黄', '电能实业',
-      'CK Hutchison', 'CK Asset', 'CK Infrastructure', 'Power Assets',
-      /* 海外传奇投资机构 */
-      'Exor', 'LVMH', '路威酩轩', '阿尔诺', 'Arnault',
-      '橡树资本', 'Oaktree', '霍华德·马克斯', 'Howard Marks',
-      '高瓴', 'Hillhouse', 'HHLR', '段永平',
-      /* 日本五大商社 */
-      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红', '五大商社',
-      /* 其它主权基金 / 传奇企业 */
-      'Reliance', '信实工业', '安巴尼', 'Ambani', 'PIF', '沙特公共投资基金',
-      'Mubadala', '穆巴达拉', '三星', '淡马锡', 'Temasek', 'GIC',
+      '李嘉诚', '长和系', '长和集团', '长和实业',
+      '长江和记', 'CK Hutchison',
+      '长江实业', '长实集团', 'CK Asset',
+      '长江基建', 'CK Infrastructure',
+      '电能实业', 'Power Assets',
+      '恒基兆业', '恒基地产',
+      '新鸿基',
+      '嘉里建设', '香格里拉',
+      '丰益国际', '益海嘉里',
+      '新世界发展',   /* ★ 图七字面'新世界'太泛（新世界纪录/秩序），收港交所简称 */
+      '腾讯',
+      '阿里', '阿里巴巴',
     ],
-    /* 完成时态 / 金额结构词：有了实体还不够，必须有「动作 + 量级」才像已成交事实 */
+    /* 检索词表：每主体 1 个主词（东财按词检索，48 次/轮、串行防限流）。
+       别名不单独检索 —— 东财全文相关性会把别名标题召回，标题命中词表把关。 */
+    searchTerms: [
+      '伯克希尔', '布鲁克菲尔德', '黑石', 'KKR', '阿波罗', '新纪元能源',
+      '星座能源', '加拿大自然资源', '森科能源', 'Cenovus', 'Cameco',
+      'Exor', 'LVMH', '西门子', '施耐德', 'E.ON', 'RWE', 'National Grid',
+      '罗氏', '诺华', '雀巢', '英力士',
+      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红', '软银', '丰田',
+      '三菱日联', '三井住友', '东京电子', '信越化学', '基恩士', '发那科',
+      '长江和记', '李嘉诚', '长江实业', '长江基建', '电能实业',
+      '恒基兆业', '新鸿基', '嘉里建设', '香格里拉', '丰益国际', '新世界发展',
+      '腾讯', '阿里',
+    ],
+    /* 完成时态 / 金额结构词：有了实体还不够，必须有「动作 + 量级」才像已成交事实。
+       ★ 只判标题：东财文章正文几乎必含「亿/%」，正文判结构等于没判 */
     facts: [
       '完成', '宣布', '达成', '签署', '交割', '公告', '披露', '公布', '落定', '敲定',
       '斥资', '增持', '减持', '回购', '买入', '购入', '卖出', '出售', '收购', '中标',
+      '加仓', '建仓', '清仓', '出手',
       '派息', '宣派', '分红', '除净', '派发', '上调', '获批',
       ' 亿', '亿元', '亿美元', '亿港元', '%',
     ],
-    /* 传闻排除词：一票否决，优先级最高（宁缺勿滥） */
+    /* 传闻排除词：一票否决，优先级最高（宁缺勿滥）。'独家谈判' 是 10-08
+       东财检索真实数据发现的漏网进行时（布鲁克菲尔德收购谈判被收录）；
+       '或增持/或收购' 等是 10-08 真链路复验抓出的「或+动词」传闻变体 */
     rumors: [
       '据悉', '据称', '据传', '传闻', '传言', '或将', '拟', '有意', '考虑', '寻求',
       '计划', '筹备', '磋商', '洽谈', '探讨', '评估中', '知情人士', '消息称',
-      '消息人士', '接近', '有望', '预计', '或以', '意在', '据说',
+      '消息人士', '接近', '有望', '预计', '或以', '意在', '据说', '独家谈判',
+      '或增持', '或收购', '或出售', '或减持', '或买入',
     ],
     /* 指数排除词：一票否决（10-08 用户追加）。指数行情/指数编制/宏观察指标
        都不是「投资者的动作」；'指数' 一词整体否决是最稳的口径 —— 命中实体的
@@ -11578,9 +11694,13 @@ XJ.calc = (function () {
       '指数', '综指', '股指', '大盘', '巴菲特指标', '沪深京', '沪指', '深成指', '创业板',
       '恒指', '国指', '纳指', '道指', '标普', '日内涨', '日内跌',
     ],
-    /* 误报排除词：一票否决（真实数据里发现的子串误伤，10-08） */
+    /* 误报排除词：一票否决（真实数据里发现的子串误伤，10-08）。
+       '自然资源部'：东财检索「加拿大自然资源」命中《国家能源局会见加拿大
+       自然资源部国务秘书》——政府部门与公司同名的真实歧义 */
     blocklist: [
-      '三星堆',      /* 电影《三星堆》命中「三星」 */
+      '自然资源部',
+      '香格里拉对话',   /* 防务论坛命中「香格里拉」 */
+      '阿波罗计划',     /* 航天语境命中「阿波罗」 */
     ],
   };
 
@@ -11599,10 +11719,14 @@ XJ.calc = (function () {
    * 硬规则判定。返回 null（不收）或 { hits: [命中的实体词...] }（按词表序）。
    * 判定顺序刻意固定：传闻否决 → 指数否决 → 误报否决 → 实体 → 结构。
    * 测试与行为都依赖这个顺序。
+   * ★ 判定域 = 标题（10-08 主源换东财后收紧）：东财 content 是几百字正文，
+   *   正文顺带提及实体/指数/金额极其常见（实测《红利=保守？》因正文提到
+   *   伯克希尔被误收）——参考页同款教训「主体词只做标题命中」。
+   *   新浪兜底条目的 rich_text 全文就在 title 里，判定域不缩水。
    */
   function newsFilter(item) {
     if (!item) return null;
-    var text = String(item.title || '') + '\n' + String(item.digest || '');
+    var text = String(item.title || '');
     if (!text.replace(/\s/g, '')) return null;
     var i;
     for (i = 0; i < NEWS_RULES.rumors.length; i++) {
@@ -16128,27 +16252,29 @@ XJ.views.search = (function () {
 
 
 /* ==================== src/views/news.js ==================== */
-/* ==================== 视图：新闻（六 Tab 三期） ====================
- * 数据流：进页 render() → ensureNews()（TTL 内不重复拉）→ 回看循环逐页拉快讯 →
- *         calc.newsFilter 硬规则过滤 → 命中写 state.newsCache（本机缓存，不进同步）
- *         → setUI 触发重渲染。原始快讯流不落盘，只落「硬规则命中」的条目。
- * 结构：规则横幅 + 「仅查看自选」开关（ui.wlNewsOnly，默认关）+ 日期分组时间轴
- *       （时间精确到 YYYY-MM-DD HH:MM，北京时间）+ 空态 + 红线页脚。
- * 主源同花顺 tapp；新浪 7x24 只作主源失效时的兜底（库存浅，回看上限 3 页）。
+/* ==================== 视图：新闻（六 Tab 三期 · 10-08 重做版） ====================
+ * 数据流：进页 render() → ensureNews()（TTL 内不重复拉）→ 按 searchTerms 主体词
+ *         逐个检索东财（串行防限流）→ calc.newsFilter 标题二次命中（精度闸）→
+ *         命中写 state.newsCache（本机缓存，不进同步）→ setUI 渐进重渲染。
+ *         东财整轮颗粒无收 → 新浪 7x24 兜底 1~3 页。
+ * 结构：规则横幅 + 「仅查看自选」开关（ui.wlNewsOnly，默认关）+ 时间轴列表
+ *       （左列日期同日仅首条显示 + 绿点 + 竖线，北京时间）+ 空态 + 红线页脚。
+ * 与旧版（同花顺 tapp 全量翻页回看）的差异：请求量 3000+ 条 → ~400 条；
+ *   每条自带来源媒体与原文链接；冷词会翻出数月前旧闻，靠 15 天时间下限挡。
  */
 XJ.views.news = (function () {
   var U = XJ.util, UI = XJ.ui;
 
-  var MAX_PAGES = 30;            // 回看翻页上限：15 天 ≈ 25~30 页（100 条/页）
-  var SINA_MAX_PAGES = 3;        // 新浪兜底的翻页上限（总库存仅约 900 条）
+  var PER_SIZE = 8;              // 每主体词取东财最新 N 条（fetcher.NEWS_SEARCH_PER_SIZE 同源）
+  var SINA_MAX_PAGES = 3;        // 新浪兜底翻页上限（总库存仅约 900 条）
   var INCR_TTL = 10 * 60 * 1000; // 增量拉取间隔：进页 10 分钟内不重复请求
   var CAP = 200;                 // 缓存命中上限（防极端行情日撑爆 localStorage）
-  var LOOKBACK_DAYS = 15;        // 回看窗口（10-08 用户追加：7 → 15 天）
-  var CACHE_V = 2;               // 缓存口径版本：词表/窗口变更后 +1，旧缓存整轮重扫
+  var LOOKBACK_DAYS = 15;        // 时间下限：冷词检索会翻出数月前旧闻，15 天外一律丢弃
+  var CACHE_V = 3;               // 缓存口径版本：词表/窗口/主源变更后 +1，旧缓存整轮重扫
 
-  var pulling = false;           // 本轮回看（含增量）进行中
-  var live = null;               // 回看期间的累积命中（已合并排序）；收尾后归 null
-  var prog = { page: 0, via: '' };
+  var pulling = false;           // 本轮检索（含兜底）进行中
+  var live = null;               // 本轮累积命中（已合并排序）；收尾后归 null
+  var prog = { done: 0, total: 0, via: '' };
 
   function cutoffSec() { return Math.floor(Date.now() / 1000) - LOOKBACK_DAYS * 86400; }
   function notify() { XJ.store.setUI({ newsTick: Date.now() }); }
@@ -16160,32 +16286,49 @@ XJ.views.news = (function () {
     return c && Array.isArray(c.hits) ? c.hits : [];
   }
 
-  /** 进页自动补数：没覆盖过窗口 / 缓存口径过期 → 全量回看；覆盖过但过了 TTL → 只拉增量 */
+  /** 进页自动补数：没跑过 / 缓存口径过期 / 过 TTL → 重跑一轮检索。
+   *  东财 sort=time 返回的天然是最新条目，增量靠 newsMerge 按 id 去重。 */
   function ensureNews() {
     if (pulling) return;
     var c = XJ.store.state.newsCache;
-    if (!c || !c.covered || c.v !== CACHE_V) { runPull('sweep'); return; }
-    if (Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull('incr');
+    if (!c || !c.covered || c.v !== CACHE_V || Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull();
   }
 
   /**
-   * 回看循环。kind='sweep'：从第 1 页拉到「最旧一条 ≤ 7 天前」或翻页上限；
-   * kind='incr'：只追到上一轮的最新一条（通常 1 页就够）。
-   * 命中随拉随渲染（渐进呈现）；每轮先锁定源（tapp / sina），避免把
-   * 「tapp 第 15 页翻到底」误判成主源失效。
+   * 检索轮：searchTerms 逐词查东财，每词命中即渐进渲染；收尾才 commitNow 落盘
+   * （中途关页丢弃本轮，下次进页重来——与「宁缺勿滥」同口径）。
+   * 旧命中先铺底：列表不闪断。
    */
-  function runPull(kind) {
+  function runPull() {
     pulling = true;
-    prog = { page: 0, via: '' };
-    /* 旧命中先铺底：增量/回看期间列表不闪断 */
-    live = XJ.calc.newsMerge(cacheHits(), [], 0, CAP);
+    prog = { done: 0, total: 0, via: '' };
+    live = XJ.calc.newsMerge(cacheHits(), [], cutoffSec(), CAP);
     var seen = {};
     live.forEach(function (h) { seen[h.id] = true; });
-    var prev = XJ.store.state.newsCache || newCache();
-    var stopAt = kind === 'incr' ? (prev.newestAt || 0) : cutoffSec();
-    var page = 0, via = null, reached = false, newest = 0;
+    var terms = (XJ.calc.NEWS_RULES && XJ.calc.NEWS_RULES.searchTerms) || [];
+    prog.total = terms.length;
+    var emOk = 0, newest = 0;
 
-    function publish(final) {
+    /** 原始条目 → 五道闸过滤 → 并入 live（时间下限挡冷词旧闻） */
+    function absorb(items) {
+      (items || []).forEach(function (raw) {
+        if (!raw || seen[raw.id]) return;
+        if ((U.num(raw.ctime) || 0) < cutoffSec()) return;
+        var m = XJ.calc.newsFilter(raw);
+        if (!m) return;
+        seen[raw.id] = true;
+        live.push({
+          id: raw.id, title: raw.title, digest: raw.digest, url: raw.url,
+          source: raw.source, tags: (raw.tags || []).slice(0, 3),
+          ents: m.hits.slice(0, 3), ctime: raw.ctime,
+        });
+        if (raw.ctime > newest) newest = raw.ctime;
+      });
+      live.sort(function (a, b) { return b.ctime - a.ctime; });
+      if (live.length > CAP) live = live.slice(0, CAP);
+    }
+
+    function publish(final, via) {
       if (final) {
         var c = XJ.store.state.newsCache || newCache();
         c.v = CACHE_V;
@@ -16195,7 +16338,6 @@ XJ.views.news = (function () {
         c.via = via || c.via || '';
         c.hits = live || [];
         XJ.store.state.newsCache = c;
-        /* 收尾才落盘：中途关页丢弃本轮，下次进页重来（与「宁缺勿滥」同口径） */
         XJ.store.commitNow(null);
         live = null;
         pulling = false;
@@ -16203,52 +16345,35 @@ XJ.views.news = (function () {
       notify();
     }
 
-    function step() {
-      page++;
-      prog.page = page;
-      var job = via === null
-        ? XJ.fetcher.fetchNewsFirst()
-        : XJ.fetcher.fetchNewsPage(via, page).then(function (items) {
-          return { items: items, via: via };
+    XJ.fetcher.fetchNewsSearchMulti(terms, PER_SIZE, function (items) {
+      prog.done++;
+      if (items && items.length) emOk++;
+      absorb(items);
+      notify();                                      // 每词先渲染出去（动效层 400ms 节流兜着）
+    }).then(function () {
+      if (emOk > 0) { publish(true, 'em'); return; }
+      /* 东财整轮颗粒无收（接口挂/全词失败）→ 新浪 7x24 兜底，1 页有数据才续 2~3 页 */
+      prog.via = 'sina';
+      var sinaPage = 0;
+      function sinaStep() {
+        sinaPage++;
+        return XJ.fetcher.fetchNewsSinaPage(sinaPage).then(function (items) {
+          absorb(items);
+          notify();
+          if (items && items.length && sinaPage < SINA_MAX_PAGES) {
+            return new Promise(function (r) { setTimeout(r, 150); }).then(sinaStep);
+          }
         });
-      return job.then(function (res) {
-        via = res.via || via || 'none';
-        prog.via = via;
-        var items = res.items || [];
-        if (!items.length) { reached = true; return; }   // 翻到底 / 两源都不可用
-        var itemsNewest = 0, oldest = 0;
-        items.forEach(function (raw) {
-          if (raw.ctime > itemsNewest) itemsNewest = raw.ctime;
-          if (!oldest || raw.ctime < oldest) oldest = raw.ctime;
-          if (seen[raw.id]) return;
-          var m = XJ.calc.newsFilter(raw);
-          if (!m) return;
-          seen[raw.id] = true;
-          live.push({
-            id: raw.id, title: raw.title, digest: raw.digest, url: raw.url,
-            source: raw.source, tags: (raw.tags || []).slice(0, 3),
-            ents: m.hits.slice(0, 3), ctime: raw.ctime,
-          });
-        });
-        if (itemsNewest > newest) newest = itemsNewest;
-        live.sort(function (a, b) { return b.ctime - a.ctime; });
-        if (live.length > CAP) live = live.slice(0, CAP);
-        if (oldest <= stopAt) reached = true;            // 已覆盖到目标时间点
-        if (page >= MAX_PAGES) reached = true;           // 尽力而为，不给无限循环机会
-        if (via === 'sina' && page >= SINA_MAX_PAGES) reached = true;
-      }).then(function () {
-        publish(false);                                  // 每页都先渲染出去
-        if (reached) { publish(true); return; }
-        return new Promise(function (r) { setTimeout(r, 150); }).then(step);
-      }).catch(function () { publish(true); });
-    }
-    step();
+      }
+      sinaStep().then(function () { publish(true, 'sina'); })
+        .catch(function () { publish(true, 'sina'); });
+    }).catch(function () { publish(true, 'em'); });
   }
 
-  /** 手动刷新（空态按钮 / 详情页脚）：强制全量回看 */
+  /** 手动刷新（空态按钮 / 详情页脚）：强制全量重检 */
   function refresh() {
-    if (pulling) { UI.toast('正在回看中，请稍候…'); return; }
-    runPull('sweep');
+    if (pulling) { UI.toast('正在检索中，请稍候…'); return; }
+    runPull();
   }
 
   /* ---------------- 渲染 ---------------- */
@@ -16271,24 +16396,8 @@ XJ.views.news = (function () {
     return names;
   }
 
-  /** 北京时间的今天 / 昨天（'YYYY-MM-DD'），日期头用来标「今天/昨天」 */
-  function beijingDayKey(shiftDays) {
-    return XJ.calc.newsTimeText(Math.floor(Date.now() / 1000) - shiftDays * 86400).slice(0, 10);
-  }
-
-  function dayHead(day) {
-    var label = day === beijingDayKey(0) ? '今天'
-      : day === beijingDayKey(1) ? '昨天' : '';
-    var wd = '';
-    var d = new Date(day + 'T00:00:00+08:00');
-    if (!isNaN(d.getTime())) {
-      wd = '周' + '日一二三四五六'.charAt(d.getUTCDay());
-    }
-    var md = (+day.slice(5, 7)) + '月' + (+day.slice(8, 10)) + '日';
-    return '<div class="news-day">' + U.esc((label ? label + ' · ' : '') + md + (wd ? ' ' + wd : '')) + '</div>';
-  }
-
-  function rowHtml(h, hm, names) {
+  /** 时间轴行：左列日期（同日仅首条显示，传 null 则占位空）+ 绿点 + 竖线 */
+  function rowHtml(h, day, names) {
     var rel = XJ.calc.newsWlHits(h, names);
     var pills = '';
     (h.ents || []).forEach(function (e) {
@@ -16298,19 +16407,20 @@ XJ.views.news = (function () {
       if ((h.ents || []).indexOf(n) >= 0) return;
       pills += '<span class="pill gold">' + U.esc(n) + '</span>';
     });
-    return '<div class="card news-row" data-act="newsOpen" data-id="' + U.esc(h.id) + '" role="button">' +
-      '<div class="nr-time">' + hm + '</div>' +
-      '<div class="nr-main">' +
-      '<div class="nr-tt">' + U.esc(h.title) + '</div>' +
-      (h.digest ? '<div class="nr-ds">' + U.esc(h.digest) + '</div>' : '') +
-      '<div class="nr-meta"><span class="pill gray">' + U.esc(h.source || '快讯') + '</span>' + pills + '</div>' +
-      '</div>' +
-      UI.icon('chevron', 14) +
-      '</div>';
+    if (h.source) pills += '<span class="tl-src">' + U.esc(h.source) + '</span>';
+    return '<div class="news-row" data-act="newsOpen" data-id="' + U.esc(h.id) + '" role="button">' +
+      '<div class="tl-side">' +
+      '<div class="tl-date">' + (day ? U.esc(day) : '') + '</div>' +
+      '<div class="tl-dot"></div><div class="tl-line"></div></div>' +
+      '<div class="tl-body">' +
+      '<div class="row-t">' + U.esc(h.title) + '</div>' +
+      (h.digest && h.digest !== h.title ? '<div class="tl-sum">' + U.esc(h.digest) + '</div>' : '') +
+      (pills ? '<div class="tl-meta">' + pills + '</div>' : '') +
+      '</div></div>';
   }
 
   function footHtml() {
-    return '<div class="news-foot">仅为公开事实快讯，不构成投资建议 · 来源 同花顺 / 新浪财经</div>';
+    return '<div class="news-foot">仅为公开事实快讯，不构成投资建议 · 来源 东财搜索 / 新浪财经</div>';
   }
 
   function render() {
@@ -16337,14 +16447,15 @@ XJ.views.news = (function () {
 
     if (pulling) {
       html += '<div class="news-prog">' + UI.icon('refresh', 13) +
-        '<span>正在回看近 ' + LOOKBACK_DAYS + ' 天快讯… 第 ' + prog.page + ' 页' +
-        (prog.via === 'sina' ? '（新浪兜底）' : '') + '</span></div>';
+        '<span>正在按 ' + prog.total + ' 个监控主体检索近 ' + LOOKBACK_DAYS + ' 天动态… ' +
+        prog.done + '/' + prog.total + (prog.via === 'sina' ? '（新浪兜底）' : '') +
+        '</span></div>';
     }
 
     if (!rows.length) {
       if (pulling) {
         html += '<div class="card" style="text-align:center;padding:30px 18px">' +
-          '<div class="tiny">正在按硬规则筛选快讯，命中的动态会陆续出现在这里…</div></div>';
+          '<div class="tiny">正在按硬规则筛选检索结果，命中的动态会陆续出现在这里…</div></div>';
       } else {
         html += UI.emptyState('📰', '近 ' + LOOKBACK_DAYS + ' 天无相关动态',
           '硬规则只收已成交的可核验事实，宁缺勿滥。',
@@ -16359,10 +16470,11 @@ XJ.views.news = (function () {
     rows.forEach(function (h) {
       var full = XJ.calc.newsTimeText(h.ctime);        // 'YYYY-MM-DD HH:MM'
       var day = full.slice(0, 10);
-      if (day !== lastDay) { list += dayHead(day); lastDay = day; }
-      list += rowHtml(h, full.slice(11), names);
+      var showDay = day !== lastDay ? day.slice(5) : '';   // 左列 'MM-DD'，同日仅首条
+      lastDay = day;
+      list += rowHtml(h, showDay, names);
     });
-    html += '<div class="news-list">' + list + '</div>';
+    html += '<div class="card flush news-tl">' + list + '</div>';
     html += footHtml();
     return html;
   }
