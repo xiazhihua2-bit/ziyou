@@ -672,6 +672,126 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 }
 .slogan-hero .sb-sub svg{ flex:none; }
 
+/* ==================== 自选（watchlist · 图二/三/四/五） ==================== */
+/* 顶栏：左指数卡（统一深色卡，图三）+ 右搜索框 */
+.wl-topbar{ display:flex; gap:10px; margin-bottom:12px; }
+.wl-index{
+  flex:1.2; min-width:0; text-align:left;
+  display:flex; flex-direction:column; gap:2px;
+  padding:10px 14px; border-radius:16px;
+  background:linear-gradient(150deg,#26262C,#1B1B20);
+  color:#F2F2F7; border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 6px 18px rgba(0,0,0,.14);
+}
+.wi-name{ font-size:11px; color:#9A9AA2; display:flex; align-items:center; gap:3px; }
+.wi-caret{ opacity:.7; }
+.wi-main{ display:flex; align-items:baseline; gap:8px; min-width:0; }
+.wi-main b{ font-size:20px; font-weight:750; letter-spacing:-.3px; font-variant-numeric:tabular-nums; }
+.wi-main span{ font-size:11px; font-weight:600; white-space:nowrap; }
+.wl-index .c-up{ color:#FF6B6B; }
+.wl-index .c-down{ color:#3ED47F; }
+.wl-search{
+  flex:.8; display:flex; align-items:center; justify-content:center; gap:6px;
+  border-radius:16px; background:var(--fill); color:var(--text-2);
+  font-size:12.5px; min-width:0; padding:0 10px;
+}
+.wl-search span{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* 分组 chips（图二）：横向滚动；选中 = 深色实底白字 */
+.wl-chips{ display:flex; gap:7px; overflow-x:auto; scrollbar-width:none; padding:1px 1px 10px; }
+.wl-chips::-webkit-scrollbar{ display:none; }
+.wl-chip{
+  flex:0 0 auto; padding:7px 15px; border-radius:999px;
+  background:var(--card); border:1px solid var(--glass-border);
+  color:var(--text-2); font-size:12.5px; font-weight:550;
+  transition:background .16s ease,color .16s ease;
+}
+.wl-chip.active{ background:var(--text); color:var(--bg); border-color:var(--text); font-weight:650; }
+.wl-more{ display:flex; align-items:center; padding:7px 11px; }
+
+/* 列表行（图二）：logo + 名称/代码 + 分时迷你曲线 + 实底价格徽章 + 涨跌 */
+.wl-row{ display:flex; align-items:center; gap:10px; padding:12px; cursor:pointer; }
+.wl-row:active{ opacity:.75; }
+.wl-av{ flex:0 0 auto; }
+.wl-nm{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.wl-nm span{ font-size:13.5px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.wl-nm b{ font-size:11px; font-weight:500; color:var(--text-3); }
+.wl-tag{
+  font-style:normal; font-size:9px; font-weight:650; color:var(--blue);
+  background:var(--blue-soft); border-radius:4px; padding:1px 4px;
+  margin-left:4px; vertical-align:1px;
+}
+.wl-spark{ flex:0 0 64px; height:24px; opacity:.92; }
+.wl-px{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
+.wl-price{
+  display:inline-block; min-width:64px; text-align:center;
+  padding:3px 8px; border-radius:8px;
+  font-size:13px; font-weight:700; font-variant-numeric:tabular-nums;
+  color:#FFFFFF;
+}
+.wl-price.wl-up{ background:var(--up); }
+.wl-price.wl-down{ background:var(--down); }
+.wl-price.wl-flat{ background:var(--fill); color:var(--text-2); }
+.wl-chg{ font-size:10.5px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.wl-del{
+  flex:0 0 auto; width:22px; height:22px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--fill); color:var(--text-3); margin-left:-4px;
+}
+
+/* 分组宫格（图四 sheet / 指数切换 / 星标落组） */
+.wl-ggrid{ display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:4px 0 14px; }
+.wl-gcell{
+  padding:11px 0; border-radius:14px;
+  background:var(--fill); color:var(--text);
+  font-size:13.5px; font-weight:600;
+}
+.wl-gcell.active{ background:var(--text); color:var(--bg); }
+.wl-gnew{ color:var(--text-2); font-weight:550; }
+.wl-gops{ display:flex; gap:9px; border-top:1px solid var(--line); padding-top:13px; }
+.wl-gop{
+  flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+  padding:10px 0; border-radius:12px; background:var(--fill);
+  color:var(--text-2); font-size:13px; font-weight:550;
+}
+
+/* 分组管理行（纵向拖拽，把手 ≡） */
+.wl-gm-row{
+  display:flex; align-items:center; gap:8px;
+  padding:11px 10px; border-radius:12px; background:var(--fill);
+  margin-bottom:8px; touch-action:none;
+}
+.gm-drag{ color:var(--text-3); display:flex; cursor:grab; }
+.gm-name{ flex:1; font-size:13.5px; font-weight:600; }
+.gm-btn{
+  padding:5px 11px; border-radius:8px; background:var(--card);
+  font-size:11.5px; color:var(--text-2); border:1px solid var(--glass-border);
+}
+.gm-btn.danger{ color:var(--up); }
+.gm-btn:disabled{ opacity:.4; }
+
+/* 搜索页（图五） */
+.srch-box{
+  display:flex; align-items:center; gap:8px;
+  background:var(--fill); border-radius:12px; padding:10px 12px;
+  color:var(--text-3);
+}
+.srch-box input{
+  flex:1; min-width:0; border:none; outline:none; background:transparent;
+  font-size:14.5px; color:var(--text);
+}
+.srch-clear{ color:var(--text-3); display:flex; padding:2px; }
+.wl-star{ flex:0 0 auto; color:var(--text-3); display:flex; padding:4px; }
+.wl-star.on{ color:#F0A30A; }
+
+/* sheet 输入框（新建 / 重命名分组） */
+.sheet-input{
+  width:100%; box-sizing:border-box;
+  padding:11px 13px; border-radius:12px;
+  border:1px solid var(--glass-border); background:var(--fill);
+  color:var(--text); font-size:14.5px; outline:none; margin-bottom:12px;
+}
+
 /* ==================== 分红覆盖：图标格 ==================== */
 .cover-icons{ display:flex; gap:5px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding:4px 1px 8px; }
 .cover-icons::-webkit-scrollbar{ display:none; }
