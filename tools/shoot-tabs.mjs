@@ -66,9 +66,13 @@ const PROBE = `(async () => {
     var el = document.querySelector('.tab[data-tab="' + id + '"]');
     if (el) el.click();
   };
-  clickTab('watchlist'); await sleep(300);
-  var w = document.getElementById('view-body').textContent || '';
-  out.watchlistPage = { hasHint: w.indexOf('二期') >= 0 };
+  clickTab('watchlist'); await sleep(420);
+  var w = document.getElementById('view-body');
+  out.watchlistPage = {
+    hasIndexBar: !!w.querySelector('.wl-topbar'),
+    hasChips: w.querySelectorAll('.wl-chip').length >= 5,   // 全部/持仓/美股/港股/A股
+    chipLabels: Array.prototype.slice.call(w.querySelectorAll('.wl-chip')).map(function (c) { return c.textContent; }),
+  };
   clickTab('news'); await sleep(300);
   var n = document.getElementById('view-body').textContent || '';
   out.newsPage = { hasHint: n.indexOf('三期') >= 0 };
@@ -224,7 +228,9 @@ try {
     else bad('选中项缺药丸底');
     if (st.idleColor && st.idleColor !== st.activeColor) ok('★ 未选中态 = 灰（' + st.idleColor + '）'); else bad('未选中态异常');
 
-    if (out.watchlistPage && out.watchlistPage.hasHint) ok('② 自选页占位（二期提示）在位'); else bad('自选占位异常');
+    if (out.watchlistPage && out.watchlistPage.hasIndexBar && out.watchlistPage.hasChips)
+      ok('② 自选页真身就位（指数栏 + 分组 chips：' + (out.watchlistPage.chipLabels || []).join('/') + '）');
+    else bad('自选页异常 ' + JSON.stringify(out.watchlistPage));
     if (out.newsPage && out.newsPage.hasHint) ok('③ 新闻页占位（三期提示）在位'); else bad('新闻占位异常');
     if (out.backHome && out.backHome.ok) ok('③ 切回持仓正常'); else bad('切回持仓异常');
 
