@@ -214,6 +214,23 @@ XJ.syncCore = (function () {
       oncePerId: true,
       canAdd: true,
     },
+    /* ---- 自选（六 Tab 二期）：分组 + 条目两条记录流 ----
+       ★ witem 的 hash 刻意不含 addedAt（设备间时钟差会让同一条目天天互推）；
+         sortOrder 不在 items 上（组内顺序 = addedAt）；分组排序在 wgrp.sortOrder 上。 */
+    wgrp: {
+      key: 'groupId',
+      all: function (s) { var w = s.watchlist || {}; return idsOf(w.groups || [], 'groupId'); },
+      get: function (s, id) { return byId((s.watchlist || {}).groups || [], 'groupId', id); },
+      hash: function (r) { return hash(stable(pick(r, ['name', 'sortOrder']))); },
+      canAdd: true,
+    },
+    witem: {
+      key: 'itemId',
+      all: function (s) { var w = s.watchlist || {}; return idsOf(w.items || [], 'itemId'); },
+      get: function (s, id) { return byId((s.watchlist || {}).items || [], 'itemId', id); },
+      hash: function (r) { return hash(stable(pick(r, ['groupId', 'symbol']))); },
+      canAdd: true,
+    },
     set: {
       key: null,
       all: function () { return ['app_settings']; },
@@ -234,7 +251,7 @@ XJ.syncCore = (function () {
     },
   };
 
-  var TYPES = ['tx', 'rec', 'acc', 'exp', 'sym', 'snap', 'set', 'proj'];
+  var TYPES = ['tx', 'rec', 'acc', 'exp', 'sym', 'snap', 'wgrp', 'witem', 'set', 'proj'];
 
   function vid(t, id) { return t + ':' + id; }
 
@@ -496,6 +513,10 @@ XJ.syncCore = (function () {
     if (type === 'rec') return state.received;
     if (type === 'acc') return state.accounts;
     if (type === 'exp') return state.expenses;
+    if (type === 'wgrp' || type === 'witem') {
+      var w = state.watchlist || (state.watchlist = { groups: [], items: [] });
+      return type === 'wgrp' ? w.groups : w.items;
+    }
     return null;
   }
 
@@ -510,6 +531,11 @@ XJ.syncCore = (function () {
     if (type === 'rec') { state.received.push(next); return true; }
     if (type === 'acc') { state.accounts.push(next); return true; }
     if (type === 'exp') { state.expenses.push(next); return true; }
+    if (type === 'wgrp' || type === 'witem') {
+      var list = containerList(state, type);
+      list.push(next);
+      return true;
+    }
     var map = containerMap(state, type);
     if (map) { map[id] = next; return true; }
     return false;
@@ -670,7 +696,8 @@ XJ.syncCore = (function () {
   function buildSnapshot(state) {
     var snap = {
       accounts: [], symbols: {}, transactions: [], received: [],
-      expenses: [], snapshots: {}, settings: {}, projection: {},
+      expenses: [], snapshots: {}, watchlist: { groups: [], items: [] },
+      settings: {}, projection: {},
     };
     for (var ti = 0; ti < TYPES.length; ti++) {
       var type = TYPES[ti];
@@ -691,6 +718,8 @@ XJ.syncCore = (function () {
         else if (type === 'rec') snap.received.push(copy);
         else if (type === 'acc') snap.accounts.push(copy);
         else if (type === 'exp') snap.expenses.push(copy);
+        else if (type === 'wgrp') snap.watchlist.groups.push(copy);
+        else if (type === 'witem') snap.watchlist.items.push(copy);
       }
     }
     /* ★ settings 只带白名单字段：绝不让 OCR Key 上路 */
@@ -755,6 +784,7 @@ XJ.syncCore = (function () {
       state.expenses = [];
       state.symbols = {};
       state.snapshots = {};
+      state.watchlist = { groups: [], items: [] };
       /* ★ 覆盖式对齐也要作废 set/proj 的【本机戳】——实测踩过：
          tick 开头的 diffToOps(noQueue) 会给「账本里还没有」的 settings 盖本地 seed 戳，
          随后 applyOps 的 newer() 认为「本机不比云端旧」而跳过 set —— 表现就是
