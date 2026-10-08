@@ -71,6 +71,8 @@
   /* ---- 中性填充 / 反转字色 / 语义软底 ---- */
   --fill:rgba(120,120,128,.12);
   --fill-2:rgba(120,120,128,.20);
+  --tab-accent:#00B578;               /* Tab 选中态品牌绿（图一参考；与行情跌绿 #12A150 各司其职） */
+  --tab-pill:rgba(120,120,128,.12);   /* 选中项药丸底 */
   --invert-fg:#FFFFFF;              /* 压在 var(--text) 底上的字色（chip 选中/FAB） */
   --up-soft:rgba(224,49,47,.10);
   --down-soft:rgba(18,161,80,.10);
@@ -140,6 +142,8 @@
     --scrim:rgba(0,0,0,.55);
     --fill:rgba(120,120,128,.24);
     --fill-2:rgba(120,120,128,.34);
+    --tab-accent:#00C98B;
+    --tab-pill:rgba(120,120,128,.26);
     --invert-fg:#0E0E11;
     --up-soft:rgba(240,82,82,.20);
     --down-soft:rgba(48,191,120,.20);
@@ -191,7 +195,7 @@ a{ color:var(--blue); text-decoration:none; }
   max-width:1100px;
   margin:0 auto;
   min-height:100vh;
-  padding-bottom:calc(72px + var(--safe-b));
+  padding-bottom:calc(88px + var(--safe-b));   /* 浮动胶囊 Tab（≈73px 高含底距）+ 呼吸空间 */
   overflow-x:hidden;
 }
 .topbar{
@@ -219,26 +223,48 @@ a{ color:var(--blue); text-decoration:none; }
 
 .view-body{ padding:14px 16px 20px; }
 
-/* ==================== 底部 Tab ==================== */
+/* ==================== 底部 Tab（浮动胶囊 · 图一长桥风） ==================== */
 .tabbar{
-  position:fixed; left:0; right:0; bottom:0; z-index:60;
-  display:flex;
-  padding:6px 0 calc(6px + var(--safe-b));
+  position:fixed; left:12px; right:12px; bottom:calc(10px + var(--safe-b)); z-index:60;
+  pointer-events:none;                    /* 胶囊两侧留白不挡底部内容点击 */
+}
+.tabbar-inner{
+  pointer-events:auto;
+  display:flex; align-items:stretch; justify-content:space-between; gap:2px;
+  max-width:460px; margin:0 auto;
+  padding:6px;
   background:var(--glass-bg-strong);
   -webkit-backdrop-filter:saturate(180%) blur(20px);
   backdrop-filter:saturate(180%) blur(20px);
-  border-top:.5px solid var(--glass-edge);
+  border:1px solid var(--glass-border);
+  border-radius:26px;
+  box-shadow:0 10px 30px rgba(0,0,0,.16), 0 2px 8px rgba(0,0,0,.08);
+  touch-action:none;                      /* 长按拖拽的领地：不参与页面滚动 */
+  -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
 }
-.tabbar-inner{ display:flex; width:100%; max-width:1100px; margin:0 auto; }
 .tab{
-  flex:1; display:flex; flex-direction:column; align-items:center; gap:2px;
-  padding:5px 0 2px; color:var(--text-3);
-  font-size:10px; font-weight:500;
-  transition:color .15s ease;
+  flex:1 1 0; min-width:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  padding:7px 0 5px; border-radius:20px;
+  color:var(--text-3); font-size:10px; font-weight:500; letter-spacing:.2px;
+  transition:color .18s ease, background-color .18s ease;
+  position:relative;
 }
-.tab svg{ width:24px; height:24px; }
-.tab.active{ color:var(--blue); }
-.tab:active{ opacity:.6; }
+.tab svg{ width:23px; height:23px; }
+.tab.active{ color:var(--tab-accent); background:var(--tab-pill); font-weight:600; }
+.tab:active{ opacity:.7; }
+
+/* ---- 长按拖拽（XJ.dnd）：拖拽项放大加影跟手 / 其余项 FLIP 补位 / 落位 spring 弹跳 ---- */
+.tab.dnd-drag{
+  transition:none; z-index:5;
+  box-shadow:0 12px 26px rgba(0,0,0,.24);
+  background:var(--tab-pill); color:var(--tab-accent);
+}
+.tab.dnd-drift{ transition:transform .26s cubic-bezier(.22,.85,.3,1.05); }
+.tab.dnd-settle{ transition:transform .22s cubic-bezier(.3,.7,.4,1); }
+.tab.dnd-pop{ animation:tabPop .34s cubic-bezier(.34,1.56,.64,1); }
+@keyframes tabPop{ 0%{ transform:scale(1.14); } 55%{ transform:scale(.96); } 100%{ transform:scale(1); } }
+body.dnd-active{ -webkit-user-select:none; user-select:none; }
 
 /* ==================== 卡片（静态玻璃：半透明底 + 高光描边，不挂 blur） ==================== */
 .card{
@@ -809,7 +835,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hc-tag{ display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; font-weight:600; margin-left:6px; vertical-align:1px; }
 
 /* ==================== 悬浮双入口 ==================== */
-.float-wrap{ position:fixed; right:16px; bottom:calc(84px + var(--safe-b)); z-index:70; display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+.float-wrap{ position:fixed; right:16px; bottom:calc(96px + var(--safe-b)); z-index:70; display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
 .float-menu{ display:flex; flex-direction:column; gap:9px; align-items:flex-end; animation:popUp .2s cubic-bezier(.25,.8,.3,1); }
 @keyframes popUp{ from{ opacity:0; transform:translateY(12px) scale(.94); } to{ opacity:1; transform:none; } }
 .float-item{
@@ -1740,6 +1766,8 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   /* ---- 中性填充 / 反转字色 / 语义软底 ---- */
   --fill:rgba(120,120,128,.12);
   --fill-2:rgba(120,120,128,.20);
+  --tab-accent:#00B578;               /* Tab 选中态品牌绿（图一参考；与行情跌绿 #12A150 各司其职） */
+  --tab-pill:rgba(120,120,128,.12);   /* 选中项药丸底 */
   --invert-fg:#FFFFFF;              /* 压在 var(--text) 底上的字色（chip 选中/FAB） */
   --up-soft:rgba(224,49,47,.10);
   --down-soft:rgba(18,161,80,.10);
@@ -1806,6 +1834,8 @@ table.tbl tbody tr:active{ background:var(--card-2); }
     --scrim:rgba(0,0,0,.55);
     --fill:rgba(120,120,128,.24);
     --fill-2:rgba(120,120,128,.34);
+    --tab-accent:#00C98B;
+    --tab-pill:rgba(120,120,128,.26);
     --invert-fg:#0E0E11;
     --up-soft:rgba(240,82,82,.20);
     --down-soft:rgba(48,191,120,.20);
@@ -2694,6 +2724,23 @@ XJ.model = (function () {
    */
   var DEFAULT_COST_METHOD = 'dividendDiluted';
 
+  /* ---------------- 底部 Tab（六 Tab · 一期改版） ----------------
+   * TAB_IDS 是 Tab 身份的权威清单（app.js 的 TABS 按此顺序定义）；
+   * settings.tabOrder 存「用户拖出来的顺序」（id 数组，恰好是这 6 个的一次排列），
+   * null = 从未拖过、用默认顺序。★ 与自选一样参与跨设备同步（SETTINGS_SYNC 白名单）。 */
+  var TAB_IDS = ['overview', 'watchlist', 'calendar', 'news', 'find', 'mine'];
+
+  /** 校验 tabOrder：必须是 TAB_IDS 的完整排列，否则回落 null（防脏数据 / 老版本导入） */
+  function normalizeTabOrder(order) {
+    if (!Array.isArray(order) || order.length !== TAB_IDS.length) return null;
+    var seen = {};
+    for (var i = 0; i < order.length; i++) {
+      if (TAB_IDS.indexOf(order[i]) < 0 || seen[order[i]]) return null;
+      seen[order[i]] = true;
+    }
+    return order.slice();
+  }
+
   /** 由模板生成支出项（补上 expenseId / icon / enabled） */
   function makeExpenses(template) {
     return template.map(function (e, i) {
@@ -2859,6 +2906,9 @@ XJ.model = (function () {
         heroCollapsed: XJ.util.FOLD.collapsed,
         /* 大卡片配色（本机偏好，不参与跨设备同步 —— 与 theme 同处理方式） */
         heroColor: HERO_COLOR_DEFAULT,
+        /* 底部 Tab 顺序（六 Tab）：null = 用默认顺序；拖拽后存完整 id 排列。
+           ★ 用户决策（2026-10-08）：与自选一样【参与跨设备同步】——所有设备顺序一致。 */
+        tabOrder: null,
         /* 深色卡「测算带」参数（每年投入 / 股息率 / 年数 / 再投比例 / 反解目标）。
            首次启动由 ensureBootstrapped 从 projection 派生起点，之后与「展望未来」完全独立。
            yieldPct = null 表示「跟随当前组合市值息率」，用户一旦手改就固定下来。 */
@@ -3422,6 +3472,8 @@ XJ.model = (function () {
     HERO_METRICS: HERO_METRICS,
     HERO_COLORS: HERO_COLORS,
     HERO_COLOR_DEFAULT: HERO_COLOR_DEFAULT,
+    TAB_IDS: TAB_IDS,
+    normalizeTabOrder: normalizeTabOrder,
     EMOJI_GROUPS: EMOJI_GROUPS,
     KEY_EMOJI: KEY_EMOJI,
     DEFAULT_OCR_KEY: DEFAULT_OCR_KEY,
@@ -4019,6 +4071,9 @@ XJ.syncCore = (function () {
        ③ 丢失可恢复（重填即可），而代码复杂度不可逆。
        将来若真需要，在 DEFS.set 加一个 nested 钩子即可扩展。 */
     'fire',
+    /* Tab 顺序（六 Tab 改版）：用户决策 2026-10-08 与自选一样跨设备一致；
+       整体 LWW（数组字段，与 fire 同范式 —— 几乎不会并发拖拽，丢一次可重拖）。 */
+    'tabOrder',
   ];
 
   /* ---------------- 通用小工具 ---------------- */
@@ -12392,6 +12447,38 @@ XJ.ui = (function () {
     chart: '<path d="M4 19.2V10M10 19.2V4.8M16 19.2v-6.4M21 19.2H3"/>',
     /* 火焰（FIRE Tab）：外焰水滴形 + 内焰小滴，与全套 1.7 描边风格一致 */
     flame: '<path d="M12 3.2c.5 2.6-.4 4.1-1.7 5.6-1.2 1.4-2.7 2.8-2.7 5.2a4.4 4.4 0 0 0 8.8 0c0-1.6-.7-2.7-1.4-3.8"/><path d="M12 20.8a2.5 2.5 0 0 1-2.5-2.5c0-1.2.8-1.9 1.5-2.8.6-.8 1-1.5 1-2.7 1.4 1.1 2.5 2.7 2.5 4.6a2.5 2.5 0 0 1-2.5 3.4z"/>',
+
+    /* ---- 底部 Tab 填充式图标（图一长桥风：实底字形，currentColor 着色） ---- */
+    /* 持仓 = 饼图：主体盘（右上缺口）+ 分离扇区 */
+    'tab-hold': '<path fill="currentColor" stroke="none" d="M12 13.2V5.6A7.6 7.6 0 1 0 19.6 13.2Z"/>' +
+      '<path fill="currentColor" stroke="none" d="M14.2 3.2a7.6 7.6 0 0 1 6.6 6.6h-6.6Z"/>',
+    /* 自选 = 书签 + 加号镂空（evenodd） */
+    'tab-watch': '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="' +
+      'M6.9 3.2h10.2c1.24 0 2.25 1.01 2.25 2.25v15.1c0 .93-1.05 1.47-1.8.93L12 17.9l-5.55 3.58c-.75.54-1.8 0-1.8-.93V5.45c0-1.24 1.01-2.25 2.25-2.25Z' +
+      'M11.25 7.5h1.5v1.9h1.9v1.5h-1.9v1.9h-1.5v-1.9h-1.9V9.4h1.9Z"/>',
+    /* 分红日历 = 台历：双挂耳（实底）+ 页身（网格圆点镂空） */
+    'tab-cal': '<path fill="currentColor" stroke="none" d="M8.1 2.4c.5 0 .9.4.9.9v1.9c0 .5-.4.9-.9.9s-.9-.4-.9-.9V3.3c0-.5.4-.9.9-.9Zm7.8 0c.5 0 .9.4.9.9v1.9c0 .5-.4.9-.9.9s-.9-.4-.9-.9V3.3c0-.5.4-.9.9-.9Z"/>' +
+      '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="' +
+      'M6.2 5.6h11.6c1.3 0 2.35 1.05 2.35 2.35v9.9c0 1.3-1.05 2.35-2.35 2.35H6.2c-1.3 0-2.35-1.05-2.35-2.35v-9.9C3.85 6.65 4.9 5.6 6.2 5.6Z' +
+      'M8.15 9.35a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1Z' +
+      'M12 9.35a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1Z' +
+      'M15.85 9.35a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1Z' +
+      'M8.15 13.75a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1Z' +
+      'M12 13.75a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1Z"/>',
+    /* 新闻 = 文档 + 三行镂空（末行半长） */
+    'tab-news': '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="' +
+      'M6.5 3.2h11c1.27 0 2.3 1.03 2.3 2.3v13c0 1.27-1.03 2.3-2.3 2.3h-11c-1.27 0-2.3-1.03-2.3-2.3v-13c0-1.27 1.03-2.3 2.3-2.3Z' +
+      'M7.9 7.7h8.2a.9.9 0 0 1 0 1.8H7.9a.9.9 0 0 1 0-1.8Z' +
+      'M7.9 11.2h8.2a.9.9 0 0 1 0 1.8H7.9a.9.9 0 0 1 0-1.8Z' +
+      'M7.9 14.7h4.4a.9.9 0 0 1 0 1.8H7.9a.9.9 0 0 1 0-1.8Z"/>',
+    /* FIRE = 实底火焰 + 内焰镂空 */
+    'tab-fire': '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="' +
+      'M12 21.5c-3.45 0-6.25-2.68-6.25-6.1 0-2.5 1.35-4.15 2.7-5.65 1.3-1.45 2.55-2.85 2.95-4.95.25.9.35 2.15.05 3.35 1-1 1.9-2.35 2.05-4.25 2.5 1.75 4.8 4.85 4.8 8.55 0 3.42-2.8 6.1-6.25 6.1Z' +
+      'M12 19.7c-1.5 0-2.7-1.15-2.7-2.6 0-1.2.75-1.95 1.45-2.75.5-.55.95-1.1 1.2-1.9.9 1.05 2.75 2.7 2.75 4.65 0 1.45-1.2 2.6-2.7 2.6Z"/>',
+    /* 我的 = 实底人像 */
+    'tab-mine': '<path fill="currentColor" stroke="none" d="' +
+      'M12 3.4a4.15 4.15 0 1 1 0 8.3 4.15 4.15 0 0 1 0-8.3Z' +
+      'M12 13.3c4.3 0 7.7 2.5 7.7 5.7 0 .94-.76 1.7-1.7 1.7H6c-.94 0-1.7-.76-1.7-1.7 0-3.2 3.4-5.7 7.7-5.7Z"/>',
   };
 
   function icon(name, size, stroke) {
@@ -12582,6 +12669,232 @@ XJ.ui = (function () {
     field: field,
     inputHtml: inputHtml,
     readFields: readFields,
+  };
+})();
+
+
+/* ==================== src/dnd.js ==================== */
+/* ==================== 长按拖拽排序引擎（vanilla · Pointer Events · 零依赖） ====================
+ * 给底部 Tab（一期）与分组管理（二期）共用的通用能力。
+ *
+ * 用法：
+ *   XJ.dnd.bind(container, {
+ *     itemSel: '.tab',            // 可拖拽项选择器（容器内委托）
+ *     attr: 'data-tab',           // 项的唯一 id 属性
+ *     onCommit: function (ids) {} // 松手且顺序有变时回调（ids = 新顺序）；回调返回后新 DOM 已就绪
+ *   });
+ *
+ * 交互（对齐 iOS 手感）：
+ *   · 按住 320ms 起拖；起拖前位移 >8px 判定为滚动/滑动意图 → 取消，不影响点击
+ *   · 起拖：vibrate(8)（Android；iOS 无振动则以视觉反馈替代）+ 拖拽项放大加影跟手、其余项半透明
+ *   · 拖动：拖拽项 rAF 级跟手（Pointer Events 原生节流即可，不做多余插值）；
+ *     其余项按「精确新布局 − 原布局」FLIP 补位（260ms 弹性曲线），支持不等宽槽位
+ *   · 松手：顺序变了 → commit 后新 DOM 的落点项播放 spring pop；没变 → settle 弹回
+ *   · justDragged 标记 350ms：点击方（gotoTab 等）必须检查，防止拖完误触切页
+ *
+ * 实现要点：
+ *   · 容器只绑一次（container.__dnd 哨兵）——上层 render() 全量重建子节点也安全
+ *   · 拖拽项 setPointerCapture：手指移出条Bar也持续收到 move/up
+ *   · 项上 touch-action:none（CSS），长按期间不与页面滚动打架
+ */
+XJ.dnd = (function () {
+  var HOLD_MS = 320;      // 长按起拖阈值
+  var CANCEL_PX = 8;      // 起拖前允许的位移（超过视为滚动）
+  var DRAG_SCALE = 1.08;  // 拖拽项放大倍数
+
+  var justDragged = false;
+  var justTimer = null;
+  function markDragged() {
+    justDragged = true;
+    if (justTimer) clearTimeout(justTimer);
+    justTimer = setTimeout(function () { justDragged = false; }, 350);
+  }
+
+  function bind(container, opts) {
+    if (!container || container.__dnd) return;
+    container.__dnd = true;
+    opts = opts || {};
+    var itemSel = opts.itemSel || '.tab';
+    var attr = opts.attr || 'data-tab';
+
+    /* 长按拖拽时不要弹出系统菜单/选择 */
+    container.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    /* 拖完 350ms 内的 click 一律吞掉（捕获阶段），防落位误触 */
+    container.addEventListener('click', function (e) {
+      if (justDragged) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
+
+    var st = null;   // 进行中的手势状态（pointerdown → up 全程）
+
+    function measure() {
+      var els = Array.prototype.slice.call(container.querySelectorAll(itemSel));
+      var all = els.map(function (el) {
+        return { el: el, id: el.getAttribute(attr), x: el.offsetLeft, w: el.offsetWidth };
+      });
+      var gap = all.length > 1 ? (all[1].x - (all[0].x + all[0].w)) : 0;
+      return { all: all, gap: gap };
+    }
+
+    /** 精确布局：order（id 数组）里排在 slot j 的项，其左缘 x */
+    function slotX(m, order, j) {
+      var x = m.all[0].x;
+      for (var i = 0; i < j; i++) {
+        var r = findById(m, order[i]);
+        x += (r ? r.w : 0) + m.gap;
+      }
+      return x;
+    }
+    function findById(m, id) {
+      for (var i = 0; i < m.all.length; i++) if (m.all[i].id === id) return m.all[i];
+      return null;
+    }
+
+    function applyShifts(m, order) {
+      for (var i = 0; i < m.all.length; i++) {
+        var r = m.all[i];
+        if (r.id === st.id) continue;
+        var j = order.indexOf(r.id);
+        var dx = slotX(m, order, j) - r.x;
+        r.el.style.transform = dx ? 'translateX(' + dx + 'px)' : '';
+      }
+    }
+
+    function startDrag() {
+      st.dragging = true;
+      markDragged();
+      try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* 桌面无振动 */ }
+      var m = measure();
+      st.m = m;
+      st.item = findById(m, st.id).el;
+      st.order = m.all.map(function (r) { return r.id; });
+      try { st.item.setPointerCapture(st.pointerId); } catch (e) { /* 老浏览器降级 */ }
+      st.item.classList.add('dnd-drag');
+      for (var i = 0; i < m.all.length; i++) {
+        if (m.all[i].id !== st.id) m.all[i].el.classList.add('dnd-drift');
+      }
+      document.body.classList.add('dnd-active');
+    }
+
+    function moveDrag(e) {
+      var dx = e.clientX - st.startX;
+      st.item.style.transform = 'translateX(' + dx + 'px) scale(' + DRAG_SCALE + ')';
+      /* 槽位判定：拖拽项当前中心，压过多少个其它项的（已补位）中心 → 目标槽位。
+         相等也算越过（>=）：拖到某项正中心 = 取代它的位置（把该项挤向反方向）。 */
+      var m = st.m;
+      var base = findById(m, st.id);
+      var px = base.x + base.w / 2 + dx;
+      var count = 0;
+      for (var k = 0; k < st.order.length; k++) {
+        if (st.order[k] === st.id) continue;
+        var cx = slotX(m, st.order, k) + findById(m, st.order[k]).w / 2;
+        if (px >= cx) count++;
+      }
+      var from = st.order.indexOf(st.id);
+      if (count !== from) {
+        st.order.splice(from, 1);
+        st.order.splice(count, 0, st.id);
+        applyShifts(m, st.order);
+      }
+    }
+
+    function endDrag(commit) {
+      if (!st) return;
+      var wasDragging = st.dragging;
+      var order = st.order;
+      var itemId = st.id;
+      var item = st.item;
+      var m = st.m;
+      if (wasDragging) {
+        markDragged();
+        document.body.classList.remove('dnd-active');
+        if (commit && order && opts.onCommit) {
+          var from = order.indexOf(itemId);
+          var original = m.all.map(function (r) { return r.id; });
+          if (from >= 0 && order.join('\u0001') !== original.join('\u0001')) {
+            /* 先把拖拽项摆到目标槽位的视觉位置，再 commit —— 重渲染后零跳变 */
+            var base = findById(m, itemId);
+            /* finalDx = 新槽位中心 − 原中心 */
+            var finalDx = (slotX(m, order, order.indexOf(itemId)) + base.w / 2) - (base.x + base.w / 2);
+            item.style.transform = 'translateX(' + finalDx + 'px) scale(1)';
+            opts.onCommit(order.slice());
+            /* commit → 上层重渲染（同步）→ 新 DOM 上播放落位弹跳 */
+            var fresh = container.querySelector('[' + attr + '="' + itemId + '"]');
+            if (fresh) {
+              fresh.classList.add('dnd-pop');
+              setTimeout(function () { fresh.classList.remove('dnd-pop'); }, 340);
+            }
+          } else {
+            settleBack(item);
+          }
+        } else {
+          settleBack(item);
+        }
+      }
+      st = null;
+    }
+
+    function settleBack(item) {
+      item.classList.remove('dnd-drag');
+      item.classList.add('dnd-settle');
+      item.style.transform = '';
+      var el = item;
+      setTimeout(function () { el.classList.remove('dnd-settle'); }, 240);
+      /* 其余项也弹回 */
+      var m2 = measure();
+      for (var i = 0; i < m2.all.length; i++) {
+        if (m2.all[i].el !== el) m2.all[i].el.style.transform = '';
+      }
+    }
+
+    container.addEventListener('pointerdown', function (e) {
+      if (st || justDragged) return;
+      var tgt = e.target;
+      var item = tgt && tgt.closest ? tgt.closest(itemSel) : null;
+      if (!item || !container.contains(item)) return;
+      st = {
+        id: item.getAttribute(attr),
+        item: item,
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        timer: null,
+        dragging: false,
+      };
+      st.timer = setTimeout(function () {
+        if (st && !st.dragging) startDrag();
+      }, HOLD_MS);
+    });
+
+    container.addEventListener('pointermove', function (e) {
+      if (!st) return;
+      if (!st.dragging) {
+        /* 未起拖：位移超阈值 → 是滚动/滑动，取消长按 */
+        var dxE = Math.abs(e.clientX - st.startX), dyE = Math.abs(e.clientY - st.startY);
+        if (dxE > CANCEL_PX || dyE > CANCEL_PX) {
+          if (st.timer) clearTimeout(st.timer);
+          st = null;
+        }
+        return;
+      }
+      e.preventDefault();
+      moveDrag(e);
+    });
+
+    container.addEventListener('pointerup', function (e) {
+      if (!st) return;
+      if (st.timer) clearTimeout(st.timer);
+      endDrag(true);
+    });
+    container.addEventListener('pointercancel', function () {
+      if (!st) return;
+      if (st.timer) clearTimeout(st.timer);
+      endDrag(false);
+    });
+  }
+
+  return {
+    bind: bind,
+    isJustDragged: function () { return justDragged; },
   };
 })();
 
@@ -14744,6 +15057,57 @@ XJ.views.divsummary = (function () {
 })();
 
 
+/* ==================== src/views/watchlist.js ==================== */
+/* ==================== 自选（Tab · 二期上线占位） ====================
+ * 完整形态（已确认方案，见 .workbuddy/memory/2026-10-08.md）：
+ *   分组 chips（全部/持仓虚拟组 + 美股/港股/A股）· 指数栏 · 分组管理 sheet ·
+ *   搜索加自选（空心星→实心星）· 行内分时懒加载 · 点行进个股档案。
+ * 一期先给六 Tab 完整骨架，页面本体随二期交付。 */
+XJ.views.watchlist = (function () {
+  var UI = XJ.ui;
+
+  function render() {
+    var html = '';
+    html += '<div class="slogan-bar warm">' + UI.icon('info', 15) +
+      '<span>自选盯盘搭建中：分组、指数栏与搜索加自选将在下一期上线</span></div>';
+    html += '<div class="card" style="text-align:center;padding:42px 18px">' +
+      '<div style="font-size:42px;line-height:1">⭐</div>' +
+      '<div style="font-size:15px;font-weight:650;margin-top:12px">自选清单还没建好</div>' +
+      '<div class="tiny" style="margin-top:6px;line-height:1.6">二期将支持：分组管理 · 官方图标 · 分时迷你曲线 · 指数行情</div>' +
+      '</div>';
+    return html;
+  }
+
+  return { render: render };
+})();
+
+
+/* ==================== src/views/news.js ==================== */
+/* ==================== 新闻（Tab · 三期上线占位） ====================
+ * 完整形态（已确认方案，见 .workbuddy/memory/2026-10-08.md）：
+ *   同花顺主源 + 新浪/腾讯 fallback 链 · 传奇投资者实体词表（图七约 40 实体）·
+ *   纯关键词硬规则（完成时态/金额结构词 + 传闻排除词，宁缺勿滥）· 回看 7 天 + 空态 ·
+ *   详情弹窗 · 「仅查看自选」开关（默认关）· newsCache 本机缓存（不进同步）。
+ * 一期先给六 Tab 完整骨架，页面本体随三期交付。 */
+XJ.views.news = (function () {
+  var UI = XJ.ui;
+
+  function render() {
+    var html = '';
+    html += '<div class="slogan-bar warm">' + UI.icon('info', 15) +
+      '<span>传奇投资者动态追踪搭建中：只收可核验的已成交事实，宁精勿多</span></div>';
+    html += '<div class="card" style="text-align:center;padding:42px 18px">' +
+      '<div style="font-size:42px;line-height:1">📰</div>' +
+      '<div style="font-size:15px;font-weight:650;margin-top:12px">新闻快讯还没接好</div>' +
+      '<div class="tiny" style="margin-top:6px;line-height:1.6">三期将上线：巴菲特 / 伯克希尔 / 李嘉诚家族等<br>传奇投资者的已成交动态（快讯源 · 硬规则过滤）</div>' +
+      '</div>';
+    return html;
+  }
+
+  return { render: render };
+})();
+
+
 /* ==================== src/views/mine.js ==================== */
 /* ==================== 视图：我的（数据管理 / 账户 / 设置） ==================== */
 XJ.views.mine = (function () {
@@ -15815,15 +16179,26 @@ XJ.views.symbol = (function () {
 (function () {
   var U = XJ.util, UI = XJ.ui, M = XJ.model, S = XJ.store, C = XJ.calc;
 
+  /* 六 Tab（2026-10-08 改版）：顺序 = 默认顺序；用户长按拖拽后的顺序存 settings.tabOrder
+     （跨设备同步）。图标 = 图一风格的填充式字形（ui.js 的 tab-* 系列）。 */
   var TABS = [
-    { id: 'overview', label: '持仓', icon: 'overview' },
-    { id: 'calendar', label: '分红日历', icon: 'calendar' },
-    { id: 'find', label: 'FIRE', icon: 'flame' },
-    { id: 'mine', label: '我的', icon: 'mine' },
+    { id: 'overview', label: '持仓', icon: 'tab-hold' },
+    { id: 'watchlist', label: '自选', icon: 'tab-watch' },
+    { id: 'calendar', label: '日历', icon: 'tab-cal' },
+    { id: 'news', label: '新闻', icon: 'tab-news' },
+    { id: 'find', label: 'FIRE', icon: 'tab-fire' },
+    { id: 'mine', label: '我的', icon: 'tab-mine' },
   ];
+  var TAB_DEFAULT_ORDER = M.TAB_IDS.slice();
+  var TAB_BY_ID = {};
+  TABS.forEach(function (t) { TAB_BY_ID[t.id] = t; });
 
-  /* 「发现」Tab 当前复用规划视图（息覆生活 / 展望未来 / 股息统计）。
-     自选盯盘为后续待办；股票筛选器已按需求移除，不再列入任何一期范围。 */
+  function tabOrderList() {
+    return (M.normalizeTabOrder(S.state.settings.tabOrder) || TAB_DEFAULT_ORDER)
+      .map(function (id) { return TAB_BY_ID[id]; })
+      .filter(Boolean);
+  }
+
   XJ.views.find = XJ.views.plan;
 
   /* ---------------- 骨架 ---------------- */
@@ -15881,7 +16256,9 @@ XJ.views.symbol = (function () {
 
     var meta = {
       overview: ['自由', '股息收入追踪'],
+      watchlist: ['自选', '分组盯盘 · 官方图标'],
       calendar: ['分红日历', '股权登记 · 除权除息 · 派息日'],
+      news: ['新闻', '传奇投资者 · 已成交动态'],
       find: ['FIRE', '被动收入 · 财务自由试算'],
       mine: ['我的', '账户 · 数据 · 设置'],
     }[S.ui.tab] || ['自由', ''];
@@ -15908,9 +16285,10 @@ XJ.views.symbol = (function () {
 
   function tabsHtml() {
     if (S.ui.subPage) return '';
-    return TABS.map(function (t) {
-      return '<button class="tab' + (S.ui.tab === t.id ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '">' +
-        UI.icon(t.icon, 24, S.ui.tab === t.id ? 1.9 : 1.6) +
+    return tabOrderList().map(function (t) {
+      var act = S.ui.tab === t.id;
+      return '<button class="tab' + (act ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '" aria-label="' + t.label + '">' +
+        UI.icon(t.icon, 23) +
         '<span>' + t.label + '</span></button>';
     }).join('');
   }
@@ -15946,6 +16324,15 @@ XJ.views.symbol = (function () {
     top.innerHTML = topHtml();
     body.innerHTML = viewHtml();
     tabs.innerHTML = tabsHtml();
+    if (XJ.dnd) {
+      XJ.dnd.bind(tabs, {
+        itemSel: '.tab',
+        attr: 'data-tab',
+        onCommit: function (order) {
+          S.commit(function (s) { s.settings.tabOrder = order; });
+        },
+      });
+    }
     if (tabSwitched) {
       body.classList.remove('view-enter');
       void body.offsetWidth;
@@ -16578,6 +16965,8 @@ XJ.views.symbol = (function () {
 
   /* ---------------- 交互动作 ---------------- */
   UI.on('gotoTab', function (node) {
+    /* 拖拽排序刚结束的 350ms 内吞掉点击（dnd 已在捕获层拦，这里双保险） */
+    if (XJ.dnd && XJ.dnd.isJustDragged()) return;
     S.setUI({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
     window.scrollTo(0, 0);
   });
