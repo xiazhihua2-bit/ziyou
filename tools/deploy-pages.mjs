@@ -28,6 +28,7 @@ const FILES = [
   ['src/app.js', 'src/app.js'],
   ['src/calc.js', 'src/calc.js'],
   ['src/fetcher.js', 'src/fetcher.js'],
+  ['src/universe.js', 'src/universe.js'],
   ['src/model.js', 'src/model.js'],
   ['src/ui.js', 'src/ui.js'],
   ['src/dnd.js', 'src/dnd.js'],
