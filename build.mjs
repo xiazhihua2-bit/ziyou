@@ -37,6 +37,7 @@ const JS_FILES = [
   'src/views/plan.js',
   'src/views/divsummary.js',
   'src/views/watchlist.js',
+  'src/views/search.js',
   'src/views/news.js',
   'src/views/mine.js',
   'src/views/analysis.js',
