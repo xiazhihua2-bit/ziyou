@@ -1479,6 +1479,197 @@ XJ.fetcher = (function () {
     });
   }
 
+  /* ---------------- 新闻快讯（10-08 重做版） ----------------
+   * 主源：东财资讯检索 search-api-web（10-08 实测 HTTP 200 + CORS 全开 + JSONP 兜底；
+   *   此前 WAF 拦截的是 np-listapi 资讯列表接口，搜索接口是另一条通道）。
+   *   按 calc.NEWS_RULES.searchTerms 主体词逐个检索（sort=time 最新 N 条），
+   *   自带 date/title/content/mediaName/url —— 天然满足「时间可核验 + 有来源 + 有原文」。
+   *   注意东财相关性很松（正文命中也返回，实测搜「伯克希尔」返回红利策略文章），
+   *   精度由 calc.newsFilter 的标题二次命中把关。
+   * Fallback：新浪 7x24（zhibo_id=152）。响应被 try{cb(...)}catch(e){} 包裹 ——
+   *   <script> 注入照样执行；数据在 result.data.feed.list[]，字段 rich_text /
+   *   create_time('YYYY-MM-DD HH:MM:SS' 北京时间)。总库存仅约 900 条，
+   *   只在东财整轮失败时兜底近况。
+   * 两源统一成 { id, title, digest, url, source, tags, ctime }（ctime = Unix 秒）；
+   * 去重与过滤交给 calc.newsMerge / calc.newsFilter（纯函数，verify 可独立复算）。 */
+  var NEWS_SEARCH_URL = 'https://search-api-web.eastmoney.com/search/jsonp';
+  var NEWS_SEARCH_PER_SIZE = 8;   /* 每词最新 N 条（sort=time） */
+  var NEWS_SINA_URL = 'https://zhibo.sina.com.cn/api/zhibo/feed';
+  var NEWS_SINA_PAGESIZE = 50;
+
+  /** '2026-10-08 14:52:44'（北京时间）→ Unix 秒。
+   *  手写字符串解析 + 固定 -8 小时偏移，不走 new Date('...')——
+   *  那会按设备时区解析，海外设备会把新浪的时间算歪。 */
+  function beijingStamp(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(s || ''));
+    if (!m) return null;
+    var ms = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 8, +m[5], +m[6]);
+    return isNaN(ms) ? null : Math.floor(ms / 1000);
+  }
+
+  /** 剥 HTML 标记与东财高亮 <em>、反转义、折叠空白（title/content 都带 <em>） */
+  function stripEmTags(s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** 解包 JSONP 文本 `cb({...})` → 对象（非 JSONP 的纯 JSON 也兼容） */
+  function parseJsonpText(text) {
+    var t = String(text || '').trim();
+    var m = t.match(/^[\w$]+\(([\s\S]*)\)\s*;?\s*$/);
+    if (m) t = m[1];
+    try { return JSON.parse(t); } catch (e) { return null; }
+  }
+
+  /** 纯解析：东财检索 payload → 统一新闻条目数组（digest 截 500 字防缓存膨胀） */
+  function parseNewsEm(payload) {
+    var arr = payload && payload.result && payload.result.cmsArticleWebOld;
+    if (!Array.isArray(arr)) return [];
+    var out = [];
+    arr.forEach(function (a) {
+      if (!a || !a.title) return;
+      var ctime = beijingStamp(a.date);
+      if (ctime === null) return;
+      out.push({
+        id: 'em' + String(a.code || a.url || a.date),
+        title: stripEmTags(a.title).slice(0, 120),
+        digest: stripEmTags(a.content).slice(0, 500),
+        url: String(a.url || ''),
+        source: String(a.mediaName || '东财'),
+        tags: [],
+        ctime: ctime,
+      });
+    });
+    return out;
+  }
+
+  /** 纯解析：新浪 zhibo payload → 统一新闻条目数组（rich_text 即标题，无独立摘要） */
+  function parseNewsSina(payload) {
+    var node = payload && payload.result && payload.result.data && payload.result.data.feed;
+    var list = node && Array.isArray(node.list) ? node.list : [];
+    var out = [];
+    list.forEach(function (row) {
+      if (!row || row.id === undefined) return;
+      var text = String(row.rich_text || '').trim();
+      var ctime = beijingStamp(row.create_time);
+      if (!text || ctime === null) return;
+      out.push({
+        id: 'sina' + row.id,
+        title: text,
+        digest: '',
+        url: String(row.docurl || ''),
+        source: '新浪7x24',
+        tags: (Array.isArray(row.tag) ? row.tag : []).map(function (t) {
+          return t && t.name ? String(t.name) : '';
+        }).filter(function (s) { return s; }),
+        ctime: ctime,
+      });
+    });
+    return out;
+  }
+
+  /** 通用 JSONP 单发（新闻接口共用）：callback 触发或脚本失败都 resolve，不 reject */
+  function fetchNewsJsonp(url, cbName) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () { finish(null); }, PLAN_TIMEOUT);
+      function cleanup() {
+        clearTimeout(timer);
+        try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+      }
+      function finish(res) {
+        if (settled) return;
+        settled = true; cleanup(); resolve(res);
+      }
+      window[cbName] = function (res) { finish(res || null); };
+      loadScript(url, null, PLAN_TIMEOUT, function (ok) {
+        if (!ok) { lastError = new Error('新闻接口请求失败'); finish(null); }
+        /* onload 但回调没触发的情况由 timeout 兜底 */
+      });
+    }).catch(function () { return null; });
+  }
+
+  /** 东财按词检索：fetch 主路（CORS 全开）→ 9s 未回转 JSONP 注入兜底；
+   *  两路都失败返回 []，绝不 reject（下游串行循环不希望被单词打断） */
+  function fetchNewsSearch(kw, size) {
+    size = size || NEWS_SEARCH_PER_SIZE;
+    var param = encodeURIComponent(JSON.stringify({
+      uid: '', keyword: String(kw || ''), type: ['cmsArticleWebOld'],
+      client: 'web', clientType: 'web', clientVersion: 'curr',
+      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: 1, pageSize: size, preTag: '<em>', postTag: '</em>' } },
+    }));
+    return new Promise(function (resolve) {
+      var phase = 'fetch';                       // fetch → jsonp → done
+      function done(list) {
+        if (phase === 'done') return;
+        phase = 'done';
+        resolve(Array.isArray(list) ? list : []);
+      }
+      function jsonp() {
+        if (phase !== 'fetch') return;
+        phase = 'jsonp';
+        var cbName = 'xjnew_' + (++cbSeq) + '_' + Date.now().toString(36);
+        window[cbName] = function (res) { done(parseNewsEm(res)); };
+        loadScript(NEWS_SEARCH_URL + '?cb=' + cbName + '&param=' + param, null, 9000, function (ok) {
+          try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+          if (!ok) { done([]); return; }
+          /* onload 但回调没触发（被 try{}catch 包裹/返回非 JSON）→ 宽限后放弃 */
+          setTimeout(function () { if (phase === 'jsonp') done([]); }, 500);
+        });
+      }
+      setTimeout(jsonp, 9000);                   // fetch 主路超时闸
+      try {
+        fetch(NEWS_SEARCH_URL + '?cb=cb&param=' + param).then(function (r) {
+          return r.text();
+        }).then(function (t) {
+          if (phase !== 'fetch') return;
+          done(parseNewsEm(parseJsonpText(t)));
+        }).catch(jsonp);
+      } catch (e) { jsonp(); }
+    });
+  }
+
+  /** 按词表逐个检索（串行 + 120ms 间隔防限流，参考页实测安全值）。
+   *  onEach(items, kw)：每词完成即回调 —— 视图用它做渐进渲染。
+   *  resolve(全部原始条目)；单词失败只跳过该词，不打断整轮。 */
+  function fetchNewsSearchMulti(keywords, perSize, onEach) {
+    var list = (keywords || []).filter(Boolean);
+    var out = [];
+    var i = 0;
+    return new Promise(function (resolve) {
+      function step() {
+        if (i >= list.length) return resolve(out);
+        var kw = list[i++];
+        fetchNewsSearch(kw, perSize).then(function (items) {
+          items = items || [];
+          out = out.concat(items);
+          if (onEach) { try { onEach(items, kw); } catch (e) { /* 渲染层异常不拦取数 */ } }
+          setTimeout(step, 120);
+        }).catch(function () { setTimeout(step, 120); });
+      }
+      step();
+    });
+  }
+
+  /** 新浪 7x24 第 N 页（1 起）→ 统一条目数组（失败返回 []） */
+  function fetchNewsSinaPage(page) {
+    var cbName = 'xjnws_' + (++cbSeq) + '_' + Date.now().toString(36);
+    var url = NEWS_SINA_URL +
+      '?page=' + (page > 0 ? page : 1) + '&page_size=' + NEWS_SINA_PAGESIZE +
+      '&zhibo_id=152&tag_id=0&dire=f&dpc=1&callback=' + cbName;
+    return fetchNewsJsonp(url, cbName).then(function (res) {
+      return res ? parseNewsSina(res) : [];
+    });
+  }
+
   return {
     fetchQuotes: fetchQuotes,
     fetchFX: fetchFX,
@@ -1518,6 +1709,16 @@ XJ.fetcher = (function () {
     parseHkPerShare: parseHkPerShare,
     hkReportDate: hkReportDate,
     fetchDividends: fetchDividends,
+    fetchNewsSearch: fetchNewsSearch,
+    fetchNewsSearchMulti: fetchNewsSearchMulti,
+    fetchNewsSinaPage: fetchNewsSinaPage,
+    parseNewsEm: parseNewsEm,
+    parseNewsSina: parseNewsSina,
+    stripEmTags: stripEmTags,
+    parseJsonpText: parseJsonpText,
+    beijingStamp: beijingStamp,
+    NEWS_SEARCH_PER_SIZE: NEWS_SEARCH_PER_SIZE,
+    NEWS_SINA_PAGESIZE: NEWS_SINA_PAGESIZE,
     fetchFundDivPage: fetchFundDivPage,
     fetchFundDivYear: fetchFundDivYear,
     fetchFundDividends: fetchFundDividends,
