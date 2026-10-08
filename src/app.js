@@ -68,6 +68,7 @@
       var subTitle = {
         analysis: '账户分析',
         divsummary: '分红汇总',
+        search: '添加自选',
         symbol: S.ui.subArg ? S.symbolName(S.ui.subArg) : '个股详情',
       }[S.ui.subPage] || '';
       return '<div class="topbar-row">' +
@@ -167,6 +168,11 @@
     if (shell) shell.style.paddingBottom = S.ui.subPage ? '24px' : '';
     renderFloat();
     if (XJ.chart) XJ.chart.bind();
+    /* 视图级渲染后钩子（自选页 sparkline 懒加载 / 搜索页输入绑定） */
+    var curView = S.ui.subPage ? XJ.views[S.ui.subPage] : XJ.views[S.ui.tab];
+    if (curView && typeof curView.bind === 'function') {
+      try { curView.bind(); } catch (e) { console.error('[bind]', e); }
+    }
     if (prevAnim && XJ.anim) XJ.anim.diffAndPlay(prevAnim);   // ③④ 比对 → 分档播放
   }
 
@@ -792,6 +798,207 @@
     if (XJ.dnd && XJ.dnd.isJustDragged()) return;
     S.setUI({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
     window.scrollTo(0, 0);
+  });
+
+  /* ==================== 自选（watchlist · 二期） ==================== */
+
+  UI.on('openSearch', function () {
+    S.setUI({ subPage: 'search', floatOpen: false });
+  });
+
+  UI.on('srchClear', function () {
+    if (XJ.views.search && XJ.views.search.clear) XJ.views.search.clear();
+  });
+
+  UI.on('wlPickGroup', function (node) {
+    S.setUI({ wlGroup: node.getAttribute('data-g') });
+    UI.closeSheet();
+  });
+
+  /* 图四：三条杠 → 分组选择弹层（宫格 + 管理分组 / 新增分组） */
+  function openGroupSheet() {
+    var groups = S.wlGroups();
+    var cur = S.ui.wlGroup || 'all';
+    var cells = [{ id: 'all', name: '全部' }, { id: 'holding', name: '持仓' }].concat(
+      groups.map(function (g) { return { id: g.groupId, name: g.name }; }));
+    var html = '<div class="wl-ggrid">' + cells.map(function (c) {
+      return '<button class="wl-gcell' + (cur === c.id ? ' active' : '') +
+        '" data-act="wlPickGroup" data-g="' + U.esc(c.id) + '">' + U.esc(c.name) + '</button>';
+    }).join('') + '</div>' +
+      '<div class="wl-gops">' +
+      '<button class="wl-gop" data-act="openWlManage">' + UI.icon('edit', 14) + ' 管理分组</button>' +
+      '<button class="wl-gop" data-act="wlGroupCreate">' + UI.icon('plus', 14) + ' 新增分组</button>' +
+      '</div>';
+    UI.openSheet({ title: '自选分组', html: html });
+  }
+  UI.on('openWlGroups', openGroupSheet);
+
+  /* 管理模式：改名 / 删除 / 拖拽排序（XJ.dnd axis:'y'，把手 ≡） */
+  function openManageSheet() {
+    var groups = S.wlGroups();
+    var isDefault = function (id) {
+      return XJ.model.WL_DEFAULT_GROUPS.some(function (d) { return d.groupId === id; });
+    };
+    var html = '<div id="wl-gm-list">' + groups.map(function (g) {
+      return '<div class="wl-gm-row" data-g="' + U.esc(g.groupId) + '">' +
+        '<span class="gm-drag">' + UI.icon('menu', 15) + '</span>' +
+        '<span class="gm-name">' + U.esc(g.name) + '</span>' +
+        '<button class="gm-btn" data-act="wlGroupRename" data-g="' + U.esc(g.groupId) + '">改名</button>' +
+        '<button class="gm-btn danger" data-act="wlGroupRemove" data-g="' + U.esc(g.groupId) + '"' +
+        (isDefault(g.groupId) ? ' disabled title="默认分组不可删除"' : '') + '>删除</button>' +
+        '</div>';
+    }).join('') + '</div>' +
+      '<button class="btn-block" data-act="closeSheet">完成</button>' +
+      '<div class="tiny" style="margin-top:8px;text-align:center">长按 ≡ 拖动调整分组顺序</div>';
+    UI.openSheet({
+      title: '管理分组', html: html,
+      onMount: function () {
+        var list = document.getElementById('wl-gm-list');
+        if (list && XJ.dnd) {
+          XJ.dnd.bind(list, {
+            itemSel: '.wl-gm-row', attr: 'data-g', axis: 'y',
+            onCommit: function (order) {
+              S.wlGroupReorder(order);
+              /* sheet 不在整页重渲染范围内，重建管理列表让新顺序立即呈现 */
+              openManageSheet();
+            },
+          });
+        }
+      },
+    });
+  }
+  UI.on('openWlManage', openManageSheet);
+
+  UI.on('wlGroupCreate', function (node) {
+    var starSym = node ? node.getAttribute('data-star-sym') : null;
+    var starName = node ? node.getAttribute('data-star-name') : null;
+    S.setUI({ wlSheetCtx: starSym ? { starSym: starSym, starName: starName } : null });
+    var html = '<input id="wl-gnew" class="sheet-input" type="text" maxlength="12" placeholder="分组名称（如：红利 ETF）">' +
+      '<button class="btn-block" data-act="wlGroupCreateSave">保存</button>';
+    UI.openSheet({
+      title: starSym ? '新建分组并加入' : '新增分组', html: html,
+      onMount: function () { try { document.getElementById('wl-gnew').focus(); } catch (e) { /* 忽略 */ } },
+    });
+  });
+
+  UI.on('wlGroupCreateSave', function () {
+    var inp = document.getElementById('wl-gnew');
+    var name = inp ? inp.value : '';
+    var id = S.wlGroupAdd(name);
+    var ctx = S.ui.wlSheetCtx || {};
+    if (id && ctx.starSym) {
+      S.wlAdd(id, ctx.starSym, ctx.starName);
+      if (XJ.views.search) XJ.views.search.refreshList();
+    }
+    S.setUI({ wlSheetCtx: null });
+    UI.closeSheet();
+    UI.toast(id ? '分组已创建' : '名称不能为空');
+  });
+
+  UI.on('wlGroupRename', function (node) {
+    var g = node.getAttribute('data-g');
+    var grp = S.wlGroups().filter(function (x) { return x.groupId === g; })[0];
+    var html = '<input id="wl-grn" class="sheet-input" type="text" maxlength="12" value="' + U.esc(grp ? grp.name : '') + '">' +
+      '<button class="btn-block" data-act="wlGroupRenameSave" data-g="' + U.esc(g) + '">保存</button>';
+    UI.openSheet({
+      title: '重命名分组', html: html,
+      onMount: function () { try { document.getElementById('wl-grn').focus(); } catch (e) { /* 忽略 */ } },
+    });
+  });
+
+  UI.on('wlGroupRenameSave', function (node) {
+    var inp = document.getElementById('wl-grn');
+    S.wlGroupRename(node.getAttribute('data-g'), inp ? inp.value : '');
+    UI.closeSheet();
+    UI.toast('分组已重命名');
+  });
+
+  UI.on('wlGroupRemove', function (node) {
+    var g = node.getAttribute('data-g');
+    var grp = S.wlGroups().filter(function (x) { return x.groupId === g; })[0];
+    if (!grp) return;
+    UI.confirm({
+      title: '删除分组「' + grp.name + '」？',
+      message: '组内的自选将一并移除。',
+      danger: true, confirmText: '删除',
+    }).then(function (ok) {
+      if (!ok) return;
+      S.wlGroupRemove(g);
+      if (S.ui.wlGroup === g) S.setUI({ wlGroup: 'all' });
+      openManageSheet();
+    });
+  });
+
+  UI.on('wlIndexPick', function () {
+    var cur = S.ui.wlIndex || 'sh000001';
+    var IDX = [['sh000001', '上证指数'], ['sz399001', '深证成指'], ['sz399006', '创业板指'],
+    ['sh000300', '沪深300'], ['hkHSI', '恒生指数'], ['hkHSTECH', '恒生科技'],
+    ['usDJI', '道琼斯'], ['usIXIC', '纳斯达克']];
+    var html = '<div class="wl-ggrid">' + IDX.map(function (p) {
+      return '<button class="wl-gcell' + (cur === p[0] ? ' active' : '') +
+        '" data-act="wlIndexSet" data-k="' + p[0] + '">' + p[1] + '</button>';
+    }).join('') + '</div>';
+    UI.openSheet({ title: '切换指数', html: html });
+  });
+
+  UI.on('wlIndexSet', function (node) {
+    S.setUI({ wlIndex: node.getAttribute('data-k'), wlTick: Date.now() });
+    UI.closeSheet();
+  });
+
+  UI.on('wlOpenSymbol', function (node) {
+    S.setUI({ subPage: 'symbol', subArg: node.getAttribute('data-sym'), floatOpen: false });
+    window.scrollTo(0, 0);
+  });
+
+  UI.on('wlRemoveItem', function (node) {
+    S.wlRemove(node.getAttribute('data-item'));
+    UI.toast('已从自选移除');
+  });
+
+  /* 图五：搜索结果点星 → 分组选择 sheet（单选 + 新建 + 移除） */
+  UI.on('wlStar', function (node) {
+    var sym = node.getAttribute('data-sym');
+    var name = node.getAttribute('data-name') || '';
+    var groups = S.wlGroups();
+    var cur = S.wlGroupOf(sym);
+    var html = '<div class="wl-ggrid">' + groups.map(function (g) {
+      return '<button class="wl-gcell' + (cur === g.groupId ? ' active' : '') +
+        '" data-act="wlStarPick" data-sym="' + U.esc(sym) + '" data-name="' + U.esc(name) +
+        '" data-g="' + U.esc(g.groupId) + '">' + U.esc(g.name) + (cur === g.groupId ? ' ✓' : '') + '</button>';
+    }).join('') +
+      '<button class="wl-gcell wl-gnew" data-act="wlGroupCreate" data-star-sym="' + U.esc(sym) +
+      '" data-star-name="' + U.esc(name) + '">＋ 新建分组</button>' +
+      '</div>' +
+      (cur ? '<button class="btn-block danger" data-act="wlStarRemove" data-sym="' + U.esc(sym) + '">从自选移除</button>' : '');
+    UI.openSheet({ title: '加入自选 · ' + name, html: html });
+  });
+
+  UI.on('wlStarPick', function (node) {
+    var sym = node.getAttribute('data-sym');
+    var name = node.getAttribute('data-name');
+    var g = node.getAttribute('data-g');
+    var cur = S.wlGroupOf(sym);
+    if (cur === g) { UI.closeSheet(); return; }
+    if (cur) {
+      var old = (S.state.watchlist.items || []).filter(function (x) { return x.symbol === sym; })[0];
+      if (old) S.wlMove(old.itemId, g);
+    } else {
+      S.wlAdd(g, sym, name);
+    }
+    UI.closeSheet();
+    var gName = (S.wlGroups().filter(function (x) { return x.groupId === g; })[0] || {}).name || '';
+    UI.toast('已加入「' + gName + '」');
+    if (XJ.views.search) XJ.views.search.refreshList();
+  });
+
+  UI.on('wlStarRemove', function (node) {
+    var sym = node.getAttribute('data-sym');
+    var it = (S.state.watchlist.items || []).filter(function (x) { return x.symbol === sym; })[0];
+    if (it) S.wlRemove(it.itemId);
+    UI.closeSheet();
+    UI.toast('已从自选移除');
+    if (XJ.views.search) XJ.views.search.refreshList();
   });
 
   /* ---- 子页面路由 ---- */
