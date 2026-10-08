@@ -9,11 +9,12 @@
 XJ.views.news = (function () {
   var U = XJ.util, UI = XJ.ui;
 
-  var MAX_PAGES = 18;            // 回看翻页上限：实测 7 天 ≈ 12~15 页（100 条/页），留余量
+  var MAX_PAGES = 30;            // 回看翻页上限：15 天 ≈ 25~30 页（100 条/页）
   var SINA_MAX_PAGES = 3;        // 新浪兜底的翻页上限（总库存仅约 900 条）
   var INCR_TTL = 10 * 60 * 1000; // 增量拉取间隔：进页 10 分钟内不重复请求
   var CAP = 200;                 // 缓存命中上限（防极端行情日撑爆 localStorage）
-  var LOOKBACK_DAYS = 7;
+  var LOOKBACK_DAYS = 15;        // 回看窗口（10-08 用户追加：7 → 15 天）
+  var CACHE_V = 2;               // 缓存口径版本：词表/窗口变更后 +1，旧缓存整轮重扫
 
   var pulling = false;           // 本轮回看（含增量）进行中
   var live = null;               // 回看期间的累积命中（已合并排序）；收尾后归 null
@@ -22,18 +23,18 @@ XJ.views.news = (function () {
   function cutoffSec() { return Math.floor(Date.now() / 1000) - LOOKBACK_DAYS * 86400; }
   function notify() { XJ.store.setUI({ newsTick: Date.now() }); }
 
-  function newCache() { return { v: 1, sweepMs: 0, newestAt: 0, covered: false, via: '', hits: [] }; }
+  function newCache() { return { v: CACHE_V, sweepMs: 0, newestAt: 0, covered: false, via: '', hits: [] }; }
 
   function cacheHits() {
     var c = XJ.store.state.newsCache;
     return c && Array.isArray(c.hits) ? c.hits : [];
   }
 
-  /** 进页自动补数：没覆盖过 7 天窗口 → 全量回看；覆盖过但过了 TTL → 只拉增量 */
+  /** 进页自动补数：没覆盖过窗口 / 缓存口径过期 → 全量回看；覆盖过但过了 TTL → 只拉增量 */
   function ensureNews() {
     if (pulling) return;
     var c = XJ.store.state.newsCache;
-    if (!c || !c.covered) { runPull('sweep'); return; }
+    if (!c || !c.covered || c.v !== CACHE_V) { runPull('sweep'); return; }
     if (Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull('incr');
   }
 
@@ -57,7 +58,7 @@ XJ.views.news = (function () {
     function publish(final) {
       if (final) {
         var c = XJ.store.state.newsCache || newCache();
-        c.v = 1;
+        c.v = CACHE_V;
         c.sweepMs = Date.now();
         c.newestAt = Math.max(c.newestAt || 0, newest);
         c.covered = true;
