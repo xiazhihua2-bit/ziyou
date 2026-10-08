@@ -1001,6 +1001,21 @@
     if (XJ.views.search) XJ.views.search.refreshList();
   });
 
+  /* ==================== 新闻（news · 三期） ==================== */
+
+  /* 「仅查看自选」开关（ui.wlNewsOnly，默认关；不持久化，纯本机偏好） */
+  UI.on('newsToggleWl', function (node) {
+    S.setUI({ wlNewsOnly: !!node.checked });
+  });
+
+  UI.on('newsRefresh', function () {
+    if (XJ.views.news && XJ.views.news.refresh) XJ.views.news.refresh();
+  });
+
+  UI.on('newsOpen', function (node) {
+    if (XJ.views.news && XJ.views.news.openDetail) XJ.views.news.openDetail(node.getAttribute('data-id'));
+  });
+
   /* ---- 子页面路由 ---- */
   UI.on('openAnalysis', function () {
     S.setUI({ subPage: 'analysis' });
