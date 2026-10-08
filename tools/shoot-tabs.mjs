@@ -74,8 +74,13 @@ const PROBE = `(async () => {
     chipLabels: Array.prototype.slice.call(w.querySelectorAll('.wl-chip')).map(function (c) { return c.textContent; }),
   };
   clickTab('news'); await sleep(300);
-  var n = document.getElementById('view-body').textContent || '';
-  out.newsPage = { hasHint: n.indexOf('三期') >= 0 };
+  var nd = document.getElementById('view-body');
+  out.newsPage = {
+    hasSlogan: !!nd.querySelector('.slogan-bar'),
+    hasSwitch: !!nd.querySelector('.news-ctl .switch'),
+    hasBody: !!nd.querySelector('.news-list') || (nd.textContent || '').indexOf('无相关动态') >= 0 || (nd.textContent || '').indexOf('正在回看') >= 0,
+    hasFooter: (nd.textContent || '').indexOf('不构成投资建议') >= 0,
+  };
   clickTab('overview'); await sleep(300);
   out.backHome = { ok: !XJ.store.ui.subPage && XJ.store.ui.tab === 'overview' };
 
@@ -231,7 +236,9 @@ try {
     if (out.watchlistPage && out.watchlistPage.hasIndexBar && out.watchlistPage.hasChips)
       ok('② 自选页真身就位（指数栏 + 分组 chips：' + (out.watchlistPage.chipLabels || []).join('/') + '）');
     else bad('自选页异常 ' + JSON.stringify(out.watchlistPage));
-    if (out.newsPage && out.newsPage.hasHint) ok('③ 新闻页占位（三期提示）在位'); else bad('新闻占位异常');
+    if (out.newsPage && out.newsPage.hasSlogan && out.newsPage.hasSwitch && out.newsPage.hasBody && out.newsPage.hasFooter)
+      ok('③ 新闻页真身就位（规则横幅 + 自选开关 + 时间轴/空态 + 红线页脚）');
+    else bad('新闻页异常 ' + JSON.stringify(out.newsPage));
     if (out.backHome && out.backHome.ok) ok('③ 切回持仓正常'); else bad('切回持仓异常');
 
     const dg = out.drag || {};
