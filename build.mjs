@@ -17,6 +17,7 @@ const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const JS_FILES = [
   'src/util.js',
   'src/market.js',
+  'src/universe.js',       // 指数成分白名单（美股/日股搜索准入，静态快照）
   'src/model.js',
   'src/storage.js',
   'src/transfer.js',
