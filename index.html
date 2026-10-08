@@ -1853,6 +1853,8 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   border-bottom:.5px solid var(--line); cursor:pointer; }
 .news-row:last-child{ border-bottom:0; }
 .news-row:active{ background:rgba(120,120,128,.06); }
+/* 重点主体行（李嘉诚家族/伯克希尔）：金色左描边 + 淡金底，仅视觉强调、不改变时间序 */
+.news-row.feat{ background:rgba(240,163,10,.07); box-shadow:inset 3px 0 0 var(--dividend); }
 .tl-side{ flex:0 0 48px; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
 .tl-date{ font-size:11px; color:var(--text-3); font-variant-numeric:tabular-nums;
   line-height:1.3; white-space:nowrap; }
@@ -2329,10 +2331,11 @@ XJ.market = (function () {
     bj: { key: 'bj', label: '北', kind: '北交所', currency: 'CNY', symbol: '¥'  },
     hk: { key: 'hk', label: '港', kind: '港股',   currency: 'HKD', symbol: 'HK$' },
     us: { key: 'us', label: '美', kind: '美股',   currency: 'USD', symbol: '$'  },
+    jp: { key: 'jp', label: '日', kind: '日股',   currency: 'JPY', symbol: '¥'  },
     of: { key: 'of', label: '基', kind: '场外基金', currency: 'CNY', symbol: '¥' },
   };
 
-  var PREFIXES = ['sh', 'sz', 'bj', 'hk', 'us', 'of'];
+  var PREFIXES = ['sh', 'sz', 'bj', 'hk', 'us', 'jp', 'of'];
 
   function meta(symbol) {
     if (!symbol) return null;
@@ -2355,6 +2358,9 @@ XJ.market = (function () {
     of:    { key: 'of',    label: '场外基金', dividend: 'fund', quote: false },
     hk:    { key: 'hk',    label: '港股', dividend: 'hk',   quote: true  },
     us:    { key: 'us',    label: '美股', dividend: null,   quote: true  },
+    /* 日股：腾讯实时行情可达（qt.gtimg.cn/q=jp8058），但分时/日K 历史无浏览器可达源；
+       分红亦无源。公司官网域名无免费 F10 接口 → 图标回退汉字头像（已知限制）。 */
+    jp:    { key: 'jp',    label: '日股', dividend: null,   quote: true  },
   };
 
   function assetType(symbol) {
@@ -2363,6 +2369,7 @@ XJ.market = (function () {
     if (mk === 'of') return 'of';
     if (mk === 'hk') return 'hk';
     if (mk === 'us') return 'us';
+    if (mk === 'jp') return 'jp';
     if (mk === 'sh' && /^5/.test(code)) return 'etf';   // 沪市 5xxxxx：ETF / LOF / REITs
     if (mk === 'sz' && /^1/.test(code)) return 'etf';   // 深市 1xxxxx：ETF / LOF
     return 'stock';
@@ -2545,6 +2552,7 @@ XJ.market = (function () {
     var t = assetType(symbol);
     if (t === 'hk') return '港';
     if (t === 'us') return '美';
+    if (t === 'jp') return '日';
     if (t === 'of') return '基';
     if (t === 'etf') return 'E';
     var m = marketOf(symbol);
@@ -2606,6 +2614,7 @@ XJ.market = (function () {
     var m = marketOf(symbol);
     if (m === 'hk') return 'HKD';
     if (m === 'us') return 'USD';
+    if (m === 'jp') return 'JPY';
     return 'CNY';
   }
   function curSymbol(symbol) {
@@ -2707,13 +2716,16 @@ XJ.market = (function () {
     if (marketHint && MARKETS[marketHint]) return normalizeTo(s, marketHint);
 
     var lower = s.toLowerCase();
-    // 1) 显式前缀： sh600023 / hk00700 / usAAPL / of110022
-    var m = lower.match(/^(sh|sz|bj|hk|us|of)[._-]?(.+)$/);
+    // 1) 显式前缀： sh600023 / hk00700 / usAAPL / jp8058 / of110022
+    var m = lower.match(/^(sh|sz|bj|hk|us|jp|of)[._-]?(.+)$/);
     if (m) return normalizeTo(m[2], m[1]);
 
-    // 2) 后缀形式： 600023.SH / 00700.HK / AAPL.OQ / 110022.OF
-    var m2 = s.match(/^([A-Za-z0-9._-]+)[.](SH|SZ|BJ|HK|US|OF)$/i);
+    // 2) 后缀形式： 600023.SH / 00700.HK / AAPL.OQ / 8058.T / 110022.OF
+    var m2 = s.match(/^([A-Za-z0-9._-]+)[.](SH|SZ|BJ|HK|US|JP|OF)$/i);
     if (m2) return normalizeTo(m2[1], m2[2].toLowerCase());
+    // 东京交易所后缀： 8058.T（注意与美股 .T 冲突极小：美股白名单不含单字母 T 开头此类代码）
+    var m3 = s.match(/^(\d{4})[.]T$/i);
+    if (m3) return normalizeTo(m3[1], 'jp');
 
     // 3) 纯数字
     if (/^\d{6}$/.test(s)) return prefixForAStock(s) + s;
@@ -2739,6 +2751,9 @@ XJ.market = (function () {
     if (market === 'hk') {
       if (/^\d{1,5}$/.test(b)) return 'hk' + pad5(b);
       return null;
+    }
+    if (market === 'jp') {
+      return /^\d{4}$/.test(b) ? 'jp' + b : null;
     }
     if (market === 'of') {
       return /^\d{6}$/.test(b) ? 'of' + b : null;
@@ -2778,14 +2793,18 @@ XJ.market = (function () {
     if (!price || price <= 0) return null;
 
     var isCn = (mk === 'sh' || mk === 'sz' || mk === 'bj');
+    /* 日股串与美/港布局略有错位：成交额在 [45]、[44] 是英文名而非市值，市值位不可用 */
+    var isJp = mk === 'jp';
     // 市值单位：A股/港股为「亿」，美股 [44]/[45] 亦为「亿」但需按币种理解
     return {
       symbol: symbol,
       market: mk,
       currency: mk === 'us' ? (f[35] || 'USD') : currency(symbol),
-      name: cleanName(f[1]),
       nameTruncated: isTruncatedName(f[1]),
       code: f[2] || codeOf(symbol),
+      /* 日股腾讯回的是英文名（Mitsubishi Corporation）—— 换成成分白名单里的中文名，
+         否则行情同步会把搜索时的中文名覆盖成英文 */
+      name: (mk === 'jp' && XJ.universe && XJ.universe.jpName(codeOf(symbol))) || cleanName(f[1]),
       price: price,
       prevClose: prevClose,
       open: U.num(f[5]),
@@ -2794,11 +2813,11 @@ XJ.market = (function () {
       high: U.num(f[33]),
       low: U.num(f[34]),
       volume: U.num(f[36]),
-      amount: U.num(f[37]),
+      amount: isJp ? U.num(f[45]) : U.num(f[37]),
       turnover: U.num(f[38]),
       pe: U.num(f[39]),
-      floatCap: U.num(f[44]),      // 亿（当地货币）
-      totalCap: U.num(f[45]),
+      floatCap: isJp ? null : U.num(f[44]),      // 亿（当地货币）
+      totalCap: isJp ? null : U.num(f[45]),
       // 只有 A 股有涨跌停制度；港股/美股的 [47]/[48] 是别的含义，不可复用
       limitUp: isCn ? U.num(f[47]) : null,
       limitDown: isCn ? U.num(f[48]) : null,
@@ -2866,6 +2885,157 @@ XJ.market = (function () {
     quoteCode: quoteCode,
     fxCode: fxCode, parseFx: parseFx,
     FX_SYMBOL: FX_SYMBOL,
+  };
+})();
+
+
+/* ==================== src/universe.js ==================== */
+/* ==================== 指数成分白名单（美股/日股搜索准入） ====================
+ * 自选搜索只放行四个指数的成分股：标普500 + 纳斯达克100 + 道琼斯30 + 日经225。
+ *
+ * 为什么是内置静态快照而不是运行时拉取（实测结论，2026-10-08）：
+ *   · 东财 datacenter / push2 系列**没有**全球指数成分接口（RPT_INDEX_COMPONENT 只含 A 股指数；
+ *     clist fs=i:100.SPX 只回指数自身；secid 116~135 扫遍无日股）；
+ *   · 维基百科（en/zh）在国内网络不可达，Wayback 亦不通；
+ *   · nasdaq.com / yahoo 接口无 CORS 或被限流，浏览器里不可用。
+ *   因此成分表在构建期由权威源固化进代码，更新成分时重跑下列来源替换本表：
+ *     美股：github.com/datasets/s-and-p-500-companies（CSV）+ api.nasdaq.com list-type/nasdaq100
+ *     道指：stockanalysis.com/list/dow-jones-stocks/（与标普并集去重）
+ *     日股：日经官网 indexes.nikkei.co.jp 成分页 + 中文名人工核对
+ * 快照口径 AS_OF：美股 2026-10-07/08；日股为知识快照（个别近期调整可能滞后）。
+ *
+ * 代码口径与 market.normalize 一致：美股去交易所后缀（BRK.B → BRK），日股 4 位裸码。
+ */
+XJ.universe = (function () {
+  var AS_OF = '2026-10';
+
+  /* 标普500 ∪ 纳斯达克100 ∪ 道琼斯30，去后缀去重（518 只） */
+  var US_LIST = ('A AAPL ABBV ABNB ABT ACGL ACN ADBE ADI ADM ADP ADSK AEE AEP AES AFL AIG AIZ AJG AKAM ALAB ALB ALGN ALL ALLE ALNY AMAT AMCR AMD AME AMGN AMP AMT AMZN ANET AON AOS APA APD APH APO APP APTV ARE ARES ARM ASML ATO AVGO AVY AWK AXON AXP AZO BA BAC BALL BAX BBY BDX BE BEN BF BG BIIB BKNG BKR BLK BMY BNY BR BRK BRO BSX BX BXP C CAH CARR CASY CAT CB CBOE CBRE CCEP CCI CCL CDNS CDW CEG CF CFG CHD CHRW CHTR CI CIEN CINF CL CLX CMCSA CME CMG CMI CMS CNC CNP COF COHR COIN COO COP COR COST CPAY CPRT CPT CRH CRL CRM CRWD CRWV CSCO CSGP CSX CTAS CTSH CTVA CVNA CVS CVX D DAL DASH DD DDOG DE DECK DELL DG DGX DHI DHR DIS DLR DLTR DOC DOV DOW DPZ DRI DTE DUK DVA DVN DXCM EBAY ECHO ECL ED EFX EG EIX EL ELV EME EMR EOG EQIX EQT ERIE ES ESS ETN ETR EVRG EW EXC EXE EXPD EXPE EXR F FANG FAST FCX FDS FDX FDXF FE FER FERG FFIV FICO FIS FISV FITB FIX FLEX FOX FOXA FRT FSLR FTNT FTV GD GDDY GE GEHC GEN GEV GILD GIS GL GLW GM GNRC GOOG GOOGL GPC GPN GRMN GS GWW HAL HAS HBAN HCA HD HIG HII HLT HON HONA HOOD HPE HPQ HRL HSIC HST HSY HUBB HUM HWM IBKR IBM ICE IDXX IEX IFF ILMN INCY INTC INTU INVH IP IQV IR IRM ISRG IT ITW IVZ J JBHT JBL JCI JKHY JNJ JPM KDP KEY KEYS KHC KIM KKR KLAC KMB KMI KO KR KVUE L LDOS LEN LH LHX LII LIN LITE LLY LMT LNT LOW LRCX LULU LUV LVS LYB LYV MA MAA MAR MAS MCD MCHP MCK MCO MDLZ MDT MELI MET META MGM MKC MLM MMM MNST MO MOS MPC MPWR MRK MRNA MRSH MRVL MS MSCI MSFT MSI MSTR MTB MTD MU NBIS NCLH NDAQ NDSN NEE NEM NFLX NI NKE NOC NOW NRG NSC NTAP NTRS NUE NVDA NVR NWS NWSA NXPI O ODFL OKE OMC ON ORCL ORLY OTIS OXY P PANW PAYX PCAR PCG PDD PEG PEP PFE PFG PG PGR PH PHM PKG PLD PLTR PM PNC PNR PNW PODD PPG PPL PRU PSA PSKY PSX PTC PWR PYPL Q QCOM RCL RDDT REG REGN RF RJF RKLB RL RMD ROK ROL ROP ROST RSG RTX RVTY SBAC SBUX SCHW SHOP SHW SJM SLB SMCI SNA SNDK SNPS SO SOLV SPCX SPG SPGI SRE STE STLD STT STX STZ SW SWK SWKS SYF SYK SYY T TDG TDY TECH TEL TER TFC TGT TJX TKO TMO TMUS TPL TPR TRGP TRI TRMB TROW TRV TSCO TSLA TSN TT TTWO TXN TXT TYL UAL UBER UDR UHS ULTA UNH UNP UPS URI USB V VEEV VICI VLO VLTO VMC VMRK VRSK VRSN VRT VRTX VST VTR VTRS VZ WAB WAT WBD WDAY WDC WEC WELL WFC WM WMB WMT WRB WSM WST WTW WY WYNN XEL XOM XYL XYZ YUM ZBH ZBRA ZTS').split(' ');
+
+  /* 日经225（代码 + 中文名；中文名供本地搜索匹配，腾讯联想不覆盖日股） */
+  var JP_LIST = [
+    ['1801', '大成建设'], ['1802', '大林组'], ['1803', '清水建设'], ['1812', '鹿岛建设'],
+    ['1925', '大和房屋'], ['1926', '积水房屋'], ['1928', '积水化学'],
+    ['2002', '日清制粉集团'], ['2269', '明治控股'], ['2282', '日本火腿'], ['2502', '朝日集团'], ['2503', '麒麟控股'],
+    ['2531', '味之素'], ['2801', '龟甲万'], ['2871', '日清食品'], ['2874', '日冷'],
+    ['3101', '东洋纺'], ['3105', '日清纺控股'], ['3289', '东急不动产'], ['3382', '7&i控股'],
+    ['3401', '帝人'], ['3402', '东丽'], ['3405', '库拉雷'], ['3407', '旭化成'],
+    ['3861', '王子控股'], ['3863', '日本制纸'],
+    ['4004', 'Resonac'], ['4005', '住友化学'], ['4021', '日产化学'], ['4042', '东曹'], ['4043', '德山'],
+    ['4063', '信越化学'], ['4183', '三井化学'], ['4188', '三菱化学'], ['4203', '住友电木'], ['4205', 'Zeon'], ['4208', '宇部'],
+    ['4324', '电通集团'], ['4502', '武田药品'], ['4503', '安斯泰来'], ['4506', '住友制药'], ['4507', '盐野义'],
+    ['4519', '中外制药'], ['4523', '卫材'], ['4543', '泰尔茂'], ['4568', '第一三共'], ['4578', '大冢控股'],
+    ['4661', '东方乐园'], ['4704', '趋势科技'], ['4755', '乐天集团'],
+    ['4901', '富士胶片'], ['4902', '柯尼卡美能达'], ['4911', '资生堂'],
+    ['5019', '出光兴产'], ['5020', 'ENEOS'],
+    ['5101', '横滨橡胶'], ['5108', '普利司通'], ['5110', '住友橡胶'],
+    ['5201', 'AGC'], ['5202', '日本板硝子'], ['5232', '住友大阪水泥'], ['5233', '太平洋水泥'],
+    ['5301', '东海碳素'], ['5332', 'TOTO'], ['5333', 'NGK绝缘子'], ['5334', 'Niterra'],
+    ['5401', '日本制铁'], ['5406', '神户制钢'], ['5411', 'JFE控股'],
+    ['5631', '日本制钢所'],
+    ['5706', '三井金属'], ['5711', '三菱材料'], ['5713', '住友金属矿山'], ['5714', 'Dowa'],
+    ['5801', '古河电工'], ['5802', '住友电工'], ['5803', '藤仓'],
+    ['5938', 'Lixil'],
+    ['6098', 'Recruit'], ['6113', 'Amada'], ['6141', 'DMG森精机'], ['6178', '日本邮政'],
+    ['6268', '纳博特斯克'], ['6273', 'SMC'],
+    ['6301', '小松'], ['6302', '住友重机械'], ['6305', '日立建机'], ['6326', '久保田'],
+    ['6361', '荏原'], ['6367', '大金工业'], ['6383', '大福'],
+    ['6448', '兄弟工业'], ['6460', '世嘉三美'], ['6471', '日本精工'], ['6472', 'NTN'], ['6473', '捷太格特'],
+    ['6479', '美蓓亚三美'], ['6481', 'THK'],
+    ['6501', '日立'], ['6502', '东芝'], ['6503', '三菱电机'], ['6504', '富士电机'], ['6506', '安川电机'],
+    ['6594', '尼得科'],
+    ['6645', '欧姆龙'], ['6701', 'NEC'], ['6702', '富士通'], ['6723', '瑞萨电子'], ['6724', '精工爱普生'],
+    ['6752', '松下'], ['6753', '夏普'], ['6758', '索尼集团'], ['6762', 'TDK'], ['6770', '阿尔卑斯阿尔派'],
+    ['6841', '横河电机'], ['6857', '爱德万测试'], ['6869', '希森美康'],
+    ['6902', '电装'], ['6952', '卡西欧'], ['6954', '发那科'], ['6963', '罗姆'], ['6971', '京瓷'],
+    ['6976', '太阳诱电'], ['6981', '村田制作'], ['6988', '日东电工'],
+    ['7011', '三菱重工'], ['7012', '川崎重工'], ['7013', 'IHI'],
+    ['7201', '日产'], ['7202', '五十铃'], ['7203', '丰田'], ['7205', '日野'], ['7211', '三菱汽车'],
+    ['7261', '马自达'], ['7267', '本田'], ['7269', '铃木'], ['7270', '斯巴鲁'], ['7272', '雅马哈发动机'],
+    ['7309', '禧玛诺'],
+    ['7550', '食其家'],
+    ['7701', '岛津'], ['7731', '尼康'], ['7732', '拓普康'], ['7733', '奥林巴斯'], ['7735', 'Screen'],
+    ['7741', '豪雅'], ['7751', '佳能'], ['7752', '理光'], ['7794', 'Kokusai Electric'],
+    ['7832', '万代南梦宫'], ['7911', 'Toppan'], ['7912', '大日本印刷'], ['7936', '亚瑟士'],
+    ['7951', '雅马哈'], ['7974', '任天堂'],
+    ['8001', '伊藤忠'], ['8002', '丸红'], ['8015', '丰田通商'], ['8031', '三井物产'],
+    ['8035', '东京电子'], ['8053', '住友商事'], ['8058', '三菱商事'],
+    ['8113', '尤妮佳'],
+    ['8253', 'Credit Saison'], ['8267', '永旺'],
+    ['8306', '三菱UFJ'], ['8308', 'Resona'], ['8309', '三井住友信托'], ['8316', '三井住友'],
+    ['8331', '千叶银行'], ['8411', '瑞穗'],
+    ['8439', 'Tokyo Century'],
+    ['8591', '欧力士'], ['8593', '三菱HC资本'],
+    ['8601', '大和证券'], ['8604', '野村'], ['8630', 'Sompo'], ['8697', '日本交易所'],
+    ['8725', 'MS&AD'], ['8750', '第一生命'], ['8766', '东京海上'],
+    ['8801', '三井不动产'], ['8802', '三菱地所'], ['8804', '东京建物'], ['8830', '住友不动产'],
+    ['9001', '东武铁道'], ['9005', '京成电铁'], ['9007', '小田急'], ['9020', 'JR东日本'],
+    ['9021', 'JR西日本'], ['9022', 'JR东海'], ['9023', '东京地铁'], ['9041', '近铁集团'], ['9042', '阪急阪神'],
+    ['9062', '日本通运'], ['9064', '大和运输'],
+    ['9101', '日本邮船'], ['9104', '商船三井'], ['9107', '川崎汽船'],
+    ['9201', '日本航空'], ['9202', '全日空'],
+    ['9401', 'TBS'], ['9404', '日本电视台'],
+    ['9432', 'NTT'], ['9433', 'KDDI'], ['9434', '软银'], ['9468', 'KADOKAWA'],
+    ['9501', '东京电力'], ['9502', '中部电力'], ['9503', '关西电力'], ['9504', '中国电力'], ['9505', '北陆电力'],
+    ['9506', '东北电力'], ['9507', '九州电力'], ['9508', '四国电力'], ['9509', '北海道电力'],
+    ['9513', 'J-POWER'], ['9531', '东京燃气'], ['9532', '大阪燃气'], ['9533', '东邦燃气'],
+    ['9613', 'NTT数据'], ['9684', 'Square Enix'],
+    ['9766', '科乐美'], ['9843', '宜得利'],
+    ['9983', '迅销'], ['9984', '软银集团'],
+  ];
+
+  var usMap = null, jpMap = null;
+  function init() {
+    if (usMap) return;
+    usMap = {};
+    US_LIST.forEach(function (t) { usMap[t] = 1; });
+    jpMap = {};
+    JP_LIST.forEach(function (r) { jpMap[r[0]] = r[1]; });
+  }
+
+  function hasUs(sym) {
+    init();
+    return String(sym || '').slice(0, 2) === 'us' && !!usMap[String(sym).slice(2).toUpperCase()];
+  }
+  function hasJp(sym) {
+    init();
+    return String(sym || '').slice(0, 2) === 'jp' && jpMap[String(sym).slice(2)] !== undefined;
+  }
+  function jpName(code) { init(); return jpMap[String(code)] || ''; }
+
+  /**
+   * 本地匹配（腾讯联想不覆盖日股，这是日股进搜索列表的唯一入口；
+   * 美股作为联想失败时的兜底）。名称包含或代码前缀匹配，最多 20 条。
+   */
+  function searchLocal(kw) {
+    init();
+    var k = String(kw || '').trim();
+    if (!k) return [];
+    var ku = k.toUpperCase();
+    var out = [];
+    JP_LIST.forEach(function (r) {
+      if (out.length >= 20) return;
+      if (r[0].indexOf(k) === 0 || r[1].indexOf(k) >= 0) {
+        out.push({ symbol: 'jp' + r[0], code: r[0], market: 'jp', name: r[1], pinyin: '', type: '', kind: '日股' });
+      }
+    });
+    if (/^[A-Za-z]/.test(k)) {
+      US_LIST.forEach(function (t) {
+        if (out.length >= 20) return;
+        if (t.indexOf(ku) === 0) out.push({ symbol: 'us' + t, code: t, market: 'us', name: t, pinyin: '', type: '', kind: '美股' });
+      });
+    }
+    return out;
+  }
+
+  /** 预留的异步签名：当前为纯本地快照，立即回调；将来换运行时源不必改调用方 */
+  function ensure(cb) { init(); if (cb) cb(); }
+
+  return {
+    AS_OF: AS_OF,
+    hasUs: hasUs, hasJp: hasJp, jpName: jpName,
+    searchLocal: searchLocal, ensure: ensure,
+    counts: function () { init(); return { us: US_LIST.length, jp: JP_LIST.length }; },
   };
 })();
 
@@ -5632,7 +5802,8 @@ XJ.fetcher = (function () {
     var q = XJ.market.parseQuoteFields(symbol, raw);
     if (q) {
       q.nameRaw = raw.split('~')[1] || '';
-      q.name = cleanName(q.nameRaw);
+      /* 日股：market 已把腾讯英文名换成分名白名单里的中文名，不要用原始英文名覆盖回去 */
+      if (XJ.market.marketOf(symbol) !== 'jp' || !q.name) q.name = cleanName(q.nameRaw);
     }
     return q;
   }
@@ -7200,12 +7371,12 @@ XJ.fetcher = (function () {
 
   /** 东财按词检索：fetch 主路（CORS 全开）→ 9s 未回转 JSONP 注入兜底；
    *  两路都失败返回 []，绝不 reject（下游串行循环不希望被单词打断） */
-  function fetchNewsSearch(kw, size) {
+  function fetchNewsSearch(kw, size, pageIndex) {
     size = size || NEWS_SEARCH_PER_SIZE;
     var param = encodeURIComponent(JSON.stringify({
       uid: '', keyword: String(kw || ''), type: ['cmsArticleWebOld'],
       client: 'web', clientType: 'web', clientVersion: 'curr',
-      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: 1, pageSize: size, preTag: '<em>', postTag: '</em>' } },
+      param: { cmsArticleWebOld: { searchScope: 'default', sort: 'time', pageIndex: pageIndex || 1, pageSize: size, preTag: '<em>', postTag: '</em>' } },
     }));
     return new Promise(function (resolve) {
       var phase = 'fetch';                       // fetch → jsonp → done
@@ -7238,23 +7409,64 @@ XJ.fetcher = (function () {
     });
   }
 
+  /** 按词翻页深扫（一年回看窗口用）：sort=time 降序，逐页往回翻。
+   *  终止条件三选一先到即停：空页 / 本页末条已早于 cutoff（窗口已覆盖）/ maxPages 上限。
+   *  onPage(items, kw, page) 每页回调（视图渐进渲染）；resolve(该词全部原始条目)。 */
+  function fetchNewsSearchPaged(kw, opts, onPage) {
+    var o = opts || {};
+    var pageSize = o.pageSize || NEWS_SEARCH_PER_SIZE;
+    var maxPages = o.maxPages || 8;
+    var cutoff = o.cutoffSec || 0;
+    var out = [];
+    var page = 0;
+    function step() {
+      if (page >= maxPages) return Promise.resolve(out);
+      page++;
+      return fetchNewsSearch(kw, pageSize, page).then(function (items) {
+        items = items || [];
+        out = out.concat(items);
+        if (onPage) { try { onPage(items, kw, page); } catch (e) { /* 渲染层异常不拦取数 */ } }
+        if (!items.length) return out;
+        if (cutoff) {
+          var last = items[items.length - 1];       // sort=time 降序：末条即本页最旧
+          if ((last && last.ctime || 0) < cutoff) return out;
+        }
+        if (page >= maxPages) return out;
+        return new Promise(function (r) { setTimeout(r, 120); }).then(step);
+      });
+    }
+    return step();
+  }
+
   /** 按词表逐个检索（串行 + 120ms 间隔防限流，参考页实测安全值）。
-   *  onEach(items, kw)：每词完成即回调 —— 视图用它做渐进渲染。
+   *  onEach(items, kw)：每页/每词完成即回调 —— 视图用它做渐进渲染。
+   *  opts.deep：翻页深扫（否则每词只取第 1 页的增量快扫）；
+   *  opts.cutoffSec / opts.maxPages：深扫终止参数；opts.onWord(kw, count) 每词收尾回调。
    *  resolve(全部原始条目)；单词失败只跳过该词，不打断整轮。 */
-  function fetchNewsSearchMulti(keywords, perSize, onEach) {
+  function fetchNewsSearchMulti(keywords, perSize, onEach, opts) {
     var list = (keywords || []).filter(Boolean);
+    var o = opts || {};
     var out = [];
     var i = 0;
     return new Promise(function (resolve) {
       function step() {
         if (i >= list.length) return resolve(out);
         var kw = list[i++];
-        fetchNewsSearch(kw, perSize).then(function (items) {
+        var got = 0;
+        function pageCb(items) {
           items = items || [];
+          got += items.length;
           out = out.concat(items);
           if (onEach) { try { onEach(items, kw); } catch (e) { /* 渲染层异常不拦取数 */ } }
+        }
+        function wordDone() {
+          if (o.onWord) { try { o.onWord(kw, got); } catch (e) { /* 同上 */ } }
           setTimeout(step, 120);
-        }).catch(function () { setTimeout(step, 120); });
+        }
+        var pr = o.deep
+          ? fetchNewsSearchPaged(kw, { pageSize: perSize, maxPages: o.maxPages, cutoffSec: o.cutoffSec }, pageCb)
+          : fetchNewsSearch(kw, perSize).then(pageCb);
+        pr.then(wordDone).catch(wordDone);
       }
       step();
     });
@@ -7311,6 +7523,7 @@ XJ.fetcher = (function () {
     hkReportDate: hkReportDate,
     fetchDividends: fetchDividends,
     fetchNewsSearch: fetchNewsSearch,
+    fetchNewsSearchPaged: fetchNewsSearchPaged,
     fetchNewsSearchMulti: fetchNewsSearchMulti,
     fetchNewsSinaPage: fetchNewsSinaPage,
     parseNewsEm: parseNewsEm,
@@ -11604,70 +11817,35 @@ XJ.calc = (function () {
    *   两表分离：检索召回靠东财全文相关性，精度靠标题二次命中。 */
 
   var NEWS_RULES = {
-    /* 图七监控清单（严格版，10-08 用户拍板）。同一主体的别名同行注释；
-       拉丁词按不区分大小写 + 词边界匹配 */
+    /* 监控清单（10-08 用户二次拍板：仅保留图示公司/家族，其余全删）。
+       同一主体的别名同行注释；拉丁词按不区分大小写 + 词边界匹配。
+       ★ 日本商社只收中文全称与唯一性拉丁词：'Mitsubishi'/'Sumitomo'/'Mitsui' 裸词
+         会误伤三菱电机/住友不动产/三井不动产等同族公司，不进表 */
     entities: [
       /* 北美 */
       '伯克希尔', '巴菲特', '波克夏', '哈撒韦', 'BRK', 'Berkshire',   /* Berkshire */
       '布鲁克菲尔德', 'Brookfield',
-      '黑石', 'Blackstone',
-      'KKR',
-      '阿波罗', 'Apollo',                                             /* Apollo/Athene */
-      '新纪元能源', 'NextEra',
-      '星座能源', 'Constellation Energy',
-      '加拿大自然资源',
-      '森科能源', 'Suncor',
-      'Cenovus',
-      '卡梅科', 'Cameco',
       /* 欧洲 */
       'Exor',
-      'LVMH', '路威酩轩', '阿尔诺',
-      '西门子', 'Siemens',
-      '施耐德', 'Schneider',
-      'E.ON', '意昂',
-      'RWE', '莱茵集团',
-      'National Grid', '英国国家电网',   /* ★ 不收裸'国家电网'：会误伤中国国家电网 */
-      '罗氏', 'Roche',
-      '诺华', 'Novartis',
-      '雀巢', 'Nestle',
-      '英力士', 'INEOS',
-      /* 日本 */
-      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红',
-      '软银', 'SoftBank',
-      '丰田', 'Toyota',
-      '三菱日联', 'MUFG',
-      '三井住友', 'SMFG',
-      '东京电子', 'Tokyo Electron',
-      '信越', 'Shin-Etsu',
-      '基恩士', 'Keyence',
-      '发那科', 'FANUC',
-      /* 大中华/香港：长和系四平台 + 李氏家族代称。★ '长和' 裸词不进表：
+      /* 日本：五大商社 */
+      '三菱商事', '三井物产', '伊藤忠', 'ITOCHU', '住友商事', '丸红', 'Marubeni',
+      /* 大中华/香港：李氏家族 + 长和系四平台。★ '长和' 裸词不进表：
          中文动词短语「断粮仍能长和生存」会子串误伤（真实数据踩过），只收明确后缀 */
-      '李嘉诚', '长和系', '长和集团', '长和实业',
+      '李嘉诚', '李泽钜', '长和系', '长和集团', '长和实业',
       '长江和记', 'CK Hutchison',
       '长江实业', '长实集团', 'CK Asset',
       '长江基建', 'CK Infrastructure',
       '电能实业', 'Power Assets',
-      '恒基兆业', '恒基地产',
-      '新鸿基',
-      '嘉里建设', '香格里拉',
-      '丰益国际', '益海嘉里',
-      '新世界发展',   /* ★ 图七字面'新世界'太泛（新世界纪录/秩序），收港交所简称 */
-      '腾讯',
-      '阿里', '阿里巴巴',
+      /* 新加坡 */
+      '淡马锡', 'Temasek',
     ],
-    /* 检索词表：每主体 1 个主词（东财按词检索，48 次/轮、串行防限流）。
+    /* 检索词表：每主体 1 个主词（东财按词检索，14 次/轮、串行防限流）。
        别名不单独检索 —— 东财全文相关性会把别名标题召回，标题命中词表把关。 */
     searchTerms: [
-      '伯克希尔', '布鲁克菲尔德', '黑石', 'KKR', '阿波罗', '新纪元能源',
-      '星座能源', '加拿大自然资源', '森科能源', 'Cenovus', 'Cameco',
-      'Exor', 'LVMH', '西门子', '施耐德', 'E.ON', 'RWE', 'National Grid',
-      '罗氏', '诺华', '雀巢', '英力士',
-      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红', '软银', '丰田',
-      '三菱日联', '三井住友', '东京电子', '信越化学', '基恩士', '发那科',
-      '长江和记', '李嘉诚', '长江实业', '长江基建', '电能实业',
-      '恒基兆业', '新鸿基', '嘉里建设', '香格里拉', '丰益国际', '新世界发展',
-      '腾讯', '阿里',
+      '伯克希尔', '布鲁克菲尔德', 'Exor',
+      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红',
+      '李嘉诚', '长江和记', '长江实业', '长江基建', '电能实业',
+      '淡马锡',
     ],
     /* 完成时态 / 金额结构词：有了实体还不够，必须有「动作 + 量级」才像已成交事实。
        ★ 只判标题：东财文章正文几乎必含「亿/%」，正文判结构等于没判 */
@@ -11694,15 +11872,21 @@ XJ.calc = (function () {
       '指数', '综指', '股指', '大盘', '巴菲特指标', '沪深京', '沪指', '深成指', '创业板',
       '恒指', '国指', '纳指', '道指', '标普', '日内涨', '日内跌',
     ],
-    /* 误报排除词：一票否决（真实数据里发现的子串误伤，10-08）。
-       '自然资源部'：东财检索「加拿大自然资源」命中《国家能源局会见加拿大
-       自然资源部国务秘书》——政府部门与公司同名的真实歧义 */
-    blocklist: [
-      '自然资源部',
-      '香格里拉对话',   /* 防务论坛命中「香格里拉」 */
-      '阿波罗计划',     /* 航天语境命中「阿波罗」 */
-    ],
+    /* 误报排除词：一票否决（真实数据里发现的子串误伤）。
+       10-08 清单收窄后，旧条目（自然资源部/香格里拉对话/阿波罗计划）随主体删除而失效 */
+    blocklist: [],
   };
+
+  /* 重点标记词（10-08 用户拍板）：李嘉诚家族（含长和系四平台）与伯克希尔两类新闻
+   * 在时间轴上加金色「★ 重点」徽章 + 金描边，但不置顶、不打乱时间序。 */
+  var NEWS_FEATURED = [
+    '伯克希尔', '巴菲特', '波克夏', '哈撒韦', 'BRK', 'Berkshire',
+    '李嘉诚', '李泽钜', '长和系', '长和集团', '长和实业',
+    '长江和记', 'CK Hutchison',
+    '长江实业', '长实集团', 'CK Asset',
+    '长江基建', 'CK Infrastructure',
+    '电能实业', 'Power Assets',
+  ];
 
   /** 词表命中：纯中文走 indexOf；拉丁词按不区分大小写 + 词边界匹配
    *  （★ \b 必须有：否则 GIC 会命中 Ma[gic]9、PIF 会命中任意英文子串 —— 真实数据踩过） */
@@ -11744,7 +11928,13 @@ XJ.calc = (function () {
     }
     if (!hits.length) return null;
     for (i = 0; i < NEWS_RULES.facts.length; i++) {
-      if (newsTextHas(text, NEWS_RULES.facts[i])) return { hits: hits };
+      if (newsTextHas(text, NEWS_RULES.facts[i])) {
+        var feat = false;
+        for (i = 0; i < NEWS_FEATURED.length; i++) {
+          if (newsTextHas(text, NEWS_FEATURED[i])) { feat = true; break; }
+        }
+        return { hits: hits, feat: feat };
+      }
     }
     return null;
   }
@@ -11900,6 +12090,7 @@ XJ.calc = (function () {
     bollSignal: bollSignal,
     /* v7 新增（六 Tab 三期）：新闻硬规则 */
     NEWS_RULES: NEWS_RULES,
+    NEWS_FEATURED: NEWS_FEATURED,
     newsFilter: newsFilter,
     newsWlHits: newsWlHits,
     newsTimeText: newsTimeText,
@@ -13341,14 +13532,18 @@ XJ.ui = (function () {
       为什么不用「先加 closing 类再延时移除」：那会把 closeSheet 变成异步语义，
       开 A→关 A→开 B 的流程里 B 会被挂起的清场定时器一起删掉（实测 uitest 全线挂）。
       immediate=true 或 reduced-motion：不播动画。 */
-  function closeSheet(immediate) {
+  var sheetHist = null;
+
+  function closeSheet(immediate, silentHist) {
     var root = document.getElementById('modal-root');
     if (!root) return;
     var mask = root.querySelector('.mask');
     if (!mask) return;
+    var hid = sheetHist && sheetHist.id;
     var animate = !immediate && !(XJ.anim && XJ.anim.reduced());
     var ghost = animate ? mask.cloneNode(true) : null;
     root.innerHTML = '';
+    sheetHist = null;
     if (ghost) {
       ghost.classList.add('closing');
       var host = document.createElement('div');
@@ -13358,11 +13553,15 @@ XJ.ui = (function () {
       document.body.appendChild(host);
       setTimeout(function () { if (host.parentNode) host.parentNode.removeChild(host); }, 240);
     }
+    /* 入栈的内容型 sheet 被 UI 关闭时通知 app 弹掉对应历史条目（栈与画面同步）；
+       silentHist = 调用方自己在同步栈（openSheet 顶替旧层 / popstate 还原），不要再 back() */
+    if (hid && !silentHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(hid);
   }
 
   function openSheet(opts) {
     opts = opts || {};
-    closeSheet();
+    var prevHist = sheetHist && sheetHist.id;
+    closeSheet(false, true);
     var root = document.getElementById('modal-root');
     var mask = document.createElement('div');
     mask.className = 'mask';
@@ -13372,10 +13571,19 @@ XJ.ui = (function () {
     mask.innerHTML = '<div class="sheet">' + inner + '</div>';
     mask.addEventListener('click', function (e) { if (e.target === mask) closeSheet(); });
     root.appendChild(mask);
+    sheetHist = opts.hist ? { id: opts.hist, arg: opts.histArg === undefined ? null : opts.histArg } : null;
     var sheet = mask.querySelector('.sheet');
     if (opts.onMount) opts.onMount(sheet);
+    /* 入栈 sheet 被无栈 sheet 顶替（如分组选择里点「新建分组」开表单）：
+       旧 sheet 不会再回来，静默弹掉它的历史条目，保持栈与画面同步 */
+    if (prevHist && !sheetHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(prevHist);
+    if (sheetHist && XJ.app && XJ.app.onSheetOpen) XJ.app.onSheetOpen(sheetHist.id);
     return sheet;
   }
+
+  /** 当前打开的入栈 sheet 标识（history 还原用；未入栈 sheet 为 null） */
+  function sheetHistId() { return sheetHist ? sheetHist.id : null; }
+  function sheetHistArg() { return sheetHist ? sheetHist.arg : null; }
 
   function confirmDialog(opts) {
     return new Promise(function (resolve) {
@@ -13456,6 +13664,8 @@ XJ.ui = (function () {
     toast: toast,
     openSheet: openSheet,
     closeSheet: closeSheet,
+    sheetHistId: sheetHistId,
+    sheetHistArg: sheetHistArg,
     confirm: confirmDialog,
     on: on,
     installDelegation: installDelegation,
@@ -13805,8 +14015,10 @@ XJ.views.common = (function () {
 
   /* ---------------- 个股详情：跳转到独立页（见 views/symbol.js） ---------------- */
   function openSymbolDetail(symbol) {
+    if (XJ.app && XJ.app.openSymbolPage) { XJ.app.openSymbolPage(symbol); return; }
     XJ.store.setUI({ subPage: 'symbol', subArg: symbol, floatOpen: false });
     window.scrollTo(0, 0);
+    if (XJ.app && XJ.app.ensureSymbolDividends) XJ.app.ensureSymbolDividends(symbol);
   }
 
   return {
@@ -16113,7 +16325,7 @@ XJ.views.watchlist = (function () {
 /* ==================== 视图：搜索加自选（subPage · 图五） ====================
  * 顶部搜索框（smartbox 联想，fetcher.fetchSymbolSearch）→ 结果行 =
  * 官方 Logo + 名称 + 市场·代码 + 价格 + 涨跌%（涨红跌绿）+ 右侧星标（图五）。
- * 范围：仅 A股 / 港股 / 美股 / ETF（确认过的决策；场外基金与指数排除）。
+ * 范围：A股 / 港股 / 美股(指数成分) / 日股(日经225成分) / ETF（确认过的决策；场外基金与指数排除）。
  * 点星 → 分组选择 sheet（单选 + 新建分组）；已在自选 = 实心星，可换组或移除。
  * 行情走模块级 memo（TTL 60s）；列表在输入态下【局部更新】，不整页重绘（保焦点）。
  */
@@ -16128,7 +16340,9 @@ XJ.views.search = (function () {
 
   function ensurePx(syms, onDone) {
     var want = syms.filter(function (s) { return !pxMemo.quotes[s]; });
-    if (pxPending || !want.length) { if (onDone) onDone(); return; }
+    /* 无新行情可取（或另一批在途）就不回调：在途批次完成时会自己刷新，无待取时列表已带缓存行情。
+       同步调 onDone 会 listHtml→ensurePx→onDone→listHtml 无限递归（stack overflow） */
+    if (pxPending || !want.length) return;
     pxPending = true;
     XJ.fetcher.fetchQuotes(want).then(function (qs) {
       pxPending = false;
@@ -16145,10 +16359,13 @@ XJ.views.search = (function () {
     return pxMemo.quotes[sym] || XJ.store.state.quoteCache[sym] || null;
   }
 
-  /** 只放行 A股/港股/美股/ETF；指数与场外基金排除 */
+  /** 只放行 A股/港股/美股/ETF/日股；指数与场外基金排除；
+   *  美股/日股另受指数成分白名单约束（标普500/纳指100/道指30/日经225） */
   function tradable(sym) {
     var mk = XJ.model.marketOf(sym);
-    if (['sh', 'sz', 'bj', 'hk', 'us'].indexOf(mk) < 0) return false;
+    if (['sh', 'sz', 'bj', 'hk', 'us', 'jp'].indexOf(mk) < 0) return false;
+    if (mk === 'us' && !XJ.universe.hasUs(sym)) return false;
+    if (mk === 'jp' && !XJ.universe.hasJp(sym)) return false;
     try {
       var at = XJ.market.assetType(sym);
       if (at === 'of' || at === 'INDEX' || at === '指数') return false;
@@ -16165,7 +16382,7 @@ XJ.views.search = (function () {
     var pct = chg !== null && q.prevClose ? chg / q.prevClose * 100 : null;
     var dir = chg === null ? '' : (chg >= 0 ? 'c-up' : 'c-down');
     var inWl = XJ.store.wlHas(sym);
-    var mktLabel = { sh: 'SH', sz: 'SZ', bj: 'BJ', hk: 'HK', us: 'US' }[XJ.model.marketOf(sym)] || '';
+    var mktLabel = { sh: 'SH', sz: 'SZ', bj: 'BJ', hk: 'HK', us: 'US', jp: 'JP' }[XJ.model.marketOf(sym)] || '';
     return '<div class="card wl-row srch-row">' +
       '<div class="wl-av">' + UI.avatar(hit.name, sym, 40, C.logoFor(sym)) + '</div>' +
       '<div class="wl-nm"><span>' + U.esc(hit.name) + '</span><b>' + U.esc(hit.code) + ' · ' + mktLabel + '</b></div>' +
@@ -16187,7 +16404,7 @@ XJ.views.search = (function () {
     }
     if (!memo.hits.length) {
       return '<div class="card" style="text-align:center;padding:30px 18px">' +
-        '<div class="tiny" style="font-size:12.5px">没有匹配的 A股 / 港股 / 美股 / ETF</div></div>';
+        '<div class="tiny" style="font-size:12.5px">没有匹配的 A股 / 港股 / 美股成分 / 日经225成分 / ETF</div></div>';
     }
     var shown = memo.hits.slice(0, 20);
     ensurePx(shown.map(function (h) { return h.symbol; }), function () {
@@ -16214,7 +16431,18 @@ XJ.views.search = (function () {
       XJ.fetcher.fetchSymbolSearch(kw).then(function (hits) {
         if (memo.kw !== kw) return;                       // 已有更新的输入，丢弃旧结果
         memo.hits = (hits || []).filter(function (h) { return tradable(h.symbol); });
+        /* 腾讯联想不覆盖日股：白名单本地匹配补齐（日股唯一入口、美股兜底） */
+        XJ.universe.searchLocal(kw).forEach(function (h) {
+          if (tradable(h.symbol) && !memo.hits.some(function (x) { return x.symbol === h.symbol; })) memo.hits.push(h);
+        });
         refreshList();
+        /* 搜索行头像：自选/非持仓标的此前不解析 logo → 命中后异步补官方图标，
+           回填走局部刷新（不整页重绘，保输入焦点） */
+        if (XJ.app && XJ.app.ensureLogosFor) {
+          XJ.app.ensureLogosFor(memo.hits.slice(0, 12).map(function (h) { return h.symbol; }), function () {
+            if (memo.kw === kw) refreshList();
+          });
+        }
       });
     }, 260);
   }
@@ -16225,7 +16453,7 @@ XJ.views.search = (function () {
       '<input id="wl-srch" type="search" placeholder="代码 / 名称 / 拼音" value="' + U.esc(memo.kw) + '" autocomplete="off">' +
       (memo.kw ? '<button class="srch-clear" data-act="srchClear" aria-label="清空">' + UI.icon('close', 13) + '</button>' : '') +
       '</div>' +
-      '<div class="tiny" style="margin-top:8px">仅支持 A股 · 港股 · 美股 · ETF（场外基金暂不支持自选）</div>' +
+      '<div class="tiny" style="margin-top:8px">支持 A股 · 港股 · ETF · 美股（限标普/纳指100/道指成分）· 日股（限日经225成分）；场外基金暂不支持自选</div>' +
       '</div>' +
       '<div id="wl-srch-list">' + listHtml() + '</div>';
   }
@@ -16260,17 +16488,20 @@ XJ.views.search = (function () {
  * 结构：规则横幅 + 「仅查看自选」开关（ui.wlNewsOnly，默认关）+ 时间轴列表
  *       （左列日期同日仅首条显示 + 绿点 + 竖线，北京时间）+ 空态 + 红线页脚。
  * 与旧版（同花顺 tapp 全量翻页回看）的差异：请求量 3000+ 条 → ~400 条；
- *   每条自带来源媒体与原文链接；冷词会翻出数月前旧闻，靠 15 天时间下限挡。
+ *   每条自带来源媒体与原文链接；冷词会翻出数年前旧闻，靠一年时间下限挡。
+ * 回看窗口一年（10-08 用户拍板）：深扫每词翻页（≤8 页）直到覆盖 cutoff；
+ *   增量轮（TTL 到期）只扫每词第 1 页，新条目天然在头部。
  */
 XJ.views.news = (function () {
   var U = XJ.util, UI = XJ.ui;
 
-  var PER_SIZE = 8;              // 每主体词取东财最新 N 条（fetcher.NEWS_SEARCH_PER_SIZE 同源）
+  var PER_SIZE = 20;             // 每页条数（fetcher.NEWS_SEARCH_PER_SIZE 同源默认值）
+  var NEWS_MAX_PAGES = 8;        // 深扫每词翻页上限（20×8=160 条/词，请求预算兜底）
   var SINA_MAX_PAGES = 3;        // 新浪兜底翻页上限（总库存仅约 900 条）
   var INCR_TTL = 10 * 60 * 1000; // 增量拉取间隔：进页 10 分钟内不重复请求
-  var CAP = 200;                 // 缓存命中上限（防极端行情日撑爆 localStorage）
-  var LOOKBACK_DAYS = 15;        // 时间下限：冷词检索会翻出数月前旧闻，15 天外一律丢弃
-  var CACHE_V = 3;               // 缓存口径版本：词表/窗口/主源变更后 +1，旧缓存整轮重扫
+  var CAP = 500;                 // 缓存命中上限（一年窗口下 200 会截断热主体）
+  var LOOKBACK_DAYS = 365;       // 时间下限：冷词检索会翻出数年前旧闻，一年外一律丢弃
+  var CACHE_V = 4;               // 缓存口径版本：词表/窗口/主源变更后 +1，旧缓存整轮重扫
 
   var pulling = false;           // 本轮检索（含兜底）进行中
   var live = null;               // 本轮累积命中（已合并排序）；收尾后归 null
@@ -16286,20 +16517,21 @@ XJ.views.news = (function () {
     return c && Array.isArray(c.hits) ? c.hits : [];
   }
 
-  /** 进页自动补数：没跑过 / 缓存口径过期 / 过 TTL → 重跑一轮检索。
-   *  东财 sort=time 返回的天然是最新条目，增量靠 newsMerge 按 id 去重。 */
+  /** 进页自动补数：没跑过 / 缓存口径过期 → 翻页深扫；过 TTL → 只扫每词第 1 页
+   *  （sort=time 的新条目都在头部，增量轮不必翻页）。 */
   function ensureNews() {
     if (pulling) return;
     var c = XJ.store.state.newsCache;
-    if (!c || !c.covered || c.v !== CACHE_V || Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull();
+    if (!c || !c.covered || c.v !== CACHE_V) { runPull(true); return; }
+    if (Date.now() - (c.sweepMs || 0) >= INCR_TTL) runPull(false);
   }
 
   /**
-   * 检索轮：searchTerms 逐词查东财，每词命中即渐进渲染；收尾才 commitNow 落盘
-   * （中途关页丢弃本轮，下次进页重来——与「宁缺勿滥」同口径）。
+   * 检索轮：searchTerms 逐词查东财（deep 时翻页到覆盖一年），每页命中即渐进渲染；
+   * 收尾才 commitNow 落盘（中途关页丢弃本轮，下次进页重来——与「宁缺勿滥」同口径）。
    * 旧命中先铺底：列表不闪断。
    */
-  function runPull() {
+  function runPull(deep) {
     pulling = true;
     prog = { done: 0, total: 0, via: '' };
     live = XJ.calc.newsMerge(cacheHits(), [], cutoffSec(), CAP);
@@ -16320,7 +16552,7 @@ XJ.views.news = (function () {
         live.push({
           id: raw.id, title: raw.title, digest: raw.digest, url: raw.url,
           source: raw.source, tags: (raw.tags || []).slice(0, 3),
-          ents: m.hits.slice(0, 3), ctime: raw.ctime,
+          ents: m.hits.slice(0, 3), feat: m.feat ? 1 : 0, ctime: raw.ctime,
         });
         if (raw.ctime > newest) newest = raw.ctime;
       });
@@ -16346,10 +16578,15 @@ XJ.views.news = (function () {
     }
 
     XJ.fetcher.fetchNewsSearchMulti(terms, PER_SIZE, function (items) {
-      prog.done++;
-      if (items && items.length) emOk++;
       absorb(items);
-      notify();                                      // 每词先渲染出去（动效层 400ms 节流兜着）
+      notify();                                      // 每页先渲染出去（动效层 400ms 节流兜着）
+    }, {
+      deep: deep, cutoffSec: cutoffSec(), maxPages: NEWS_MAX_PAGES,
+      onWord: function (kw, count) {                 // 每词收尾才推进进度（深扫一词多页）
+        prog.done++;
+        if (count) emOk++;
+        notify();
+      },
     }).then(function () {
       if (emOk > 0) { publish(true, 'em'); return; }
       /* 东财整轮颗粒无收（接口挂/全词失败）→ 新浪 7x24 兜底，1 页有数据才续 2~3 页 */
@@ -16370,10 +16607,10 @@ XJ.views.news = (function () {
     }).catch(function () { publish(true, 'em'); });
   }
 
-  /** 手动刷新（空态按钮 / 详情页脚）：强制全量重检 */
+  /** 手动刷新（空态按钮 / 详情页脚）：强制全量深扫重检 */
   function refresh() {
     if (pulling) { UI.toast('正在检索中，请稍候…'); return; }
-    runPull();
+    runPull(true);
   }
 
   /* ---------------- 渲染 ---------------- */
@@ -16396,10 +16633,12 @@ XJ.views.news = (function () {
     return names;
   }
 
-  /** 时间轴行：左列日期（同日仅首条显示，传 null 则占位空）+ 绿点 + 竖线 */
+  /** 时间轴行：左列日期（同日仅首条显示，传 null 则占位空）+ 绿点 + 竖线。
+   *  重点主体（李嘉诚家族/伯克希尔）加金色「★ 重点」徽章 + 行金描边，不置顶 */
   function rowHtml(h, day, names) {
     var rel = XJ.calc.newsWlHits(h, names);
     var pills = '';
+    if (h.feat) pills += '<span class="pill gold">★ 重点</span>';
     (h.ents || []).forEach(function (e) {
       pills += '<span class="pill blue">' + U.esc(e) + '</span>';
     });
@@ -16408,7 +16647,7 @@ XJ.views.news = (function () {
       pills += '<span class="pill gold">' + U.esc(n) + '</span>';
     });
     if (h.source) pills += '<span class="tl-src">' + U.esc(h.source) + '</span>';
-    return '<div class="news-row" data-act="newsOpen" data-id="' + U.esc(h.id) + '" role="button">' +
+    return '<div class="news-row' + (h.feat ? ' feat' : '') + '" data-act="newsOpen" data-id="' + U.esc(h.id) + '" role="button">' +
       '<div class="tl-side">' +
       '<div class="tl-date">' + (day ? U.esc(day) : '') + '</div>' +
       '<div class="tl-dot"></div><div class="tl-line"></div></div>' +
@@ -16447,7 +16686,7 @@ XJ.views.news = (function () {
 
     if (pulling) {
       html += '<div class="news-prog">' + UI.icon('refresh', 13) +
-        '<span>正在按 ' + prog.total + ' 个监控主体检索近 ' + LOOKBACK_DAYS + ' 天动态… ' +
+        '<span>正在按 ' + prog.total + ' 个监控主体检索近一年动态… ' +
         prog.done + '/' + prog.total + (prog.via === 'sina' ? '（新浪兜底）' : '') +
         '</span></div>';
     }
@@ -16457,7 +16696,7 @@ XJ.views.news = (function () {
         html += '<div class="card" style="text-align:center;padding:30px 18px">' +
           '<div class="tiny">正在按硬规则筛选检索结果，命中的动态会陆续出现在这里…</div></div>';
       } else {
-        html += UI.emptyState('📰', '近 ' + LOOKBACK_DAYS + ' 天无相关动态',
+        html += UI.emptyState('📰', '近一年无相关动态',
           '硬规则只收已成交的可核验事实，宁缺勿滥。',
           '<button class="btn-block" data-act="newsRefresh" style="max-width:220px;margin:14px auto 0">手动刷新</button>');
       }
@@ -16479,19 +16718,21 @@ XJ.views.news = (function () {
     return html;
   }
 
-  /** 点行 → 详情 sheet（全文 + 来源 + 时间 + 标签 + 原文链接） */
-  function openDetail(id) {
+  /** 点行 → 详情 sheet（全文 + 来源 + 时间 + 标签 + 原文链接）。
+   *  fromHist = popstate 还原重开，不再压栈 */
+  function openDetail(id, fromHist) {
     var h = null;
     (live || cacheHits()).forEach(function (x) { if (x.id === id) h = x; });
     if (!h) { UI.toast('条目已过期，请刷新后再试'); return; }
     var full = XJ.calc.newsTimeText(h.ctime);
-    var tags = (h.tags || []).map(function (t) {
+    var tags = (h.feat ? '<span class="pill gold">★ 重点</span>' : '') + (h.tags || []).map(function (t) {
       return '<span class="pill gray">' + U.esc(t) + '</span>';
     }).join('') + (h.ents || []).map(function (e) {
       return '<span class="pill blue">' + U.esc(e) + '</span>';
     }).join('');
     UI.openSheet({
       title: '快讯详情',
+      hist: fromHist ? null : 'news', histArg: id,
       html: '<div class="nd-tt">' + U.esc(h.title) + '</div>' +
         '<div class="nd-meta">' + U.esc(full) + ' · ' + U.esc(h.source || '快讯') + '</div>' +
         (tags ? '<div class="nr-meta" style="margin-top:10px">' + tags + '</div>' : '') +
@@ -17107,8 +17348,11 @@ XJ.views.symbol = (function () {
     /* ② 没有可用的财年方案 */
     if (!steps.length) {
       return open + head('—') +
-        '<div class="tiny" style="line-height:1.7">还没有可用的年报分红数据。' +
-        '点下方「同步该标的数据」获取分红方案后即可绘制。</div></div>';
+        '<div class="tiny" style="line-height:1.7">' +
+        (st.ui.symLoading === symbol ? '正在同步分红数据…' :
+          '还没有可用的年报分红数据。' +
+          '点下方「同步该标的数据」获取分红方案后即可绘制。') +
+        '</div></div>';
     }
 
     /* ③ 有方案但收盘价缓存还没到位 */
@@ -17116,7 +17360,7 @@ XJ.views.symbol = (function () {
       return open + head('—',
         '<button class="ghost-btn" data-act="refreshOne" data-symbol="' + U.esc(symbol) + '">刷新</button>') +
         '<div class="tiny" style="line-height:1.7">' +
-        (st.ui.busy ? '正在获取历史收盘价…' : '还没有历史收盘价。点右上「刷新」拉取后即可绘制曲线。') +
+        (st.ui.busy || st.ui.symLoading === symbol ? '正在获取历史收盘价…' : '还没有历史收盘价。点右上「刷新」拉取后即可绘制曲线。') +
         '</div></div>';
     }
 
@@ -17513,7 +17757,9 @@ XJ.views.symbol = (function () {
       '<div class="spacer"></div>' +
       '<button class="ghost-btn" data-act="openBasisEditor" data-symbol="' + U.esc(symbol) + '">口径</button></div></div>';
     if (!plans.length) {
-      html += '<div style="padding:0 16px 16px" class="tiny">暂无分红数据，点下方「同步该标的数据」获取。</div>';
+      html += '<div style="padding:0 16px 16px" class="tiny">' +
+        (st.ui.symLoading === symbol ? '正在同步分红数据…' : '暂无分红数据，点下方「同步该标的数据」获取。') +
+        '</div>';
     } else if (planFolded) {
       html += '<div style="padding:0 16px 14px" class="tiny">已收起，共 ' + plans.length +
         ' 条方案与预案 · 点标题展开查看</div>';
@@ -17963,6 +18209,78 @@ XJ.views.symbol = (function () {
   }
 
   /**
+   * 批量补齐任意标的（含自选非持仓）的公司图标 —— 修「搜索行/自选行显示汉字头像」。
+   * 与 resolveLogosNow 的差异：不限持仓、由调用方指定 symbol 清单、完成后回调 onDone
+   * （搜索页用它做列表局部刷新，保住输入框焦点）。
+   * 去重：已有 ok 结论 / 今天已试过 / 在途请求，一律跳过（logoStale 同口径）。
+   */
+  var logoPending = {};
+  function ensureLogosFor(syms, onDone) {
+    /* 只在真拿到新图标时回调：空结果也回调会让调用方（搜索列表）反复重渲染再入本函数 */
+    function finish(got) { if (got && onDone) { try { onDone(got); } catch (e) { /* 渲染层异常不拦取数 */ } } return got; }
+    if (!S.state) return Promise.resolve(finish(0));
+    var today = U.today();
+    var algo = XJ.fetcher.LOGO_ALGO;
+    var need = [];
+    (syms || []).forEach(function (sym) {
+      if (!sym || logoPending[sym]) return;
+      var rec = S.state.symbols[sym];
+      if (!rec) {
+        /* 无任何 logo 数据源的市场（日股/场外基金/ETF）不建壳、不解析 —— 保持汉字头像 */
+        if (!XJ.market.orgInfoQuery(sym) && !XJ.market.thsF10Url(sym)) return;
+        /* 直接建壳、不走 S.commit：commit 会同步重绘 → 搜索列表再次调用本函数造成递归；
+           结尾的 commitNow 会把记录一并落盘 */
+        rec = S.state.symbols[sym] = M.symbolRecord(sym, {});
+      }
+      if (!XJ.market.logoStale(rec, today, algo)) return;
+      logoPending[sym] = 1;
+      need.push({ symbol: sym, domain: rec.domain || null });
+    });
+    if (!need.length) return Promise.resolve(finish(0));
+
+    return Promise.resolve().then(function () {
+      /* 自选股没走过持仓的域名抓取：先补官网域名（A/港/美有 F10 源），再验真候选 */
+      var miss = need.filter(function (it) { return !it.domain; }).map(function (it) { return it.symbol; });
+      if (!miss.length) return null;
+      return XJ.fetcher.fetchCompanyDomains(miss).then(function (m) {
+        need.forEach(function (it) {
+          if (!it.domain && m && m[it.symbol]) {
+            it.domain = m[it.symbol];
+            var r = S.state.symbols[it.symbol];
+            if (r) r.domain = m[it.symbol];
+          }
+        });
+      }).catch(function () { });
+    }).then(function () {
+      return XJ.fetcher.resolveLogos(need, 2);
+    }).then(function (hits) {
+      var got = 0;
+      need.forEach(function (it) {
+        delete logoPending[it.symbol];
+        var rec = S.state.symbols[it.symbol];
+        if (!rec) return;
+        var hit = hits[it.symbol];
+        rec.logoResolvedOn = today;
+        rec.logoAlgo = algo;
+        if (hit && hit.url) {
+          rec.logoUrl = hit.url;
+          rec.logoSource = hit.source;
+          rec.logoState = 'ok';
+          got++;
+        } else if (rec.logoState !== 'ok') {
+          rec.logoUrl = null;
+          rec.logoState = 'bad';
+        }
+      });
+      S.commitNow(null);
+      return finish(got);
+    }).catch(function () {
+      need.forEach(function (it) { delete logoPending[it.symbol]; });
+      return finish(0);
+    });
+  }
+
+  /**
    * 保证对比指数有历史日线（每天刷新一次，缓存落在 state.indexHistory）。
    * 只在「收益率」曲线被打开时才需要，避免无谓请求。
    */
@@ -18332,6 +18650,48 @@ XJ.views.symbol = (function () {
     });
   }
 
+  /**
+   * 打开自选（非持仓）标的详情时自动补分红数据 —— 修「股息率/分红档案/分红记录全空白」。
+   * 根因：state.plans / received / yieldHistory 只由 refreshAll（仅持仓）填充，
+   * 而 symbol 页纯读缓存不发请求。这里按单只补齐：方案 + 长历史收盘（股息率曲线）+ 实时行情。
+   * 去重：已有方案 / 在途请求直接跳过；美股日股无分红源 → 不拉，详情页走警示卡。
+   */
+  var divPending = {};
+  function ensureSymbolDividends(sym) {
+    if (!S.state || !sym) return;
+    if (!XJ.market.dividendSource(sym)) return;
+    if (divPending[sym]) return;
+    if ((C.plansOf(S.state, sym) || []).length) return;
+    divPending[sym] = 1;
+    S.setUI({ symLoading: sym });
+    var ycodes = {};
+    var yrec = S.state.symbols[sym];
+    if (yrec && yrec.quoteCode) ycodes[sym] = yrec.quoteCode;
+    var yPr = XJ.market.supportsYieldCurve(sym)
+      ? XJ.fetcher.fetchYieldHistory([sym], { codes: ycodes }).then(function (map) {
+        var pack = map && map[sym];
+        if (pack && pack.day && pack.day.length >= 2) {
+          S.state.yieldHistory[sym] = { v: 2, at: U.today(), day: pack.day };
+        }
+      }).catch(function () { /* 曲线取数失败不拦档案 */ })
+      : Promise.resolve();
+    Promise.all([
+      XJ.fetcher.fetchQuotes([sym]).then(function (q) {
+        if (S.mergeQuotes(q)) S.commitNow(null);
+      }).catch(function () { }),
+      pullPlansFor(sym),
+      yPr,
+    ]).then(function () {
+      C.applyAutoReceived(S.state);
+      delete divPending[sym];
+      S.commitNow(null);
+      S.setUI({ symLoading: null });
+    }).catch(function () {
+      delete divPending[sym];
+      S.setUI({ symLoading: null });
+    });
+  }
+
   /* ---------------- 通用表单辅助 ---------------- */
   function accountOptions(selected) {
     return S.accounts().map(function (a) {
@@ -18369,17 +18729,83 @@ XJ.views.symbol = (function () {
   }
 
   /* ---------------- 交互动作 ---------------- */
+  /* ==================== 手机端侧滑返回：history 返回栈 ====================
+   * 应用原是纯状态驱动 show/hide，完全没有历史条目 —— 手机端侧滑（浏览器返回）
+   * 会直接退出 app。这里给每次「打开新层级」（切 Tab / 二级页 / 内容型 sheet）
+   * push 一条历史，popstate 时按 state 还原 UI；最初首页处用 guard 条目接住
+   * 第一次侧滑提示「再滑一次退出」，窗口内第二次才真正退出（系统默认行为）。
+   * pushState 传 '' 不动 URL，#xjsync= 配对的 hashchange 不受影响；
+   * file:// 等 pushState 抛错的环境降级为现状（只 setUI 不入栈）。 */
+  var NAV_BASE = null, navTop = null, navExitAt = 0;
+  function navSnap(id) {
+    return {
+      xj: 1, id: id || 'nav',
+      tab: S.ui.tab, sub: S.ui.subPage || null, arg: S.ui.subArg || null,
+      sheet: XJ.ui.sheetHistId(), sheetArg: XJ.ui.sheetHistArg(),
+    };
+  }
+  function navPush() {
+    try { var s = navSnap('nav'); history.pushState(s, ''); navTop = s; } catch (e) { /* 降级 */ }
+  }
+  function navTo(patch) { S.setUI(patch); navPush(); }
+  function mkGuard() { return navSnap('guard'); }
+
+  /* 内容型 sheet 的「按 id 重开」注册表（popstate 还原栈上 sheet 用） */
+  var SHEET_OPENERS = {
+    news: function (arg) { if (XJ.views.news && XJ.views.news.openDetail) XJ.views.news.openDetail(arg, true); },
+    wlManage: function () { openManageSheet(true); },
+    wlGroup: function (arg) { openStarGroupSheet(arg && arg.sym, arg && arg.name, true); },
+  };
+  function applyNav(s) {
+    navTop = s;
+    S.setUI({ tab: s.tab, subPage: s.sub, subArg: s.arg });
+    var cur = XJ.ui.sheetHistId();
+    var want = s.sheet || null;
+    if (cur !== want) {
+      if (cur) XJ.ui.closeSheet(true, true);
+      if (want && SHEET_OPENERS[want]) { try { SHEET_OPENERS[want](s.sheetArg); } catch (e) { } }
+    }
+  }
+  function onPopState(e) {
+    var s = (e.state && e.state.xj) ? e.state : NAV_BASE;
+    if (!s || !s.id) s = NAV_BASE;
+    if (s.id === 'base') {
+      var now = Date.now();
+      if (navExitAt && now - navExitAt < 2500) {       // 二次侧滑 → 交还系统行为退出
+        navExitAt = 0;
+        try { history.back(); } catch (err) { }
+        return;
+      }
+      navExitAt = now;
+      UI.toast('再滑一次退出');
+      try { var g = mkGuard(); history.pushState(g, ''); navTop = g; } catch (err) { }
+      return;
+    }
+    navExitAt = 0;
+    applyNav(s);
+  }
+  /* ui.openSheet(opts.hist) 的回调：sheet 已挂 DOM，此时压栈正好带上 sheet 标识。
+     同一 sheet 被就地重建（管理分组拖拽排序后重开等）不重复入栈 */
+  function onSheetOpen(id) {
+    if (navTop && navTop.sheet === id) return;
+    navPush();
+  }
+  /* sheet 被 UI 关闭（点遮罩/按钮）时，栈顶若仍是它则弹掉，保持栈与画面同步 */
+  function onSheetClose(id) {
+    if (navTop && navTop.sheet === id) { try { history.back(); } catch (e) { } }
+  }
+
   UI.on('gotoTab', function (node) {
     /* 拖拽排序刚结束的 350ms 内吞掉点击（dnd 已在捕获层拦，这里双保险） */
     if (XJ.dnd && XJ.dnd.isJustDragged()) return;
-    S.setUI({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
+    navTo({ tab: node.getAttribute('data-tab'), status: '', subPage: null, floatOpen: false });
     window.scrollTo(0, 0);
   });
 
   /* ==================== 自选（watchlist · 二期） ==================== */
 
   UI.on('openSearch', function () {
-    S.setUI({ subPage: 'search', floatOpen: false });
+    navTo({ subPage: 'search', floatOpen: false });
   });
 
   UI.on('srchClear', function () {
@@ -18409,8 +18835,9 @@ XJ.views.symbol = (function () {
   }
   UI.on('openWlGroups', openGroupSheet);
 
-  /* 管理模式：改名 / 删除 / 拖拽排序（XJ.dnd axis:'y'，把手 ≡） */
-  function openManageSheet() {
+  /* 管理模式：改名 / 删除 / 拖拽排序（XJ.dnd axis:'y'，把手 ≡）。
+     fromHist = popstate 还原重开，不再压栈；内部重建（拖拽/删组后）靠 onSheetOpen 去重不重复入栈 */
+  function openManageSheet(fromHist) {
     var groups = S.wlGroups();
     var isDefault = function (id) {
       return XJ.model.WL_DEFAULT_GROUPS.some(function (d) { return d.groupId === id; });
@@ -18428,6 +18855,7 @@ XJ.views.symbol = (function () {
       '<div class="tiny" style="margin-top:8px;text-align:center">长按 ≡ 拖动调整分组顺序</div>';
     UI.openSheet({
       title: '管理分组', html: html,
+      hist: fromHist ? null : 'wlManage',
       onMount: function () {
         var list = document.getElementById('wl-gm-list');
         if (list && XJ.dnd) {
@@ -18443,7 +18871,7 @@ XJ.views.symbol = (function () {
       },
     });
   }
-  UI.on('openWlManage', openManageSheet);
+  UI.on('openWlManage', function () { openManageSheet(false); });
 
   UI.on('wlGroupCreate', function (node) {
     var starSym = node ? node.getAttribute('data-star-sym') : null;
@@ -18523,8 +18951,10 @@ XJ.views.symbol = (function () {
   });
 
   UI.on('wlOpenSymbol', function (node) {
-    S.setUI({ subPage: 'symbol', subArg: node.getAttribute('data-sym'), floatOpen: false });
+    var sym = node.getAttribute('data-sym');
+    navTo({ subPage: 'symbol', subArg: sym, floatOpen: false });
     window.scrollTo(0, 0);
+    ensureSymbolDividends(sym);
   });
 
   UI.on('wlRemoveItem', function (node) {
@@ -18532,10 +18962,9 @@ XJ.views.symbol = (function () {
     UI.toast('已从自选移除');
   });
 
-  /* 图五：搜索结果点星 → 分组选择 sheet（单选 + 新建 + 移除） */
-  UI.on('wlStar', function (node) {
-    var sym = node.getAttribute('data-sym');
-    var name = node.getAttribute('data-name') || '';
+  /* 图五：搜索结果点星 → 分组选择 sheet（单选 + 新建 + 移除）。
+     fromHist = popstate 还原栈上 sheet 时重开，不再压栈 */
+  function openStarGroupSheet(sym, name, fromHist) {
     var groups = S.wlGroups();
     var cur = S.wlGroupOf(sym);
     var html = '<div class="wl-ggrid">' + groups.map(function (g) {
@@ -18547,7 +18976,13 @@ XJ.views.symbol = (function () {
       '" data-star-name="' + U.esc(name) + '">＋ 新建分组</button>' +
       '</div>' +
       (cur ? '<button class="btn-block danger" data-act="wlStarRemove" data-sym="' + U.esc(sym) + '">从自选移除</button>' : '');
-    UI.openSheet({ title: '加入自选 · ' + name, html: html });
+    UI.openSheet({
+      title: '加入自选 · ' + name, html: html,
+      hist: fromHist ? null : 'wlGroup', histArg: { sym: sym, name: name },
+    });
+  }
+  UI.on('wlStar', function (node) {
+    openStarGroupSheet(node.getAttribute('data-sym'), node.getAttribute('data-name') || '');
   });
 
   UI.on('wlStarPick', function (node) {
@@ -18566,6 +19001,8 @@ XJ.views.symbol = (function () {
     var gName = (S.wlGroups().filter(function (x) { return x.groupId === g; })[0] || {}).name || '';
     UI.toast('已加入「' + gName + '」');
     if (XJ.views.search) XJ.views.search.refreshList();
+    /* 自选（非持仓）标的此前从不走图标解析 → 加自选后立即补官方 logo */
+    ensureSymbolAssets(sym);
   });
 
   UI.on('wlStarRemove', function (node) {
@@ -18594,11 +19031,13 @@ XJ.views.symbol = (function () {
 
   /* ---- 子页面路由 ---- */
   UI.on('openAnalysis', function () {
-    S.setUI({ subPage: 'analysis' });
+    navTo({ subPage: 'analysis' });
     window.scrollTo(0, 0);
   });
 
   UI.on('closeSubPage', function () {
+    /* 返回箭头与侧滑同路：栈顶是我们压入的条目就 back()，否则直接清 subPage */
+    if (navTop && navTop.id === 'nav') { try { history.back(); return; } catch (e) { } }
     S.setUI({ subPage: null, subArg: null });
   });
 
@@ -18966,8 +19405,10 @@ XJ.views.symbol = (function () {
   });
 
   UI.on('openSymbol', function (node) {
-    S.setUI({ subPage: 'symbol', subArg: node.getAttribute('data-symbol'), floatOpen: false });
+    var sym = node.getAttribute('data-symbol');
+    navTo({ subPage: 'symbol', subArg: sym, floatOpen: false });
     window.scrollTo(0, 0);
+    ensureSymbolDividends(sym);
   });
 
   /* ---- 补录分红记录 ---- */
@@ -19252,11 +19693,11 @@ XJ.views.symbol = (function () {
   }
 
   UI.on('viewDivRecords', function () {
-    UI.closeSheet();
-    S.setUI({ subPage: 'divsummary', floatOpen: false });
+    UI.closeSheet(true, true);   /* 静默关：sheet 的历史条目留给下面的 navTo 顶替 */
+    navTo({ subPage: 'divsummary', floatOpen: false });
   });
 
-  UI.on('openDivSum', function () { S.setUI({ subPage: 'divsummary', floatOpen: false }); });
+  UI.on('openDivSum', function () { navTo({ subPage: 'divsummary', floatOpen: false }); });
 
   UI.on('setDivsumRange', function (node) {
     var v = node.getAttribute('data-v');
@@ -20173,6 +20614,14 @@ XJ.views.symbol = (function () {
    */
   function ensureSymbolAssets(sym) {
     if (!S.state.symbols[sym]) return Promise.resolve(false);
+    /* 已有 ok 结论 / 今天已试过 → 不重复拉（点星换组等重复触发场景） */
+    if (!XJ.market.logoStale(S.state.symbols[sym], U.today(), XJ.fetcher.LOGO_ALGO)) {
+      return Promise.resolve(false);
+    }
+    /* 已有有效结论（或今天已试过）不重复拉慢接口；新记录 logoStale 恒真 */
+    if (!XJ.market.logoStale(S.state.symbols[sym], U.today(), XJ.fetcher.LOGO_ALGO)) {
+      return Promise.resolve(false);
+    }
     return Promise.resolve().then(function () {
       if (S.state.symbols[sym].domain) return null;
       return XJ.fetcher.fetchCompanyDomains([sym]).then(function (m) {
@@ -21710,6 +22159,15 @@ XJ.views.symbol = (function () {
       }
       S.ui.accountId = C.ALL;
       UI.installDelegation();
+      /* 侧滑返回栈基线：base 条目 + 其上压一条 guard（首页第一次侧滑被 guard 接住） */
+      NAV_BASE = navSnap('base');
+      try {
+        history.replaceState(NAV_BASE, '');
+        var navGuard = mkGuard();
+        history.pushState(navGuard, '');
+        navTop = navGuard;
+      } catch (e) { navTop = NAV_BASE; }
+      window.addEventListener('popstate', onPopState);
       applyTheme();          // 外观（跟随系统 / 浅 / 深）必须在首屏渲染前落地，否则会闪一下
       S.subscribe(render);
       injectManifest();
@@ -21755,6 +22213,23 @@ XJ.views.symbol = (function () {
       UI.toast('本地存储初始化异常，数据将仅保留在本次会话中');
     });
   }
+
+  /* 视图层需要的少量 app 能力（图标回填 / 分红回填 / 导航栈），避免视图伸进 app 内部 */
+  /* 统一的「打开个股详情」入口（视图层经 XJ.app 调用，保证入栈 + 分红补拉） */
+  function openSymbolPage(sym) {
+    navTo({ subPage: 'symbol', subArg: sym, floatOpen: false });
+    window.scrollTo(0, 0);
+    ensureSymbolDividends(sym);
+  }
+
+  XJ.app = {
+    ensureLogosFor: ensureLogosFor,
+    ensureSymbolAssets: ensureSymbolAssets,
+    ensureSymbolDividends: ensureSymbolDividends,
+    openSymbolPage: openSymbolPage,
+    onSheetOpen: onSheetOpen,
+    onSheetClose: onSheetClose,
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', boot);
