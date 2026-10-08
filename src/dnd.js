@@ -40,6 +40,10 @@ XJ.dnd = (function () {
     opts = opts || {};
     var itemSel = opts.itemSel || '.tab';
     var attr = opts.attr || 'data-tab';
+    var AXIS = opts.axis === 'y' ? 'y' : 'x';       // 'x' 横向（Tab）/ 'y' 纵向（分组管理）
+    var POS = AXIS === 'y' ? 'offsetTop' : 'offsetLeft';
+    var SIZE = AXIS === 'y' ? 'offsetHeight' : 'offsetWidth';
+    var T = AXIS === 'y' ? 'translateY' : 'translateX';
 
     /* 长按拖拽时不要弹出系统菜单/选择 */
     container.addEventListener('contextmenu', function (e) { e.preventDefault(); });
@@ -53,7 +57,7 @@ XJ.dnd = (function () {
     function measure() {
       var els = Array.prototype.slice.call(container.querySelectorAll(itemSel));
       var all = els.map(function (el) {
-        return { el: el, id: el.getAttribute(attr), x: el.offsetLeft, w: el.offsetWidth };
+        return { el: el, id: el.getAttribute(attr), x: el[POS], w: el[SIZE] };
       });
       var gap = all.length > 1 ? (all[1].x - (all[0].x + all[0].w)) : 0;
       return { all: all, gap: gap };
@@ -79,7 +83,7 @@ XJ.dnd = (function () {
         if (r.id === st.id) continue;
         var j = order.indexOf(r.id);
         var dx = slotX(m, order, j) - r.x;
-        r.el.style.transform = dx ? 'translateX(' + dx + 'px)' : '';
+        r.el.style.transform = dx ? T + '(' + dx + 'px)' : '';
       }
     }
 
@@ -101,7 +105,8 @@ XJ.dnd = (function () {
 
     function moveDrag(e) {
       var dx = e.clientX - st.startX;
-      st.item.style.transform = 'translateX(' + dx + 'px) scale(' + DRAG_SCALE + ')';
+      if (AXIS === 'y') dx = e.clientY - st.startY;
+      st.item.style.transform = T + '(' + dx + 'px) scale(' + DRAG_SCALE + ')';
       /* 槽位判定：拖拽项当前中心，压过多少个其它项的（已补位）中心 → 目标槽位。
          相等也算越过（>=）：拖到某项正中心 = 取代它的位置（把该项挤向反方向）。 */
       var m = st.m;
@@ -139,7 +144,7 @@ XJ.dnd = (function () {
             var base = findById(m, itemId);
             /* finalDx = 新槽位中心 − 原中心 */
             var finalDx = (slotX(m, order, order.indexOf(itemId)) + base.w / 2) - (base.x + base.w / 2);
-            item.style.transform = 'translateX(' + finalDx + 'px) scale(1)';
+            item.style.transform = T + '(' + finalDx + 'px) scale(1)';
             opts.onCommit(order.slice());
             /* commit → 上层重渲染（同步）→ 新 DOM 上播放落位弹跳 */
             var fresh = container.querySelector('[' + attr + '="' + itemId + '"]');
