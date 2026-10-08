@@ -47,14 +47,14 @@ const P1 = `(async () => {
 
   var nowSec = Math.floor(Date.now() / 1000);
   var seedCache = {
-    v: 2, sweepMs: Date.now(), newestAt: nowSec - 3600, covered: true, via: 'tapp',
+    v: 3, sweepMs: Date.now(), newestAt: nowSec - 3600, covered: true, via: 'em',
     hits: [
-      { id: 'ths_probe1', title: '伯克希尔宣布完成增持西方石油，斥资10亿美元',
+      { id: 'em_probe1', title: '伯克希尔宣布完成增持西方石油，斥资10亿美元',
         digest: '伯克希尔·哈撒韦提交的文件显示，加仓已在披露日前完成交割。',
-        url: 'https://example.com/a', source: '同花顺', tags: ['异动'],
+        url: 'https://example.com/a', source: '中国基金报', tags: [],
         ents: ['伯克希尔'], ctime: nowSec - 3600 },
-      { id: 'ths_probe2', title: '中国平安完成派息，每股派发2.00元',
-        digest: '', url: '', source: '同花顺', tags: [], ents: [], ctime: nowSec - 7200 },
+      { id: 'em_probe2', title: '中国平安完成派息，每股派发2.00元',
+        digest: '', url: '', source: '财联社', tags: [], ents: [], ctime: nowSec - 7200 },
       { id: 'sina_probe3', title: '李嘉诚家族增持长实集团股份',
         digest: '', url: '', source: '新浪7x24', tags: [],
         ents: ['李嘉诚', '长实集团'], ctime: nowSec - 86400 - 3600 },
@@ -69,9 +69,11 @@ const P1 = `(async () => {
   var rows = Array.prototype.slice.call(body.querySelectorAll('.news-row'));
   out.list = {
     rows: rows.length,
-    days: Array.prototype.slice.call(body.querySelectorAll('.news-day')).map(function (d) { return d.textContent; }),
-    firstTime: ((rows[0] && rows[0].querySelector('.nr-time')) || {}).textContent || '',
-    firstTitle: ((rows[0] && rows[0].querySelector('.nr-tt')) || {}).textContent || '',
+    tlDates: rows.map(function (r) {
+      var d = r.querySelector('.tl-date');
+      return d ? d.textContent : null;
+    }),
+    firstTitle: ((rows[0] && rows[0].querySelector('.tl-body .row-t')) || {}).textContent || '',
     bluePills: Array.prototype.slice.call(rows[0].querySelectorAll('.pill.blue')).map(function (p) { return p.textContent; }),
     goldPills: Array.prototype.slice.call(rows[1].querySelectorAll('.pill.gold')).map(function (p) { return p.textContent; }),
     hasFooter: (body.textContent || '').indexOf('不构成投资建议') >= 0,
@@ -105,7 +107,7 @@ const P2 = `(async () => {
   var rows2 = Array.prototype.slice.call(document.querySelectorAll('#view-body .news-row'));
   out.wlOnly = {
     count: rows2.length,
-    first: ((rows2[0] && rows2[0].querySelector('.nr-tt')) || {}).textContent || '',
+    first: ((rows2[0] && rows2[0].querySelector('.tl-body .row-t')) || {}).textContent || '',
   };
   var sw2 = document.querySelector('.news-ctl .switch input');
   if (sw2) sw2.click();               /* 关回去 */
@@ -114,17 +116,21 @@ const P2 = `(async () => {
   return out;
 })()`;
 
-/* P3：离线全量回看 —— 清缓存 → sweep 两源即刻失败 → 快速收尾为空态 */
+/* P3：离线检索轮 —— 清缓存 → 48 词 fetch/jsonp 双路即败（120ms 间隔 ≈ 7s）→
+ * emOk=0 走新浪兜底 → 兜底也空 → 快速收尾为空态。轮询等待收尾（最多 30s）。 */
 const P3 = `(async () => {
-  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = {};
   var XJ = window.XJ;
   XJ.store.state.newsCache = null;
   XJ.store.setUI({ newsTick: Date.now() });
-  await sleep(1400);
+  for (var i = 0; i < 75; i++) {
+    await new Promise(function (r) { setTimeout(r, 400); });
+    if (XJ.store.state.newsCache && XJ.store.state.newsCache.covered) break;
+  }
   var b2 = document.getElementById('view-body');
   out.empty = {
     covered: !!(XJ.store.state.newsCache && XJ.store.state.newsCache.covered),
+    via: (XJ.store.state.newsCache || {}).via || '',
     text: (b2.textContent || '').indexOf('近 15 天无相关动态') >= 0,
     hasRefresh: !!b2.querySelector('[data-act="newsRefresh"]'),
     noRows: !b2.querySelector('.news-row'),
@@ -237,10 +243,11 @@ try {
   else {
     const ls = out1.list || {};
     if (ls.rows === 3) ok('① 时间轴 3 条命中全部渲染'); else bad('行数异常 ' + ls.rows);
-    if ((ls.days || []).length === 2 && (ls.days[0] || '').indexOf('今天') >= 0 && (ls.days[1] || '').indexOf('昨天') >= 0)
-      ok('★ 日期分组：' + (ls.days || []).join(' / '));
-    else bad('日期分组异常 ' + JSON.stringify(ls.days));
-    if (/^\d{2}:\d{2}$/.test(ls.firstTime || '')) ok('★ 行内时间 = HH:MM（' + ls.firstTime + '）'); else bad('时间格式异常 ' + ls.firstTime);
+    const td = ls.tlDates || [];
+    if (td.length === 3 && td[0] && !td[1] && td[2] && td[0] !== td[2])
+      ok('★ 时间轴左列日期：同日仅首条显示（' + td[0] + ' / — / ' + td[2] + '）');
+    else bad('左列日期异常 ' + JSON.stringify(td));
+    if (/^\d{2}-\d{2}$/.test(td[0] || '')) ok('★ 左列日期 = MM-DD 格式'); else bad('日期格式异常 ' + td[0]);
     if ((ls.firstTitle || '').indexOf('伯克希尔') >= 0) ok('★ 最新一条在最前（ctime 降序）'); else bad('排序异常 ' + ls.firstTitle);
     if ((ls.bluePills || []).join(',') === '伯克希尔') ok('★ 实体 pill（蓝）在位'); else bad('实体 pill 异常 ' + JSON.stringify(ls.bluePills));
     if ((ls.goldPills || []).join(',') === '中国平安') ok('★ 自选相关 pill（分红金）在位'); else bad('自选 pill 异常 ' + JSON.stringify(ls.goldPills));
@@ -263,11 +270,12 @@ try {
   else bad('自选过滤异常 count=' + wo.count + ' first=' + wo.first);
   if (wo.restored === 3) ok('★ 「仅查看自选」关：恢复 3 条'); else bad('关回后行数异常 ' + wo.restored);
 
-  /* ---- P3 离线回看 → 空态 ---- */
+  /* ---- P3 离线检索轮 → 空态 ---- */
   const out3 = await evaluate(browser, sessionId, P3);
   const em = (out3.empty || {});
-  if (em.covered) ok('⑤ 离线回看快速收尾（covered=true，不留悬挂进度）'); else bad('回看未收尾');
-  if (em.text) ok('★ 空态文案「近 7 天无相关动态」'); else bad('空态文案缺失');
+  if (em.covered) ok('⑤ 离线检索轮快速收尾（covered=true，不留悬挂进度）'); else bad('检索轮未收尾');
+  if (em.via === 'sina') ok('★ 东财整轮离线失败 → 走新浪兜底（via=sina）'); else bad('兜底路径异常 via=' + em.via);
+  if (em.text) ok('★ 空态文案「近 15 天无相关动态」'); else bad('空态文案缺失');
   if (em.hasRefresh) ok('★ 空态带手动刷新按钮'); else bad('空态缺刷新按钮');
   if (em.noRows) ok('★ 空态无残留行'); else bad('空态仍有残留行');
   await shot(browser, sessionId, 'news-empty.png');
