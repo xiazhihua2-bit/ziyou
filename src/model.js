@@ -16,6 +16,23 @@ XJ.model = (function () {
    */
   var DEFAULT_COST_METHOD = 'dividendDiluted';
 
+  /* ---------------- 底部 Tab（六 Tab · 一期改版） ----------------
+   * TAB_IDS 是 Tab 身份的权威清单（app.js 的 TABS 按此顺序定义）；
+   * settings.tabOrder 存「用户拖出来的顺序」（id 数组，恰好是这 6 个的一次排列），
+   * null = 从未拖过、用默认顺序。★ 与自选一样参与跨设备同步（SETTINGS_SYNC 白名单）。 */
+  var TAB_IDS = ['overview', 'watchlist', 'calendar', 'news', 'find', 'mine'];
+
+  /** 校验 tabOrder：必须是 TAB_IDS 的完整排列，否则回落 null（防脏数据 / 老版本导入） */
+  function normalizeTabOrder(order) {
+    if (!Array.isArray(order) || order.length !== TAB_IDS.length) return null;
+    var seen = {};
+    for (var i = 0; i < order.length; i++) {
+      if (TAB_IDS.indexOf(order[i]) < 0 || seen[order[i]]) return null;
+      seen[order[i]] = true;
+    }
+    return order.slice();
+  }
+
   /** 由模板生成支出项（补上 expenseId / icon / enabled） */
   function makeExpenses(template) {
     return template.map(function (e, i) {
@@ -97,6 +114,19 @@ XJ.model = (function () {
     { key: 'monthlyDividend',  label: '月均预测分红', hint: '预测年度分红 ÷ 12' },
   ];
 
+  /* ---- 首页年度分红卡可选配色（2026-10-05：用户自选，本机偏好、不参与跨设备同步） ----
+   * 每套 = 底色渐变 + 右上角光晕 + 指标/徽章副色三件套，副色按底色微调以保证对比度。
+   * 新增一套要同时改：这里的表 + style.css 的 .hero-dark[data-hero="key"] 两条规则。 */
+  var HERO_COLORS = [
+    { key: 'graphite', label: '经典石墨' },
+    { key: 'navy',     label: '藏青蓝墨' },
+    { key: 'teal',     label: '墨绿青瓷' },
+    { key: 'umber',    label: '暖墨棕赭' },
+    { key: 'wine',     label: '酒红墨' },
+    { key: 'plum',     label: '紫墨夜色' },
+  ];
+  var HERO_COLOR_DEFAULT = 'graphite';
+
   /* ---- 证券代码规范化（委托给 market.js，支持 A股/北交所/港股/美股/场外基金） ---- */
   var SYMBOL_RE = /^(sh|sz|bj|hk|us|of)[A-Za-z0-9]{1,8}$/;
 
@@ -154,13 +184,23 @@ XJ.model = (function () {
         id: 'app_settings',
         quoteRefreshMs: 60000,
         planCacheTTLMs: 604800000,     // 7 天
+        /* 外观：'auto' 跟随系统 | 'light' | 'dark'。
+           ★ 本机偏好、刻意【不进同步白名单】：手机想要深色、电脑想要浅色是常见的。 */
+        theme: 'auto',
         defaultAccountId: null,
         reminderLeadDays: 3,
         lastQuoteAt: null,
         lastPlanAt: null,
         onboarded: false,
         heroMetrics: HERO_METRICS.map(function (m) { return m.key; }),
-        heroCollapsed: false,
+        /* 顶部年度分红卡是否收起 —— 默认跟随全站折叠常量（见 util.js 的 FOLD）。
+           model 先于 store 加载，这里直接用 U.FOLD.collapsed 而不是 store.folded()。 */
+        heroCollapsed: XJ.util.FOLD.collapsed,
+        /* 大卡片配色（本机偏好，不参与跨设备同步 —— 与 theme 同处理方式） */
+        heroColor: HERO_COLOR_DEFAULT,
+        /* 底部 Tab 顺序（六 Tab）：null = 用默认顺序；拖拽后存完整 id 排列。
+           ★ 用户决策（2026-10-08）：与自选一样【参与跨设备同步】——所有设备顺序一致。 */
+        tabOrder: null,
         /* 深色卡「测算带」参数（每年投入 / 股息率 / 年数 / 再投比例 / 反解目标）。
            首次启动由 ensureBootstrapped 从 projection 派生起点，之后与「展望未来」完全独立。
            yieldPct = null 表示「跟随当前组合市值息率」，用户一旦手改就固定下来。 */
@@ -201,6 +241,7 @@ XJ.model = (function () {
         },
       },
       quoteCache: {},       // symbol -> quote
+      watchlist: makeWatchlist(),   // 自选（分组 + 条目），跨设备同步
       snapshots: {},        // 'YYYY-MM-DD' -> { mv, cost, pred, recv, fx }
       priceHistory: {},     // symbol -> { at:'YYYY-MM-DD', points:[['YYYY-MM-DD', price], ...] }
       indexHistory: {},     // indexKey -> { at:'YYYY-MM-DD', bars:[['YYYY-MM-DD', o, h, l, c], ...] }
@@ -379,6 +420,9 @@ XJ.model = (function () {
       state.benchHistory = bhPts.length >= 2 ? { at: state.benchHistory.at || null, points: bhPts } : null;
     }
 
+    /* 自选容器（六 Tab 二期）：老数据 / 坏数据 / 被删掉的默认组都补回来 */
+    ensureWatchlist(state);
+
     /* ---- v5 新增容器：跨设备同步元数据 ----
        只补容器、不动数据。这里【绝不从「导入的 JSON」里读 syncMeta】——
        换设备导入别人的备份时不该把对方的同步连接信息带进来（token 会被误用）。
@@ -414,6 +458,10 @@ XJ.model = (function () {
     if (!Array.isArray(state.settings.heroMetrics) || !state.settings.heroMetrics.length) {
       state.settings.heroMetrics = HERO_METRICS.map(function (m) { return m.key; });
     }
+    /* 大卡片配色：非法值一律回落到默认石墨（老库升级时该字段不存在 → 补默认值） */
+    if (!HERO_COLORS.some(function (c) { return c.key === state.settings.heroColor; })) {
+      state.settings.heroColor = HERO_COLOR_DEFAULT;
+    }
     /* 深色卡「测算带」：首次启动借「展望未来」的定投与年数当起点，之后两者完全独立。
        yieldPct 留 null = 跟随当前组合市值息率（用户手改后落成数字，不再浮动）。 */
     if (!state.settings.heroForecast || typeof state.settings.heroForecast !== 'object') {
@@ -436,6 +484,8 @@ XJ.model = (function () {
     if (!state.settings.ocr.model) state.settings.ocr.model = 'glm-4v-flash';
     if (!state.settings.ocr.apiKey) state.settings.ocr.apiKey = DEFAULT_OCR_KEY;
     if (!Array.isArray(state.settings.unsupportedDividend)) state.settings.unsupportedDividend = [];
+    /* 外观：只认 light / dark，其余（含旧数据没有这个字段）一律回到 auto */
+    if (state.settings.theme !== 'light' && state.settings.theme !== 'dark') state.settings.theme = 'auto';
 
     /* ---- v6：settings.fire 补齐（只补容器、不动数据；跑两遍结果全等） ---- */
     var fire = state.settings.fire;
@@ -476,6 +526,47 @@ XJ.model = (function () {
    * 所有创建 symbols[sym] 的地方都必须走这里：**成本口径要跟着记录一起落库**。
    * 早先有 8 处各自手写对象、都没写 costMethod，于是那些标的（尤其 OCR 导入与交易录入建的仓）
    * 落到 calc 的兜底「加权平均」上 —— 分红就不会摊薄成本，用户看到的就是「成本不自动下降」。 */
+  /* ---------------- 自选（六 Tab 二期） ----------------
+   * groups：自定义分组（预置 美股/港股/A股）；「全部」「持仓」是虚拟组，不落库
+   *         ——「全部」= items 并集，「持仓」= 实时跟随真实持仓，两处都由视图派生。
+   * items：自选条目（groupId + symbol），同一组内同一 symbol 唯一（store 层保证）。
+   * ★ 与 tabOrder 一样参与跨设备同步（sync-core 的 wgrp / witem 两条记录流）。 */
+  var WL_DEFAULT_GROUPS = [
+    { groupId: 'wlg_us', name: '美股', sortOrder: 1 },
+    { groupId: 'wlg_hk', name: '港股', sortOrder: 2 },
+    { groupId: 'wlg_cn', name: 'A股', sortOrder: 3 },
+  ];
+
+  function makeWatchlist() {
+    var now = U.nowStamp();
+    return {
+      groups: WL_DEFAULT_GROUPS.map(function (g) {
+        return { groupId: g.groupId, name: g.name, sortOrder: g.sortOrder, createdAt: now };
+      }),
+      items: [],
+    };
+  }
+
+  /** 自愈：容器缺失 / 形状损坏 / 默认组被误删都补回来（幂等，跑两遍结果全等） */
+  function ensureWatchlist(state) {
+    if (!state.watchlist || typeof state.watchlist !== 'object') state.watchlist = makeWatchlist();
+    var w = state.watchlist;
+    if (!Array.isArray(w.groups)) w.groups = [];
+    if (!Array.isArray(w.items)) w.items = [];
+    var have = {};
+    w.groups.forEach(function (g) { if (g && g.groupId) have[g.groupId] = true; });
+    WL_DEFAULT_GROUPS.forEach(function (dg) {
+      if (!have[dg.groupId]) w.groups.push({ groupId: dg.groupId, name: dg.name, sortOrder: dg.sortOrder, createdAt: U.nowStamp() });
+    });
+    w.groups = w.groups.filter(function (g) {
+      return g && typeof g === 'object' && g.groupId && typeof g.name === 'string';
+    });
+    w.items = w.items.filter(function (it) {
+      return it && typeof it === 'object' && it.itemId && it.symbol && it.groupId;
+    });
+    return w;
+  }
+
   function symbolRecord(symbol, extra) {
     var rec = {
       symbol: symbol,
@@ -611,6 +702,7 @@ XJ.model = (function () {
         return s;
       })(),
       quoteCache: state.quoteCache,
+      watchlist: state.watchlist,
       priceHistory: state.priceHistory,
       indexHistory: state.indexHistory,
       klineCache: state.klineCache,
@@ -643,6 +735,7 @@ XJ.model = (function () {
     if (raw.projection && typeof raw.projection === 'object') out.projection = Object.assign(out.projection, raw.projection);
     if (raw.settings && typeof raw.settings === 'object') out.settings = Object.assign(out.settings, raw.settings);
     if (raw.quoteCache && typeof raw.quoteCache === 'object') out.quoteCache = raw.quoteCache;
+    if (raw.watchlist && typeof raw.watchlist === 'object') out.watchlist = raw.watchlist;
     if (raw.priceHistory && typeof raw.priceHistory === 'object') out.priceHistory = raw.priceHistory;
     if (raw.indexHistory && typeof raw.indexHistory === 'object') out.indexHistory = raw.indexHistory;
     if (raw.klineCache && typeof raw.klineCache === 'object') out.klineCache = raw.klineCache;
@@ -716,6 +809,13 @@ XJ.model = (function () {
     EXPENSE_TEMPLATE: EXPENSE_TEMPLATE,
     LEGACY_EXPENSE_TEMPLATE: LEGACY_EXPENSE_TEMPLATE,
     HERO_METRICS: HERO_METRICS,
+    HERO_COLORS: HERO_COLORS,
+    HERO_COLOR_DEFAULT: HERO_COLOR_DEFAULT,
+    TAB_IDS: TAB_IDS,
+    normalizeTabOrder: normalizeTabOrder,
+    makeWatchlist: makeWatchlist,
+    ensureWatchlist: ensureWatchlist,
+    WL_DEFAULT_GROUPS: WL_DEFAULT_GROUPS,
     EMOJI_GROUPS: EMOJI_GROUPS,
     KEY_EMOJI: KEY_EMOJI,
     DEFAULT_OCR_KEY: DEFAULT_OCR_KEY,
