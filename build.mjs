@@ -2,7 +2,7 @@
  * 用法： node build.mjs
  *
  * 产出两份互不影响的东西：
- *   dist/息记复刻版.html   单文件，双击即用（内置 OCR Key，可当离线备份、可微信发文件）
+ *   dist/自由.html        单文件，双击即用（内置 OCR Key，可当离线备份、可微信发文件）
  *   dist/pwa/             部署用（index.html + manifest + Service Worker + PNG 图标），OCR Key 置空
  */
 import fs from 'node:fs';
@@ -39,7 +39,6 @@ const JS_FILES = [
   'src/views/divsummary.js',
   'src/views/watchlist.js',
   'src/views/search.js',
-  'src/views/news.js',
   'src/views/mine.js',
   'src/views/analysis.js',
   'src/views/symbol.js',
