@@ -16,11 +16,11 @@ XJ.model = (function () {
    */
   var DEFAULT_COST_METHOD = 'dividendDiluted';
 
-  /* ---------------- 底部 Tab（六 Tab · 一期改版） ----------------
+  /* ---------------- 底部 Tab（五 Tab · 2026-11-04 删去「新闻」） ----------------
    * TAB_IDS 是 Tab 身份的权威清单（app.js 的 TABS 按此顺序定义）；
-   * settings.tabOrder 存「用户拖出来的顺序」（id 数组，恰好是这 6 个的一次排列），
+   * settings.tabOrder 存「用户拖出来的顺序」（id 数组，恰好是这 5 个的一次排列），
    * null = 从未拖过、用默认顺序。★ 与自选一样参与跨设备同步（SETTINGS_SYNC 白名单）。 */
-  var TAB_IDS = ['overview', 'watchlist', 'calendar', 'news', 'find', 'mine'];
+  var TAB_IDS = ['overview', 'watchlist', 'calendar', 'find', 'mine'];
 
   /** 校验 tabOrder：必须是 TAB_IDS 的完整排列，否则回落 null（防脏数据 / 老版本导入） */
   function normalizeTabOrder(order) {
@@ -217,6 +217,8 @@ XJ.model = (function () {
         unsupportedDividend: [],         // 无分红数据源的标的（美股）
         indexCompare: ['sh', 'hs300', 'hsi'],   // 资产走势里默认勾选的对比指数
         showYieldBench: false,           // 股息率曲线里是否叠加「余额宝七日年化」基准线（默认关）
+        /* 股息率分位的统计窗口（年）：3 / 5 / 10。★ 本机偏好，不进 SETTINGS_SYNC。 */
+        yieldPctWin: 3,
         /* 派息日弹窗：最近一次已经弹过的日期（'YYYY-MM-DD'）。
            当天弹过就不再打扰；存 settings 而不是 ui，是为了跨会话/跨设备导入后都不会重复弹。 */
         payoutPopupAt: null,
@@ -250,12 +252,6 @@ XJ.model = (function () {
          at = 这批数据的交易日（取接口 date，不是本机今日），每只标的只保留最近 1 天。
          落盘持久化：收盘后 / 周末打开也要能看到最近一个交易日的分时曲线。 */
       minuteCache: null,
-      /* 新闻命中缓存（六 Tab 三期）：
-         { v:1, sweepMs, newestAt, covered, via, hits:[{id,title,digest,url,source,tags,ents,ctime}] }
-         只存硬规则命中的条目（通常个位数，cap 200），不存原始快讯流。
-         本机缓存定位与 minuteCache 相同：落盘持久化（免得每次进新闻页都重拉十几页），
-         但不进跨设备同步、也不进 toExport/fromImport —— 备份瘦身 + 导入侧防污染。 */
-      newsCache: null,
       /* 股息率曲线的收盘价缓存：symbol -> { at:'YYYY-MM-DD', day:[['YYYY-MM-DD',close]], week:[...] }
          与 klineCache 分开存的理由：那套是完整 OHLC、只留 120 根、给 BOLL/KDJ 用；
          这套只要收盘价就能算股息率，且日线要留 320 根（≈1.2 年）、周线 640 根（≈12.5 年）
@@ -352,6 +348,19 @@ XJ.model = (function () {
     });
     state.expenses.sort(function (a, b) { return a.sortOrder - b.sortOrder; });
 
+    /* Tab 顺序迁移（2026-11-04 删去「新闻」Tab）：老版本 tabOrder 是 6 项且含 'news'，
+       normalizeTabOrder 会因长度不符把整条回落 null（用户拖出来的自定义顺序就白丢了）。
+       这里先按现有 TAB_IDS 清洗去重，仍能凑成完整排列就保留相对顺序，否则归 null。 */
+    if (state.settings && Array.isArray(state.settings.tabOrder)) {
+      var keptOrder = [];
+      state.settings.tabOrder.forEach(function (id) {
+        if (TAB_IDS.indexOf(id) >= 0 && keptOrder.indexOf(id) < 0) keptOrder.push(id);
+      });
+      state.settings.tabOrder = keptOrder.length === TAB_IDS.length ? keptOrder : null;
+    }
+    /* 新闻视图已下线：老状态里可能还躺着 newsCache（不再有任何代码读它），顺手清掉。 */
+    if ('newsCache' in state) delete state.newsCache;
+
     // v3 新增容器
     if (!state.snapshots || typeof state.snapshots !== 'object') state.snapshots = {};
     if (!state.priceHistory || typeof state.priceHistory !== 'object') state.priceHistory = {};
@@ -424,13 +433,6 @@ XJ.model = (function () {
     } else {
       var bhPts = normCloseSeries(state.benchHistory.points);
       state.benchHistory = bhPts.length >= 2 ? { at: state.benchHistory.at || null, points: bhPts } : null;
-    }
-
-    /* 新闻命中缓存（六 Tab 三期）：结构不合法一律归 null，下次进新闻页重建。
-       字段级宽容：hits 里缺字段的条目靠视图层兜底，这里只把守容器与数组形态。 */
-    if (!state.newsCache || typeof state.newsCache !== 'object' ||
-      !Array.isArray(state.newsCache.hits)) {
-      state.newsCache = null;
     }
 
     /* 自选容器（六 Tab 二期）：老数据 / 坏数据 / 被删掉的默认组都补回来 */
