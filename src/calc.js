@@ -235,8 +235,10 @@ XJ.calc = (function () {
   /** 整年窗口口径的最小样本量：不足则该财年段整段不画。120 个交易日 ≈ 半年。 */
   var YIELD_AVG_MIN_DAYS = 120;
 
-  /** 股息率分位可选的统计窗口（年） */
-  var YIELD_PCT_WINDOWS = [3, 5, 10];
+  /** 股息率分位可选的统计窗口（年）—— 用户 2026-11-04 追加近 1 年 / 近 2 年 */
+  var YIELD_PCT_WINDOWS = [1, 2, 3, 5, 10];
+  /** 默认窗口：3 年（既有一年多的样本，又不会被十几年前的估值中枢带偏） */
+  var YIELD_PCT_DEFAULT = 3;
   /** 分位最小样本量：不足则不给数字，只报「样本不足」。120 个交易日 ≈ 半年。 */
   var YIELD_PCT_MIN_DAYS = 120;
 
@@ -355,7 +357,7 @@ XJ.calc = (function () {
    *
    * @param plans  该标的全部 DividendPlan（含预案，与股息率曲线同源）
    * @param closes [['YYYY-MM-DD', close], ...] 升序日线收盘（不复权）
-   * @param opts   { years: 3|5|10（缺省 3）, today: 'YYYY-MM-DD', price: Number|null }
+   * @param opts   { years: 1|2|3|5|10（缺省 3）, today: 'YYYY-MM-DD', price: Number|null }
    * @return null（无可用财年）
    *       | { insufficient:true, days, from, to }
    *       | { pct, cur, perShare, days, from, to, min, max, minDate, maxDate, year, onClose }
@@ -363,7 +365,7 @@ XJ.calc = (function () {
   function yieldPercentile(plans, closes, opts) {
     var o = opts || {};
     var years = U.num(o.years);
-    if (!years || YIELD_PCT_WINDOWS.indexOf(years) < 0) years = YIELD_PCT_WINDOWS[0];
+    if (!years || YIELD_PCT_WINDOWS.indexOf(years) < 0) years = YIELD_PCT_DEFAULT;
     var today = String(o.today || '').slice(0, 10);
     var from = shiftYearsBack(today, years);
     if (!from) return null;
@@ -3085,6 +3087,7 @@ XJ.calc = (function () {
     YIELD_AVG_FROM: YIELD_AVG_FROM,
     YIELD_AVG_MIN_DAYS: YIELD_AVG_MIN_DAYS,
     YIELD_PCT_WINDOWS: YIELD_PCT_WINDOWS,
+    YIELD_PCT_DEFAULT: YIELD_PCT_DEFAULT,
     YIELD_PCT_MIN_DAYS: YIELD_PCT_MIN_DAYS,
     exDividendDates: exDividendDates,
     position: position,
