@@ -270,9 +270,8 @@ XJ.views.symbol = (function () {
         '<div class="yj-pct-body">' +
         '<div class="yj-pct-num' + pctTone + '">' + pctR + '<span>%</span></div>' +
         '<div class="yj-pct-side">' +
-        '<div class="yj-pct-line">当前 <b>' + pctRes.cur.toFixed(2) + '%</b>' +
-        (pctRes.onClose ? '（按最近收盘价）' : '') +
-        ' · 高于近 ' + pctWin + ' 年 <b>' + pctR + '%</b> 的交易日</div>' +
+        '<div class="yj-pct-line">' + (pctRes.onClose ? '收盘 ' : '现价 ') +
+        '<b>' + pctRes.cur.toFixed(2) + '%</b> · 高于近 ' + pctWin + ' 年 <b>' + pctR + '%</b> 交易日</div>' +
         '<div class="yj-pct-bar"><i style="width:' + pctR + '%"></i><u style="left:' + pctR + '%"></u></div>' +
         '<div class="tiny yj-pct-range">区间 ' + pctRes.min.toFixed(2) + '%（' + pctRes.minDate + '）～ ' +
         pctRes.max.toFixed(2) + '%（' + pctRes.maxDate + '）· 样本 ' + pctRes.days + ' 个交易日</div>' +
