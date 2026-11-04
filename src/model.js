@@ -217,7 +217,7 @@ XJ.model = (function () {
         unsupportedDividend: [],         // 无分红数据源的标的（美股）
         indexCompare: ['sh', 'hs300', 'hsi'],   // 资产走势里默认勾选的对比指数
         showYieldBench: false,           // 股息率曲线里是否叠加「余额宝七日年化」基准线（默认关）
-        /* 股息率分位的统计窗口（年）：3 / 5 / 10。★ 本机偏好，不进 SETTINGS_SYNC。 */
+        /* 股息率分位的统计窗口（年）：1 / 2 / 3 / 5 / 10。★ 本机偏好，不进 SETTINGS_SYNC。 */
         yieldPctWin: 3,
         /* 派息日弹窗：最近一次已经弹过的日期（'YYYY-MM-DD'）。
            当天弹过就不再打扰；存 settings 而不是 ui，是为了跨会话/跨设备导入后都不会重复弹。 */
