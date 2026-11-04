@@ -715,21 +715,25 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .wl-av{ flex:0 0 auto; }
 .wl-nm{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
 .wl-nm span{ font-size:13.5px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.wl-nm b{ font-size:11px; font-weight:500; color:var(--text-3); }
+.wl-nm b{ font-size:11px; font-weight:500; color:var(--text-3); display:flex; align-items:center; min-width:0; white-space:nowrap; }
+.wl-nm b .wl-code{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .wl-tag{
   font-style:normal; font-size:9px; font-weight:650; color:var(--blue);
   background:var(--blue-soft); border-radius:4px; padding:1px 4px;
   margin-left:4px; vertical-align:1px;
 }
-/* 股息率 + 分位（只做 A股）：跟在代码后面，现价一跳就重算 */
-.wl-yld{ font-style:normal; display:inline-flex; align-items:center; gap:4px; margin-left:6px; vertical-align:1px; }
-.wl-yld-t{ font-style:normal; font-size:10.5px; color:var(--text-3); font-variant-numeric:tabular-nums; }
+/* 股息率 + 分位（只做 A股）：跟在代码后面，现价一跳就重算。
+   三者都不许换行 —— 一旦「息 5.10%」被挤断成两行，整行高度就会跳，列表看起来是坏的。 */
+.wl-yld{ font-style:normal; display:inline-flex; align-items:center; gap:4px; margin-left:6px; flex:0 0 auto; white-space:nowrap; }
+.wl-yld-t{ font-style:normal; font-size:10.5px; color:var(--text-3); font-variant-numeric:tabular-nums; white-space:nowrap; }
 .wl-pct{
   font-style:normal; text-decoration:none; font-size:10px; font-weight:700; line-height:1;
   color:var(--blue); background:rgba(74,123,176,.11);
   border-radius:4px; padding:2px 4px; font-variant-numeric:tabular-nums;
+  flex:0 0 auto; white-space:nowrap;
 }
-.wl-pct.hi{ color:#fff; background:var(--dividend); }
+/* 高位只在详情页用大色块喊；列表行用浅底彩字，免得一排红块抢走价格的位置 */
+.wl-pct.hi{ color:var(--dividend); background:rgba(232,70,31,.11); }
 .wl-pct.lo{ color:var(--text-3); background:rgba(0,0,0,.05); }
 .wl-spark{ flex:0 0 64px; height:24px; opacity:.92; }
 .wl-px{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
