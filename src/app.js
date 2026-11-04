@@ -1,4 +1,4 @@
-﻿/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
+/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
 (function () {
   var U = XJ.util, UI = XJ.ui, M = XJ.model, S = XJ.store, C = XJ.calc;
 
@@ -613,9 +613,11 @@
    * 这套要「最近十年」，而腾讯日线硬上限 2000 根只够 8.2 年，
    * 所以额外取一套周线（640 根 ≈ 12.5 年），由视图层按可见跨度自行切换粒度。
    *
-   * 失败的记账方式与 ensureHistory 一致（按标的、按天），避免每轮同步反复重试同一只。
+   * 失败的记账方式与 ensureHistory 一致（按标的记时间戳），但从 2026-11 起改成
+   * 「冷却 20 分钟后可重试」—— 按天锁死会让一次限流把当天曲线/分位全废掉。
    */
   var yieldBusy = false;
+  var YIELD_RETRY_MS = 20 * 60 * 1000;
   function ensureYieldHistory(force) {
     if (yieldBusy || !S.state) return Promise.resolve(0);
     var syms = S.activeSymbols().filter(function (s) { return XJ.market.supportsYieldCurve(s); });
@@ -626,14 +628,18 @@
     var need = syms.filter(function (sym) {
       var rec = S.state.yieldHistory[sym];
       if (force) return true;
-      /* v=2 起改成「最近十年日线」（分两个窗口取），旧的双粒度缓存一律重取 */
-      if (!rec || rec.v !== 2 || !rec.day || rec.day.length < 2) return S.ui.yieldTriedAt[sym] !== today;
+      /* v=2 起改成「最近十年日线」（分两个窗口取），旧的双粒度缓存一律重取。
+         没数据时按时间戳冷却重试：失败不再锁死到第二天（取数源偶发限流很常见）。 */
+      if (!rec || rec.v !== 2 || !rec.day || rec.day.length < 2) {
+        var tried = U.n0(S.ui.yieldTriedAt[sym]);
+        return !tried || Date.now() - tried >= YIELD_RETRY_MS;
+      }
       return rec.at !== today;
     });
     if (!need.length) return Promise.resolve(0);
 
     yieldBusy = true;
-    need.forEach(function (sym) { S.ui.yieldTriedAt[sym] = today; });
+    need.forEach(function (sym) { S.ui.yieldTriedAt[sym] = Date.now(); });
 
     var codes = {};
     need.forEach(function (sym) {
@@ -870,11 +876,16 @@
 
   /* ---------------- 自选 A股 的「息 / 分位」数据 ----------------
    * 分位要两样东西：分红方案（分子）+ 十年日线收盘（分布）。这两样只由 refreshAll（仅持仓）
-   * 填充，所以自选里非持仓的 A股 必须按需补。串行、每只每天最多一次、进视口才发起。
+   * 填充，所以自选里非持仓的 A股 必须按需补。串行、失败后隔一段时间可再试、进视口才发起。
    * 只做 A股：ETF / 港股 / 美股 / 日股 / 场外一律不请求（用户定调）。 */
   var pctQueue = [];
   var pctBusy = false;
   var PCT_FRESH_DAYS = 7;
+  /* 失败不再「当天锁死」：以前是发起请求前就写 pctTriedAt=今天，任何一次限流/超时都会让
+     这只票当天再也没有分位（用户看到的「有些股票没有分位」）。改成时间戳冷却，过期自动重试。 */
+  var PCT_RETRY_MS = 20 * 60 * 1000;
+  var PCT_MAX_TRIES = 5;          // 单次会话最多尝试几次，防死循环重试
+  var pctAttempts = {};
 
   function pctAge(sym) {
     var cache = S.state.yieldHistory && S.state.yieldHistory[sym];
@@ -893,7 +904,9 @@
     if (XJ.market.assetType(sym) !== 'stock') return;              // 只有 A股（含北交所）
     if (S.activeSymbols().indexOf(sym) >= 0) return;               // 持仓已由 ensureYieldHistory 覆盖
     if (pctDataReady(sym)) return;
-    if (S.ui.pctTriedAt && S.ui.pctTriedAt[sym] === U.today()) return;   // 每天最多一次（失败也记）
+    if ((pctAttempts[sym] || 0) >= PCT_MAX_TRIES) return;
+    if (S.ui.pctTriedAt && S.ui.pctTriedAt[sym] &&
+      Date.now() - U.n0(S.ui.pctTriedAt[sym]) < PCT_RETRY_MS) return;   // 冷却中（失败也可过期重试）
     if (pctQueue.indexOf(sym) >= 0) return;
     pctQueue.push(sym);
     pumpPctQueue();
@@ -904,10 +917,11 @@
     var sym = pctQueue.shift();
     pctBusy = true;
     S.ui.pctTriedAt = S.ui.pctTriedAt || {};
-    S.ui.pctTriedAt[sym] = U.today();
+    S.ui.pctTriedAt[sym] = Date.now();   // 冷却戳：失败也记，但 20 分钟后允许重试
     var needPlans = !(C.plansOf(S.state, sym) || []).length;
     var needHist = pctAge(sym) > PCT_FRESH_DAYS ||
       !(((S.state.yieldHistory || {})[sym] || {}).day || []).length;
+    pctAttempts[sym] = (pctAttempts[sym] || 0) + 1;
     var chain = needPlans ? pullPlansFor(sym) : Promise.resolve(null);
     chain.then(function () {
       if (!needHist) return null;
@@ -920,17 +934,37 @@
         S.state.yieldHistory[sym] = { v: 2, at: U.today(), day: pack.day };
       });
     }).then(function () {
+      /* 拿不到日线就不算成功：否则「失败也当完成」，这行永远没有分位 */
+      var got = (S.state.yieldHistory || {})[sym];
+      if (needHist && !(got && got.day && got.day.length >= 2)) throw new Error('pct-empty');
       C.applyAutoReceived(S.state);
       /* 只落盘、不 notify：整页重绘会把列表滚回顶部；显示由 fillYield 就地更新 */
       XJ.storage.save(S.state);
       /* 就地填 DOM（不整页重绘，滚动不跳）—— 与分时迷你线同一套做法 */
       if (XJ.views.watchlist && XJ.views.watchlist.fillYield) XJ.views.watchlist.fillYield(sym);
+      /* 正停在这只票的详情页：整页重算一次，分位块才会从「样本不足/暂无」切到真实数字 */
+      if (S.ui.subPage === 'symbol' && S.ui.subArg === sym) S.notify();
     }).catch(function () {
-      /* 失败不重试：今天已经记过 pctTriedAt 了 */
+      /* 失败不置 success 状态：20 分钟后若这行还缺数据，再自动补一次（有次数上限） */
+      schedulePctRetry(sym);
     }).then(function () {
       pctBusy = false;
       setTimeout(pumpPctQueue, 150);
     });
+  }
+
+  /** 失败后的一次性补试：冷却到期时，若用户还停在这一页且这行仍缺数据，就再排进队列 */
+  function schedulePctRetry(sym) {
+    if ((pctAttempts[sym] || 0) >= PCT_MAX_TRIES) return;
+    if (typeof setTimeout !== 'function') return;
+    setTimeout(function () {
+      if (!S.state) return;
+      var onWl = S.ui.tab === 'watchlist' && !S.ui.subPage;
+      var onSym = S.ui.subPage === 'symbol' && S.ui.subArg === sym;
+      if (!onWl && !onSym) return;
+      if (pctDataReady(sym)) return;
+      ensurePctData(sym);
+    }, PCT_RETRY_MS + 2000);
   }
 
   /* ---------------- 通用表单辅助 ---------------- */
@@ -1243,6 +1277,8 @@
     if (XJ.views.search) XJ.views.search.refreshList();
     /* 自选（非持仓）标的此前从不走图标解析 → 加自选后立即补官方 logo */
     ensureSymbolAssets(sym);
+    /* 新加自选的 A股：立刻排队补分位（进视口那一刻常常还没数据，这里先踢一脚） */
+    ensurePctData(sym);
   });
 
   UI.on('wlStarRemove', function (node) {
@@ -4454,6 +4490,8 @@
     window.scrollTo(0, 0);
     ensureSymbolDividends(sym);
     ensurePctData(sym);            // A股自选标的：顺带补齐分位要的十年收盘（非 A股 内部直接返回）
+    /* 老自选股的档案里可能一直没有 logo（当年没有解析入口）→ 打开详情时补一次 */
+    ensureLogosFor([sym]);
   }
 
   XJ.app = {
