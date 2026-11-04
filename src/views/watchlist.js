@@ -1,4 +1,4 @@
-﻿/* ==================== 视图：自选（六 Tab 二期） ====================
+/* ==================== 视图：自选（六 Tab 二期） ====================
  * 顶栏（图三 + 需求 6）：左 = 指数卡（点卡片弹 8 指数 chips 切换），右 = 搜索框（进搜索子页）。
  * 分组行（图二）：全部 / 持仓（虚拟组）+ 自定义组 + 三条杠（分组弹层）。
  * 列表行：官方 Logo + 名称/代码 + 当日分时迷你曲线（懒加载 5 分钟缓存）+
@@ -86,7 +86,11 @@ XJ.views.watchlist = (function () {
     if (cache && cache.day && cache.day.length >= 2) {
       var w = pctWinOf(st);
       var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: price });
-      if (r && !r.insufficient) {
+      if (r && r.insufficient) {
+        /* 次新股/上市不足半年的样本太少：明确写出来，别让用户以为是坏了 */
+        out += '<u class="wl-pct lo" title="近 ' + w + ' 年只有 ' + r.days +
+          ' 个交易日（不足 120 天），样本还不够算分位">样本不足</u>';
+      } else if (r) {
         var v = Math.round(r.pct);
         out += '<u class="wl-pct' + (v >= 80 ? ' hi' : (v <= 20 ? ' lo' : '')) + '"' +
           ' title="股息率分位：按本财年派现（含预案）÷ 实时价，高于近 ' + w + ' 年 ' +
@@ -193,6 +197,21 @@ XJ.views.watchlist = (function () {
   function bind() {
     bindSpark();
     bindYield();
+    ensureRowLogos();
+  }
+
+  /**
+   * 自选行的公司图标：老条目（加自选时还没有解析入口）档案里没有 logoUrl，一直停在中文简称头像。
+   * 进页面补一次 —— ensureLogosFor 内部按 logoStale 去重（当天试过/已拿到就不重复拉），
+   * 拿到后自己 commitNow 重绘，头像就换成官方标识了。
+   */
+  function ensureRowLogos() {
+    if (!XJ.app || !XJ.app.ensureLogosFor) return;
+    var syms = Array.prototype.slice.call(document.querySelectorAll('.wl-row[data-sym]'))
+      .map(function (el) { return el.getAttribute('data-sym'); })
+      .filter(Boolean);
+    if (!syms.length) return;
+    XJ.app.ensureLogosFor(syms);
   }
 
   function bindSpark() {
@@ -294,8 +313,10 @@ XJ.views.watchlist = (function () {
     var spark = sparkOf(sym);
     return '<div class="card wl-row" data-sym="' + U.esc(sym) + '" data-act="wlOpenSymbol">' +
       '<div class="wl-av">' + UI.avatar(name, sym, 40, C.logoFor(sym)) + '</div>' +
-      '<div class="wl-nm"><span>' + U.esc(name) + '</span><b>' + U.esc(code) +
-      yieldHtmlOf(st, sym) + (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</b></div>' +
+      /* 名称 / 代码 / 息·分位 三行：390px 下「代码 + 息 + 分位」挤不进一行（实测差 ~44px），
+         硬塞会把代码压成空白或把「息 5.10%」拆成两行、行高忽高忽低 */
+      '<div class="wl-nm"><span>' + U.esc(name) + '</span><b><span class="wl-code">' + U.esc(code) + '</span>' +
+      (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</b>' + yieldHtmlOf(st, sym) + '</div>' +
       '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (spark === null ? ' data-pending="1"' : '') + '>' +
       (spark || '') + '</div>' +
       '<div class="wl-px">' +
