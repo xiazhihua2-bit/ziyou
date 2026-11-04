@@ -2,13 +2,12 @@
 (function () {
   var U = XJ.util, UI = XJ.ui, M = XJ.model, S = XJ.store, C = XJ.calc;
 
-  /* 六 Tab（2026-10-08 改版）：顺序 = 默认顺序；用户长按拖拽后的顺序存 settings.tabOrder
+  /* 五 Tab（2026-11-04 删去「新闻」）：顺序 = 默认顺序；用户长按拖拽后的顺序存 settings.tabOrder
      （跨设备同步）。图标 = 图一风格的填充式字形（ui.js 的 tab-* 系列）。 */
   var TABS = [
     { id: 'overview', label: '持仓', icon: 'tab-hold' },
     { id: 'watchlist', label: '自选', icon: 'tab-watch' },
     { id: 'calendar', label: '日历', icon: 'tab-cal' },
-    { id: 'news', label: '新闻', icon: 'tab-news' },
     { id: 'find', label: 'FIRE', icon: 'tab-fire' },
     { id: 'mine', label: '我的', icon: 'tab-mine' },
   ];
@@ -82,7 +81,6 @@
       overview: ['自由', '股息收入追踪'],
       watchlist: ['自选', '分组盯盘 · 官方图标'],
       calendar: ['分红日历', '股权登记 · 除权除息 · 派息日'],
-      news: ['新闻', '传奇投资者 · 已成交动态'],
       find: ['FIRE', '被动收入 · 财务自由试算'],
       mine: ['我的', '账户 · 数据 · 设置'],
     }[S.ui.tab] || ['自由', ''];
@@ -870,6 +868,71 @@
     });
   }
 
+  /* ---------------- 自选 A股 的「息 / 分位」数据 ----------------
+   * 分位要两样东西：分红方案（分子）+ 十年日线收盘（分布）。这两样只由 refreshAll（仅持仓）
+   * 填充，所以自选里非持仓的 A股 必须按需补。串行、每只每天最多一次、进视口才发起。
+   * 只做 A股：ETF / 港股 / 美股 / 日股 / 场外一律不请求（用户定调）。 */
+  var pctQueue = [];
+  var pctBusy = false;
+  var PCT_FRESH_DAYS = 7;
+
+  function pctAge(sym) {
+    var cache = S.state.yieldHistory && S.state.yieldHistory[sym];
+    if (!cache || !cache.at) return Infinity;
+    return Math.abs(U.daysBetween(cache.at, U.today()) || 0);
+  }
+
+  function pctDataReady(sym) {
+    var plans = C.plansOf(S.state, sym) || [];
+    var cache = S.state.yieldHistory && S.state.yieldHistory[sym];
+    return plans.length > 0 && !!(cache && cache.day && cache.day.length >= 2) && pctAge(sym) <= PCT_FRESH_DAYS;
+  }
+
+  function ensurePctData(sym) {
+    if (!S.state || !sym) return;
+    if (XJ.market.assetType(sym) !== 'stock') return;              // 只有 A股（含北交所）
+    if (S.activeSymbols().indexOf(sym) >= 0) return;               // 持仓已由 ensureYieldHistory 覆盖
+    if (pctDataReady(sym)) return;
+    if (S.ui.pctTriedAt && S.ui.pctTriedAt[sym] === U.today()) return;   // 每天最多一次（失败也记）
+    if (pctQueue.indexOf(sym) >= 0) return;
+    pctQueue.push(sym);
+    pumpPctQueue();
+  }
+
+  function pumpPctQueue() {
+    if (pctBusy || !pctQueue.length) return;
+    var sym = pctQueue.shift();
+    pctBusy = true;
+    S.ui.pctTriedAt = S.ui.pctTriedAt || {};
+    S.ui.pctTriedAt[sym] = U.today();
+    var needPlans = !(C.plansOf(S.state, sym) || []).length;
+    var needHist = pctAge(sym) > PCT_FRESH_DAYS ||
+      !(((S.state.yieldHistory || {})[sym] || {}).day || []).length;
+    var chain = needPlans ? pullPlansFor(sym) : Promise.resolve(null);
+    chain.then(function () {
+      if (!needHist) return null;
+      var codes = {};
+      var rec = S.state.symbols[sym];
+      if (rec && rec.quoteCode) codes[sym] = rec.quoteCode;
+      return XJ.fetcher.fetchYieldHistory([sym], { codes: codes }).then(function (map) {
+        var pack = map && map[sym];
+        if (!pack || !pack.day || pack.day.length < 2) return;
+        S.state.yieldHistory[sym] = { v: 2, at: U.today(), day: pack.day };
+      });
+    }).then(function () {
+      C.applyAutoReceived(S.state);
+      /* 只落盘、不 notify：整页重绘会把列表滚回顶部；显示由 fillYield 就地更新 */
+      XJ.storage.save(S.state);
+      /* 就地填 DOM（不整页重绘，滚动不跳）—— 与分时迷你线同一套做法 */
+      if (XJ.views.watchlist && XJ.views.watchlist.fillYield) XJ.views.watchlist.fillYield(sym);
+    }).catch(function () {
+      /* 失败不重试：今天已经记过 pctTriedAt 了 */
+    }).then(function () {
+      pctBusy = false;
+      setTimeout(pumpPctQueue, 150);
+    });
+  }
+
   /* ---------------- 通用表单辅助 ---------------- */
   function accountOptions(selected) {
     return S.accounts().map(function (a) {
@@ -930,7 +993,6 @@
 
   /* 内容型 sheet 的「按 id 重开」注册表（popstate 还原栈上 sheet 用） */
   var SHEET_OPENERS = {
-    news: function (arg) { if (XJ.views.news && XJ.views.news.openDetail) XJ.views.news.openDetail(arg, true); },
     wlManage: function () { openManageSheet(true); },
     wlGroup: function (arg) { openStarGroupSheet(arg && arg.sym, arg && arg.name, true); },
   };
@@ -1190,21 +1252,6 @@
     UI.closeSheet();
     UI.toast('已从自选移除');
     if (XJ.views.search) XJ.views.search.refreshList();
-  });
-
-  /* ==================== 新闻（news · 三期） ==================== */
-
-  /* 「仅查看自选」开关（ui.wlNewsOnly，默认关；不持久化，纯本机偏好） */
-  UI.on('newsToggleWl', function (node) {
-    S.setUI({ wlNewsOnly: !!node.checked });
-  });
-
-  UI.on('newsRefresh', function () {
-    if (XJ.views.news && XJ.views.news.refresh) XJ.views.news.refresh();
-  });
-
-  UI.on('newsOpen', function (node) {
-    if (XJ.views.news && XJ.views.news.openDetail) XJ.views.news.openDetail(node.getAttribute('data-id'));
   });
 
   /* ---- 子页面路由 ---- */
@@ -1818,6 +1865,14 @@
      注意这不是「开/关」—— 均线常亮不可关闭，点图例只是换一条口径。 */
   UI.on('switchYieldAvg', function () {
     S.setUI({ yieldAvgMode: S.ui.yieldAvgMode === 'cum' ? 'year' : 'cum' });
+  });
+
+  /* 股息率分位的统计窗口（近 3 / 5 / 10 年）。只换统计区间，不重新取数。 */
+  UI.on('setYieldPctWin', function (node) {
+    var v = U.num(node.getAttribute('data-y'));
+    if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(v) < 0) return;
+    if (S.state.settings && S.state.settings.yieldPctWin === v) return;
+    S.commit(function (s) { s.settings.yieldPctWin = v; });
   });
 
   /* ---------------- 派息日弹窗 + 分红汇总 ----------------
@@ -4398,12 +4453,14 @@
     navTo({ subPage: 'symbol', subArg: sym, floatOpen: false });
     window.scrollTo(0, 0);
     ensureSymbolDividends(sym);
+    ensurePctData(sym);            // A股自选标的：顺带补齐分位要的十年收盘（非 A股 内部直接返回）
   }
 
   XJ.app = {
     ensureLogosFor: ensureLogosFor,
     ensureSymbolAssets: ensureSymbolAssets,
     ensureSymbolDividends: ensureSymbolDividends,
+    ensurePctData: ensurePctData,
     openSymbolPage: openSymbolPage,
     onSheetOpen: onSheetOpen,
     onSheetClose: onSheetClose,
