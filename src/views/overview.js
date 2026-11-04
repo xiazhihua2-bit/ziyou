@@ -418,6 +418,22 @@ XJ.views.overview = (function () {
     /* 当日参考盈亏（人民币口径）：持股数 ×（现价 − 昨收）× 该标的币种汇率 */
     var dayPnl = (chgAmt !== null && h.qty > 0) ? chgAmt * h.qty * (U.n0(h.fxRate) || 1) : null;
 
+    /* 股息率分位徽标：与个股详情页同一函数、同一窗口；现价一变就跟着重算。
+       口径提示写进 title —— 它和左边那个「股价息」的分子不是同一个（那边只算已实施、按财年基准平均）。 */
+    var pctBadge = (function () {
+      var plans = XJ.calc.plansOf(XJ.store.state, h.symbol) || [];
+      var cache = XJ.store.state.yieldHistory && XJ.store.state.yieldHistory[h.symbol];
+      if (!plans.length || !cache || !cache.day) return '';
+      var w = U.num(XJ.store.state.settings && XJ.store.state.settings.yieldPctWin);
+      if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) < 0) w = XJ.calc.YIELD_PCT_WINDOWS[0];
+      var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: h.price });
+      if (!r || r.insufficient) return '';
+      var v = Math.round(r.pct);
+      return '<i class="hc-pct' + (v >= 80 ? ' hi' : (v <= 20 ? ' lo' : '')) + '"' +
+        ' title="股息率分位：按本财年派现（含预案）÷ 实时价，高于近 ' + w + ' 年 ' + v +
+        '% 的交易日">' + v + '</i>';
+    })();
+
     /* 价格行（2026-10-06 重排）：
          【主位】涨跌% —— 放大实底徽章（红涨绿跌，白字），一眼看到今天涨跌
          【次位】实时价格 —— 小号灰色，退为次要信息
@@ -461,7 +477,7 @@ XJ.views.overview = (function () {
       '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.thousands(h.qty) + '股</div></div>' +
       '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
       '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
-      '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + pctBadge + '</div></div>' +
       '</div>' +
       '</button>' +
       '<button class="hc-del" data-act="deleteHolding" data-symbol="' + U.esc(h.symbol) + '" ' +
