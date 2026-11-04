@@ -235,6 +235,11 @@ XJ.calc = (function () {
   /** 整年窗口口径的最小样本量：不足则该财年段整段不画。120 个交易日 ≈ 半年。 */
   var YIELD_AVG_MIN_DAYS = 120;
 
+  /** 股息率分位可选的统计窗口（年） */
+  var YIELD_PCT_WINDOWS = [3, 5, 10];
+  /** 分位最小样本量：不足则不给数字，只报「样本不足」。120 个交易日 ≈ 半年。 */
+  var YIELD_PCT_MIN_DAYS = 120;
+
   /**
    * 分财年平均股息率（统计口径，供界面读文案用）。
    *
@@ -306,6 +311,118 @@ XJ.calc = (function () {
       out.push({ date: p.date, y: avgOf[p.year], year: p.year, enough: true });
     });
     return out;
+  }
+
+  /** 'YYYY-MM-DD' 往前推 years 年（按 365.2425 天/年，与自然年误差 < 1 天） */
+  function shiftYearsBack(day, years) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+    if (!m) return null;
+    var t = Date.UTC(+m[1], +m[2] - 1, +m[3]) - Math.round(years * 365.2425) * 86400000;
+    var d = new Date(t);
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' +
+      ('0' + d.getUTCDate()).slice(-2);
+  }
+
+  /** 该日生效的财年档（最后一档 effectiveFrom <= day）；没有则 null */
+  function yieldStepOn(steps, day) {
+    var s = null;
+    (steps || []).forEach(function (it) { if (it.effectiveFrom <= day) s = it; });
+    return s;
+  }
+
+  /**
+   * 当前财年派现 ÷ 现价，百分比。自选列表直接显示「息 x.xx%」用。
+   * 与 yieldPercentile 的 cur 同一口径（含预案），所以并列显示不会自相矛盾。
+   * @return {Number|null} 无方案 / 无有效价 → null
+   */
+  function yieldNow(plans, price, today) {
+    var s = yieldStepOn(yieldFiscalSteps(plans), String(today || '').slice(0, 10));
+    if (!s) return null;
+    var p = U.num(price);
+    if (p === null || !(p > 0)) return null;
+    return s.perShare / p * 100;
+  }
+
+  /**
+   * 股息率分位：当前股息率在「窗口内全部交易日」中的位置，0–100。
+   *
+   * 用户定义：100% = 当前股息率是历史最高（价格最便宜），0% = 历史最低（价格最贵）。
+   * 财年窗口内分子恒定，所以分位≈价格倒数的分位，方向与定义一致。
+   * 分位用中位秩：(低于 + 0.5 × 等于) / 样本数 × 100 —— 大量并列值（横盘、
+   * 停牌复牌、除权日）落在同一档时取该档中点，最坏误差 0.5/样本数。
+   *
+   * cur（当前值）用实时价算，历史分布用收盘价算：前者随行情跳动，后者是分母。
+   *
+   * @param plans  该标的全部 DividendPlan（含预案，与股息率曲线同源）
+   * @param closes [['YYYY-MM-DD', close], ...] 升序日线收盘（不复权）
+   * @param opts   { years: 3|5|10（缺省 3）, today: 'YYYY-MM-DD', price: Number|null }
+   * @return null（无可用财年）
+   *       | { insufficient:true, days, from, to }
+   *       | { pct, cur, perShare, days, from, to, min, max, minDate, maxDate, year, onClose }
+   */
+  function yieldPercentile(plans, closes, opts) {
+    var o = opts || {};
+    var years = U.num(o.years);
+    if (!years || YIELD_PCT_WINDOWS.indexOf(years) < 0) years = YIELD_PCT_WINDOWS[0];
+    var today = String(o.today || '').slice(0, 10);
+    var from = shiftYearsBack(today, years);
+    if (!from) return null;
+
+    var steps = yieldFiscalSteps(plans);
+    if (!steps.length) return null;
+    var curStep = yieldStepOn(steps, today);
+    if (!curStep) return null;
+
+    var list = closes || [];
+    var vals = [];
+    var min = null, max = null, minDate = null, maxDate = null;
+    var lastClose = null, lastDate = null;
+    var si = -1;
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i];
+      if (!row || row.length < 2) continue;
+      var d = String(row[0]).slice(0, 10);
+      if (d > today) break;
+      var c = U.num(row[1]);
+      if (c === null || !(c > 0)) continue;
+      lastClose = c; lastDate = d;
+      while (si + 1 < steps.length && steps[si + 1].effectiveFrom <= d) si++;
+      if (si < 0 || d < from) continue;            // 财年生效日之前的点无股息率可言
+      var y = steps[si].perShare / c * 100;
+      vals.push(y);
+      if (min === null || y < min) { min = y; minDate = d; }
+      if (max === null || y > max) { max = y; maxDate = d; }
+    }
+
+    var days = vals.length;
+    if (days < YIELD_PCT_MIN_DAYS) {
+      return { insufficient: true, days: days, from: from, to: lastDate || today };
+    }
+
+    var price = U.num(o.price);
+    var onClose = !(price !== null && price > 0);
+    var ref = onClose ? lastClose : price;
+    if (ref === null || !(ref > 0)) {
+      return { insufficient: true, days: days, from: from, to: lastDate || today };
+    }
+    var cur = curStep.perShare / ref * 100;
+
+    var below = 0, eq = 0;
+    for (var k = 0; k < days; k++) {
+      if (vals[k] < cur) below++;
+      else if (vals[k] === cur) eq++;
+    }
+    return {
+      pct: (below + eq / 2) / days * 100,
+      cur: cur,
+      perShare: curStep.perShare,
+      days: days,
+      from: from,
+      to: lastDate || today,
+      min: min, max: max, minDate: minDate, maxDate: maxDate,
+      year: curStep.year,
+      onClose: onClose,
+    };
   }
 
   /** 除权除息日清单（升序、去重），供曲线打散点用 */
@@ -2943,188 +3060,6 @@ XJ.calc = (function () {
     return out;
   }
 
-  /* ==================== 新闻硬规则（六 Tab 三期 · 10-08 重做版） ====================
-   * 用户拍板（2026-10-08 二次确认）：纯关键词硬规则，弃 GLM ——
-   * 「已成交可核验」的事实才收录，宁缺勿滥。五道闸依次为：
-   *   ① 传闻排除词 —— 一票否决（据悉/拟/或将/知情人士…，凡是「还没发生」的一律不收）
-   *   ② 指数排除词 —— 一票否决（指数行情/指标类报道一律不收，
-   *      含「巴菲特指标」这类宏观数据——它不是投资者的动作）
-   *   ③ 误报排除词 —— 一票否决（真实数据里发现的子串误伤）
-   *   ④ 实体词表命中 —— 必过（图七监控清单，严格按清单主体；别名只保留
-   *      同一主体的代称——创始人/标准译名，图七之外的主体一律不进）
-   *   ⑤ 完成时态 / 金额结构词 —— 必过（宣布/完成/斥资/亿/%…没有动作与量级的不收）
-   * 主源换成东财 search-api-web 按词检索后：
-   *   - entities = 命中词表（newsFilter 对标题判定的口径，含主体别名）；
-   *   - searchTerms = 检索词表（每主体 1 个主词，控制东财请求数 ≈ 48 次/轮）。
-   *   两表分离：检索召回靠东财全文相关性，精度靠标题二次命中。 */
-
-  var NEWS_RULES = {
-    /* 监控清单（10-08 用户二次拍板：仅保留图示公司/家族，其余全删）。
-       同一主体的别名同行注释；拉丁词按不区分大小写 + 词边界匹配。
-       ★ 日本商社只收中文全称与唯一性拉丁词：'Mitsubishi'/'Sumitomo'/'Mitsui' 裸词
-         会误伤三菱电机/住友不动产/三井不动产等同族公司，不进表 */
-    entities: [
-      /* 北美 */
-      '伯克希尔', '巴菲特', '波克夏', '哈撒韦', 'BRK', 'Berkshire',   /* Berkshire */
-      '布鲁克菲尔德', 'Brookfield',
-      /* 欧洲 */
-      'Exor',
-      /* 日本：五大商社 */
-      '三菱商事', '三井物产', '伊藤忠', 'ITOCHU', '住友商事', '丸红', 'Marubeni',
-      /* 大中华/香港：李氏家族 + 长和系四平台。★ '长和' 裸词不进表：
-         中文动词短语「断粮仍能长和生存」会子串误伤（真实数据踩过），只收明确后缀 */
-      '李嘉诚', '李泽钜', '长和系', '长和集团', '长和实业',
-      '长江和记', 'CK Hutchison',
-      '长江实业', '长实集团', 'CK Asset',
-      '长江基建', 'CK Infrastructure',
-      '电能实业', 'Power Assets',
-      /* 新加坡 */
-      '淡马锡', 'Temasek',
-    ],
-    /* 检索词表：每主体 1 个主词（东财按词检索，14 次/轮、串行防限流）。
-       别名不单独检索 —— 东财全文相关性会把别名标题召回，标题命中词表把关。 */
-    searchTerms: [
-      '伯克希尔', '布鲁克菲尔德', 'Exor',
-      '三菱商事', '三井物产', '伊藤忠', '住友商事', '丸红',
-      '李嘉诚', '长江和记', '长江实业', '长江基建', '电能实业',
-      '淡马锡',
-    ],
-    /* 完成时态 / 金额结构词：有了实体还不够，必须有「动作 + 量级」才像已成交事实。
-       ★ 只判标题：东财文章正文几乎必含「亿/%」，正文判结构等于没判 */
-    facts: [
-      '完成', '宣布', '达成', '签署', '交割', '公告', '披露', '公布', '落定', '敲定',
-      '斥资', '增持', '减持', '回购', '买入', '购入', '卖出', '出售', '收购', '中标',
-      '加仓', '建仓', '清仓', '出手',
-      '派息', '宣派', '分红', '除净', '派发', '上调', '获批',
-      ' 亿', '亿元', '亿美元', '亿港元', '%',
-    ],
-    /* 传闻排除词：一票否决，优先级最高（宁缺勿滥）。'独家谈判' 是 10-08
-       东财检索真实数据发现的漏网进行时（布鲁克菲尔德收购谈判被收录）；
-       '或增持/或收购' 等是 10-08 真链路复验抓出的「或+动词」传闻变体 */
-    rumors: [
-      '据悉', '据称', '据传', '传闻', '传言', '或将', '拟', '有意', '考虑', '寻求',
-      '计划', '筹备', '磋商', '洽谈', '探讨', '评估中', '知情人士', '消息称',
-      '消息人士', '接近', '有望', '预计', '或以', '意在', '据说', '独家谈判',
-      '或增持', '或收购', '或出售', '或减持', '或买入',
-    ],
-    /* 指数排除词：一票否决（10-08 用户追加）。指数行情/指数编制/宏观察指标
-       都不是「投资者的动作」；'指数' 一词整体否决是最稳的口径 —— 命中实体的
-       快讯里只要顺带提到指数也不收，宁缺勿滥。'综指' 单列：韩国综指等不带"数"字。 */
-    indexWords: [
-      '指数', '综指', '股指', '大盘', '巴菲特指标', '沪深京', '沪指', '深成指', '创业板',
-      '恒指', '国指', '纳指', '道指', '标普', '日内涨', '日内跌',
-    ],
-    /* 误报排除词：一票否决（真实数据里发现的子串误伤）。
-       10-08 清单收窄后，旧条目（自然资源部/香格里拉对话/阿波罗计划）随主体删除而失效 */
-    blocklist: [],
-  };
-
-  /* 重点标记词（10-08 用户拍板）：李嘉诚家族（含长和系四平台）与伯克希尔两类新闻
-   * 在时间轴上加金色「★ 重点」徽章 + 金描边，但不置顶、不打乱时间序。 */
-  var NEWS_FEATURED = [
-    '伯克希尔', '巴菲特', '波克夏', '哈撒韦', 'BRK', 'Berkshire',
-    '李嘉诚', '李泽钜', '长和系', '长和集团', '长和实业',
-    '长江和记', 'CK Hutchison',
-    '长江实业', '长实集团', 'CK Asset',
-    '长江基建', 'CK Infrastructure',
-    '电能实业', 'Power Assets',
-  ];
-
-  /** 词表命中：纯中文走 indexOf；拉丁词按不区分大小写 + 词边界匹配
-   *  （★ \b 必须有：否则 GIC 会命中 Ma[gic]9、PIF 会命中任意英文子串 —— 真实数据踩过） */
-  function newsTextHas(text, word) {
-    if (!word) return false;
-    if (/^[A-Za-z0-9][A-Za-z0-9 .&·'-]*$/.test(word)) {
-      var re = new RegExp('\\b' + word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-      return re.test(text);
-    }
-    return text.indexOf(word) >= 0;
-  }
-
-  /**
-   * 硬规则判定。返回 null（不收）或 { hits: [命中的实体词...] }（按词表序）。
-   * 判定顺序刻意固定：传闻否决 → 指数否决 → 误报否决 → 实体 → 结构。
-   * 测试与行为都依赖这个顺序。
-   * ★ 判定域 = 标题（10-08 主源换东财后收紧）：东财 content 是几百字正文，
-   *   正文顺带提及实体/指数/金额极其常见（实测《红利=保守？》因正文提到
-   *   伯克希尔被误收）——参考页同款教训「主体词只做标题命中」。
-   *   新浪兜底条目的 rich_text 全文就在 title 里，判定域不缩水。
-   */
-  function newsFilter(item) {
-    if (!item) return null;
-    var text = String(item.title || '');
-    if (!text.replace(/\s/g, '')) return null;
-    var i;
-    for (i = 0; i < NEWS_RULES.rumors.length; i++) {
-      if (newsTextHas(text, NEWS_RULES.rumors[i])) return null;
-    }
-    for (i = 0; i < NEWS_RULES.indexWords.length; i++) {
-      if (newsTextHas(text, NEWS_RULES.indexWords[i])) return null;
-    }
-    for (i = 0; i < NEWS_RULES.blocklist.length; i++) {
-      if (newsTextHas(text, NEWS_RULES.blocklist[i])) return null;
-    }
-    var hits = [];
-    for (i = 0; i < NEWS_RULES.entities.length; i++) {
-      if (newsTextHas(text, NEWS_RULES.entities[i])) hits.push(NEWS_RULES.entities[i]);
-    }
-    if (!hits.length) return null;
-    for (i = 0; i < NEWS_RULES.facts.length; i++) {
-      if (newsTextHas(text, NEWS_RULES.facts[i])) {
-        var feat = false;
-        for (i = 0; i < NEWS_FEATURED.length; i++) {
-          if (newsTextHas(text, NEWS_FEATURED[i])) { feat = true; break; }
-        }
-        return { hits: hits, feat: feat };
-      }
-    }
-    return null;
-  }
-
-  /**
-   * 「仅查看自选」的命中：条目正文里出现自选 / 持仓标的的名称（≥2 字）即相关。
-   * 返回命中的名称数组（空数组 = 不相关）。纯函数，视图层每轮渲染现算。
-   */
-  function newsWlHits(item, names) {
-    var text = String(item && item.title || '') + '\n' + String(item && item.digest || '');
-    var out = [];
-    (names || []).forEach(function (n) {
-      if (n && String(n).length >= 2 && text.indexOf(n) >= 0) out.push(n);
-    });
-    return out;
-  }
-
-  /**
-   * Unix 秒 → 'YYYY-MM-DD HH:MM'。
-   * ★ 固定按北京时间（UTC+8）格式化：新闻是境内市场语境，不跟设备时区走，
-   *   海外设备的用户看到的也是同一串北京时间。手写 UTC 分量拼接，不经过 toLocaleString。
-   */
-  function newsTimeText(ctime) {
-    var t = U.num(ctime);
-    if (t === null || t <= 0) return '';
-    var d = new Date((t + 8 * 3600) * 1000);
-    return d.getUTCFullYear() + '-' + U.pad2(d.getUTCMonth() + 1) + '-' + U.pad2(d.getUTCDate()) +
-      ' ' + U.pad2(d.getUTCHours()) + ':' + U.pad2(d.getUTCMinutes());
-  }
-
-  /**
-   * 合并新闻命中：按 id 去重（新的优先）、ctime 降序、裁掉 cutoff 之前的旧闻、裁到 cap 条。
-   * 用于「上一轮缓存 + 本轮新命中」的合并，两边谁先谁后结果一致。
-   */
-  function newsMerge(oldHits, newHits, cutoffSec, cap) {
-    var seen = {};
-    var out = [];
-    (newHits || []).concat(oldHits || []).forEach(function (it) {
-      if (!it || !it.id || seen[it.id]) return;
-      if (cutoffSec && (U.num(it.ctime) || 0) < cutoffSec) return;
-      seen[it.id] = true;
-      out.push(it);
-    });
-    out.sort(function (a, b) { return (U.num(b.ctime) || 0) - (U.num(a.ctime) || 0); });
-    if (cap && out.length > cap) out = out.slice(0, cap);
-    return out;
-  }
-
   return {
     ALL: ALL,
     alignMinute: alignMinute,
@@ -3144,8 +3079,13 @@ XJ.calc = (function () {
     dividendYieldSeries: dividendYieldSeries,
     yieldYearAverages: yieldYearAverages,
     yieldAverageSeries: yieldAverageSeries,
+    yieldPercentile: yieldPercentile,
+    yieldNow: yieldNow,
+    shiftYearsBack: shiftYearsBack,
     YIELD_AVG_FROM: YIELD_AVG_FROM,
     YIELD_AVG_MIN_DAYS: YIELD_AVG_MIN_DAYS,
+    YIELD_PCT_WINDOWS: YIELD_PCT_WINDOWS,
+    YIELD_PCT_MIN_DAYS: YIELD_PCT_MIN_DAYS,
     exDividendDates: exDividendDates,
     position: position,
     txOf: txOf,
@@ -3230,12 +3170,5 @@ XJ.calc = (function () {
     withLiveWeek: withLiveWeek,
     weekLiveBar: weekLiveBar,
     bollSignal: bollSignal,
-    /* v7 新增（六 Tab 三期）：新闻硬规则 */
-    NEWS_RULES: NEWS_RULES,
-    NEWS_FEATURED: NEWS_FEATURED,
-    newsFilter: newsFilter,
-    newsWlHits: newsWlHits,
-    newsTimeText: newsTimeText,
-    newsMerge: newsMerge,
   };
 })();
