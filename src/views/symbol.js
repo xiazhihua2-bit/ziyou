@@ -235,9 +235,53 @@ XJ.views.symbol = (function () {
     if (benchOn) benchTip = '余额宝七日年化为周频（该数据本身极平滑，画日频只是徒增体积）。';
     else if (showBench) benchTip = '正在获取余额宝七日年化数据…';
 
+    /* ---- 股息率分位：当前股息率在「窗口内全部交易日」中的位置 ----
+       0% = 历史最低（价格最贵），100% = 历史最高（价格最便宜）。
+       分母用交易日收盘价的股息率分布，分子 cur 用**实时价**（拿不到才退收盘价），
+       所以行情一跳，这个数字就跟着动。统计窗口可切 3 / 5 / 10 年，与下方时间轴无关。 */
+    var pctWin = (function () {
+      var w = st.state.settings && U.num(st.state.settings.yieldPctWin);
+      return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_WINDOWS[0];
+    })();
+    var liveQuote = (st.state.quoteCache && st.state.quoteCache[symbol]) || null;
+    var pctPrice = (h && h.price) || (liveQuote && liveQuote.price) || null;
+    var pctRes = XJ.calc.yieldPercentile(plans, closes, { years: pctWin, today: U.today(), price: pctPrice });
+
+    function pctSeg() {
+      return '<div class="yj-pct-seg">' + XJ.calc.YIELD_PCT_WINDOWS.map(function (w) {
+        return '<button class="yj-pct-btn' + (w === pctWin ? ' on' : '') + '"' +
+          ' data-act="setYieldPctWin" data-y="' + w + '">近' + w + '年</button>';
+      }).join('') + '</div>';
+    }
+
+    var pctHtml = '';
+    if (pctRes && pctRes.insufficient) {
+      pctHtml = '<div class="yj-pct">' +
+        '<div class="yj-pct-hd"><span class="yj-pct-t">股息率分位</span><div class="spacer"></div>' +
+        pctSeg() + '</div>' +
+        '<div class="tiny" style="line-height:1.7">近' + pctWin + '年只有 ' + pctRes.days +
+        ' 个交易日（不足 ' + XJ.calc.YIELD_PCT_MIN_DAYS + ' 天），样本不够，暂不计算分位。</div></div>';
+    } else if (pctRes) {
+      var pctR = Math.round(pctRes.pct);
+      var pctTone = pctR >= 80 ? ' hi' : (pctR <= 20 ? ' lo' : '');
+      pctHtml = '<div class="yj-pct">' +
+        '<div class="yj-pct-hd"><span class="yj-pct-t">股息率分位</span><div class="spacer"></div>' +
+        pctSeg() + '</div>' +
+        '<div class="yj-pct-body">' +
+        '<div class="yj-pct-num' + pctTone + '">' + pctR + '<span>%</span></div>' +
+        '<div class="yj-pct-side">' +
+        '<div class="yj-pct-line">当前 <b>' + pctRes.cur.toFixed(2) + '%</b>' +
+        (pctRes.onClose ? '（按最近收盘价）' : '') +
+        ' · 高于近 ' + pctWin + ' 年 <b>' + pctR + '%</b> 的交易日</div>' +
+        '<div class="yj-pct-bar"><i style="width:' + pctR + '%"></i><u style="left:' + pctR + '%"></u></div>' +
+        '<div class="tiny yj-pct-range">区间 ' + pctRes.min.toFixed(2) + '%（' + pctRes.minDate + '）～ ' +
+        pctRes.max.toFixed(2) + '%（' + pctRes.maxDate + '）· 样本 ' + pctRes.days + ' 个交易日</div>' +
+        '</div></div></div>';
+    }
+
     return open + head('最近十年 · 日线',
       '<button class="ghost-btn" data-act="refreshOne" data-symbol="' + U.esc(symbol) + '">刷新</button>') +
-      legend + avgStatHtml +
+      pctHtml + legend + avgStatHtml +
       '<div class="yj-chart" data-yj-chart="1">' + built.html + '</div>' +
       (brushHtml ? '<div class="yj-brush">' + brushHtml + '</div>' : '') +
       '<div class="tiny yj-note" style="line-height:1.7">' +
@@ -252,6 +296,10 @@ XJ.views.symbol = (function () {
         : '当前口径「整年均值」：用该财年整段窗口的样本，线条平稳；代价是年内用到了后面才发生的价格，回看历史信号有前视偏差。') +
       '<br>分子换档（年报预案公告日）会让均线跳一格，切换日附近读数仅供参考；' +
       '新财年样本不足 ' + XJ.calc.YIELD_AVG_MIN_DAYS + ' 个交易日时，该财年段不绘制。' +
+      '<br>「股息率分位」= 当前股息率在所选窗口内全部交易日中的位置：100% 表示窗口内最高' +
+      '（价格最便宜），0% 表示最低。分子在财年内是常数，所以它实际反映的是价格的相对高低；' +
+      '分母与曲线同源，切窗口只换统计区间，不重新取数。' +
+      '分子换档与一次性特别分红会让分位整体跳一格，这里不剔除极值。' +
       '</div></div>';
   }
 
