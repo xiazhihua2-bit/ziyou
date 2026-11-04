@@ -42,8 +42,8 @@ XJ.views.watchlist = (function () {
   var pxMemo = { at: 0, quotes: {} };
   var pxPending = false;
 
-  function ensurePxQuotes(syms) {
-    var want = syms.filter(function (s) {
+  function ensurePxQuotes(syms, force) {
+    var want = force ? syms.slice() : syms.filter(function (s) {
       return !(pxMemo.quotes[s] && Date.now() - pxMemo.at < PX_TTL);
     });
     if (pxPending || !want.length) return;
@@ -58,10 +58,74 @@ XJ.views.watchlist = (function () {
         pxMemo.at = Date.now();
         /* 合并进 quoteCache：个股档案页（无持仓自选标的）直接读它拿价格/名称 */
         try { XJ.store.mergeQuotes(qs); } catch (e) { /* 忽略 */ }
+        /* 整页重渲染 → 每行的「息 / 分位」用新价立刻重算（这就是「实时变动」的实现点） */
         XJ.store.setUI({ wlTick: Date.now() });
       }
     }).catch(function () { pxPending = false; });
   }
+
+  /* ---------------- 股息率分位（只做 A股） ----------------
+   * 用户定调：自选里 ETF / 港股 / 美股 / 日股 / 场外一律不显示、也不请求。
+   * 数据（分红方案 + 十年日线）由 app.ensurePctData 串行补齐；进视口才发起。
+   * 现价一跳，这里重算 → 分位实时变动。 */
+  function pctWinOf(st) {
+    var w = U.num(st.state.settings && st.state.settings.yieldPctWin);
+    return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_WINDOWS[0];
+  }
+
+  function yieldInner(st, sym) {
+    if (XJ.market.assetType(sym) !== 'stock') return '';
+    var plans = XJ.calc.plansOf(st.state, sym) || [];
+    if (!plans.length) return '';
+    var q = quoteOf(sym);
+    var price = q && q.price != null ? q.price : null;
+    var out = '';
+    var y = XJ.calc.yieldNow(plans, price, U.today());
+    if (y !== null) out += '<em class="wl-yld-t">息 ' + U.pct(y) + '</em>';
+    var cache = st.state.yieldHistory && st.state.yieldHistory[sym];
+    if (cache && cache.day && cache.day.length >= 2) {
+      var w = pctWinOf(st);
+      var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: price });
+      if (r && !r.insufficient) {
+        var v = Math.round(r.pct);
+        out += '<u class="wl-pct' + (v >= 80 ? ' hi' : (v <= 20 ? ' lo' : '')) + '"' +
+          ' title="股息率分位：按本财年派现（含预案）÷ 实时价，高于近 ' + w + ' 年 ' +
+          v + '% 的交易日">' + v + '</u>';
+      }
+    }
+    return out;
+  }
+
+  function yieldHtmlOf(st, sym) {
+    if (XJ.market.assetType(sym) !== 'stock') return '';
+    return '<i class="wl-yld" data-yld="' + U.esc(sym) + '">' + yieldInner(st, sym) + '</i>';
+  }
+
+  /** 数据到齐后就地填这一行（app.ensurePctData 完成后调用，不整页重绘） */
+  function fillYield(sym) {
+    var el = document.querySelector('.wl-yld[data-yld="' + sym + '"]');
+    if (!el) return;
+    el.innerHTML = yieldInner(XJ.store, sym);
+  }
+
+  /* ---------------- 30 秒实时节拍（只在自选页、只在开市时） ----------------
+   * 持仓标的由全局 refreshAll（60s）负责，这里只刷「非持仓的自选 A股」，
+   * 避免同一只票被两套节拍各请求一次。页面隐藏 / 切走 Tab / 全市场休市 → 不发请求。 */
+  var LIVE_MS = 30000;
+  var liveSyms = [];
+
+  function liveTick() {
+    var st = XJ.store;
+    if (st.ui.tab !== 'watchlist' || st.ui.subPage) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (!liveSyms.length) return;
+    var open = liveSyms.filter(function (s) {
+      try { return XJ.market.sessionOpen(s); } catch (e) { return false; }
+    });
+    if (!open.length) return;
+    ensurePxQuotes(open, true);
+  }
+  if (typeof setInterval !== 'undefined') setInterval(liveTick, LIVE_MS);
 
   /* ---------------- 当日分时迷你曲线（懒加载 · 5 分钟缓存） ----------------
    * 占位节点 .wl-spark[data-pending="1"] 由 bind() 里的 IntersectionObserver 监听，
@@ -125,8 +189,13 @@ XJ.views.watchlist = (function () {
     }).catch(function () { delete sparkPending[sym]; });
   }
 
-  /** 视图渲染后钩子（app.render 调用）：观察进视口的 spark 占位并懒加载 */
+  /** 视图渲染后钩子（app.render 调用）：懒加载 spark + 分位数据 */
   function bind() {
+    bindSpark();
+    bindYield();
+  }
+
+  function bindSpark() {
     if (sparkObserver) sparkObserver.disconnect();
     var spots = Array.prototype.slice.call(document.querySelectorAll('.wl-spark[data-pending="1"]'));
     if (!spots.length) return;
@@ -148,6 +217,28 @@ XJ.views.watchlist = (function () {
       });
     }, { rootMargin: '40px' });
     spots.forEach(function (el) { sparkObserver.observe(el); });
+  }
+
+  /* 分位数据懒加载：观察进视口的 .wl-yld 行（只对 A股 存在这个节点）。
+     数据到齐后 app.ensurePctData 调 fillYield 就地填，不整页重绘。 */
+  var yieldObserver = null;
+  function bindYield() {
+    if (yieldObserver) { yieldObserver.disconnect(); yieldObserver = null; }
+    var spots = Array.prototype.slice.call(document.querySelectorAll('.wl-yld[data-yld]'));
+    if (!spots.length) return;
+    var ask = function (el) {
+      var sym = el.getAttribute('data-yld');
+      if (XJ.app && XJ.app.ensurePctData) XJ.app.ensurePctData(sym);
+    };
+    if (typeof IntersectionObserver === 'undefined') { spots.forEach(ask); return; }
+    yieldObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        yieldObserver.unobserve(en.target);
+        ask(en.target);
+      });
+    }, { rootMargin: '120px' });
+    spots.forEach(function (el) { yieldObserver.observe(el); });
   }
 
   /* ---------------- 渲染 ---------------- */
@@ -203,8 +294,8 @@ XJ.views.watchlist = (function () {
     var spark = sparkOf(sym);
     return '<div class="card wl-row" data-sym="' + U.esc(sym) + '" data-act="wlOpenSymbol">' +
       '<div class="wl-av">' + UI.avatar(name, sym, 40, C.logoFor(sym)) + '</div>' +
-      '<div class="wl-nm"><span>' + U.esc(name) + '</span><b>' + U.esc(code) + '</b>' +
-      (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</div>' +
+      '<div class="wl-nm"><span>' + U.esc(name) + '</span><b>' + U.esc(code) +
+      yieldHtmlOf(st, sym) + (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</b></div>' +
       '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (spark === null ? ' data-pending="1"' : '') + '>' +
       (spark || '') + '</div>' +
       '<div class="wl-px">' +
@@ -243,9 +334,14 @@ XJ.views.watchlist = (function () {
     }
 
     ensurePxQuotes(rows.map(function (it) { return it.symbol; }));
+    /* 实时节拍只管「非持仓的自选 A股」：持仓标的有全局 refreshAll（60s）在跑，
+       这里再刷就会同一只票双请求。空列表时清掉，避免节拍打到已删除的标的。 */
+    liveSyms = rows.filter(function (it) {
+      return !it.holding && XJ.market.assetType(it.symbol) === 'stock';
+    }).map(function (it) { return it.symbol; });
     html += '<div class="wl-list">' + rows.map(function (it) { return rowHtml(st, it); }).join('') + '</div>';
     return html;
   }
 
-  return { render: render, bind: bind };
+  return { render: render, bind: bind, fillYield: fillYield };
 })();
