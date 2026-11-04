@@ -48,6 +48,8 @@ const seed = {
   symbols: {
     sh601398: symRec('sh601398', '工商银行'), sh600036: symRec('sh600036', '招商银行'),
     sh510880: symRec('sh510880', '红利ETF'), hk00700: symRec('hk00700', '腾讯控股'), usAAPL: symRec('usAAPL', '苹果'),
+    /* 601288：有方案、没有日线 → 验「取数失败不锁死 + 冷却后可重试」；301999：只有 30 天日线 → 验「样本不足」 */
+    sh601288: symRec('sh601288', '农业银行'), sz301999: symRec('sz301999', '次新股'),
   },
   transactions: [
     { txId: 'tx_1', accountId: 'acc_1', symbol: 'sh600036', action: 'BUY', date: '2024-01-10', quantity: 2000, price: 33, fee: 5, note: '', createdAt: '2024-01-10T00:00:00Z' },
@@ -58,6 +60,10 @@ const seed = {
     sh601398_b: plan('sh601398', '2025-12-31', 30, '2026-06-20', false),
     sh600036_a: plan('sh600036', '2024-12-31', 20, '2025-07-10'),
     sh600036_b: plan('sh600036', '2025-12-31', 22, '2026-07-10', false),
+    sh601288_a: plan('sh601288', '2024-12-31', 25, '2025-06-15'),
+    sh601288_b: plan('sh601288', '2025-12-31', 26, '2026-06-15', false),
+    sz301999_a: plan('sz301999', '2024-12-31', 10, '2025-06-01'),
+    sz301999_b: plan('sz301999', '2025-12-31', 12, '2026-06-01', false),
   },
   received: [],
   expenses: [{ expenseId: 'e1', key: 'MEALS', label: '三餐', icon: '🍱', monthlyAmount: 600, enabled: true, sortOrder: 1, category: 'essential' }],
@@ -70,6 +76,8 @@ const seed = {
       { itemId: 'wli_2', groupId: 'wlg_cn', symbol: 'sh510880', addedAt: '2026-01-03T00:00:00Z' },
       { itemId: 'wli_3', groupId: 'wlg_cn', symbol: 'hk00700', addedAt: '2026-01-04T00:00:00Z' },
       { itemId: 'wli_4', groupId: 'wlg_cn', symbol: 'usAAPL', addedAt: '2026-01-05T00:00:00Z' },
+      { itemId: 'wli_5', groupId: 'wlg_cn', symbol: 'sh601288', addedAt: '2026-01-06T00:00:00Z' },
+      { itemId: 'wli_6', groupId: 'wlg_cn', symbol: 'sz301999', addedAt: '2026-01-07T00:00:00Z' },
     ],
   },
   quoteCache: {
@@ -78,11 +86,15 @@ const seed = {
     sh510880: { symbol: 'sh510880', price: 1.234, prevClose: 1.23, change: 0.004, changePct: 0.33, at: '2026-11-04T07:00:00Z' },
     hk00700: { symbol: 'hk00700', price: 380, prevClose: 378, change: 2, changePct: 0.53, at: '2026-11-04T07:00:00Z' },
     usAAPL: { symbol: 'usAAPL', price: 220, prevClose: 219, change: 1, changePct: 0.46, at: '2026-11-04T07:00:00Z' },
+    sh601288: { symbol: 'sh601288', price: 5.05, prevClose: 5.0, change: 0.05, changePct: 1.0, at: '2026-11-04T07:00:00Z' },
+    sz301999: { symbol: 'sz301999', price: 18.8, prevClose: 18.6, change: 0.2, changePct: 1.08, at: '2026-11-04T07:00:00Z' },
   },
   priceHistory: {},
   yieldHistory: {
     sh601398: { v: 2, at: todayStr, day: closes },
     sh600036: { v: 2, at: todayStr, day: closes2 },
+    /* 只有 30 个交易日 → 分位样本不足 */
+    sz301999: { v: 2, at: todayStr, day: closes.slice(-30) },
   },
 };
 
@@ -94,6 +106,9 @@ const PROBE = `(async () => {
 
   XJ.store.init(XJ.model.fromImport(SEED_JSON));
   XJ.store.ui.accountId = XJ.calc.ALL;
+  /* 拦下图标解析：只记录被要求解析哪些 symbol（真实解析要走网络，探针里断网） */
+  out.logoAsk = [];
+  XJ.app.ensureLogosFor = function (syms) { out.logoAsk = out.logoAsk.concat(syms || []); return Promise.resolve(0); };
   XJ.store.setUI({ tab: 'watchlist', subPage: null });
   await sleep(500);
 
@@ -154,6 +169,41 @@ const PROBE = `(async () => {
   await sleep(500);
   var badge = document.querySelector('.hc-pct');
   out.badge = badge ? { txt: badge.textContent, cls: badge.className, title: badge.getAttribute('title') } : null;
+
+  /* —— 新增 1：样本不足要写出来，不能留空 —— */
+  XJ.store.setUI({ tab: 'watchlist', subPage: null });
+  await sleep(400);
+  var thin = document.querySelector('.wl-row[data-sym="sz301999"] .wl-pct');
+  out.thin = thin ? { txt: thin.textContent, cls: thin.className } : null;
+
+  /* —— 新增 2：取数失败不再锁死当天；冷却过后自动重试成功 —— */
+  var calls = 0;
+  XJ.fetcher.fetchYieldHistory = function (syms) {
+    calls++;
+    if (calls === 1) return Promise.reject(new Error('boom'));
+    /* 借用种子里的 700 天序列（PROBE 是模板串，取不到 Node 侧的 closes 变量） */
+    var base = ((XJ.store.state.yieldHistory || {})['sh601398'] || {}).day || [];
+    var o = {};
+    (syms || []).forEach(function (s) { o[s] = { day: base }; });
+    return Promise.resolve(o);
+  };
+  XJ.store.ui.pctTriedAt['sh601288'] = Date.now() - 21 * 60000;   // 假装上次失败已过冷却
+  XJ.app.ensurePctData('sh601288');
+  await sleep(900);
+  out.failCalls = calls;
+  out.failLocked = !!(XJ.store.state.yieldHistory || {})['sh601288'];
+  /* 冷却内再触发：不该再发请求 */
+  XJ.app.ensurePctData('sh601288');
+  await sleep(400);
+  out.callsInCooldown = calls;
+  /* 冷却过期后重试 → 成功填上分位 */
+  XJ.store.ui.pctTriedAt['sh601288'] = Date.now() - 21 * 60000;
+  XJ.app.ensurePctData('sh601288');
+  await sleep(900);
+  out.retryCalls = calls;
+  out.retryHist = !!((XJ.store.state.yieldHistory || {})['sh601288'] || {}).day;
+  var rr = document.querySelector('.wl-row[data-sym="sh601288"] .wl-yld');
+  out.retryText = rr ? rr.textContent.replace(/\\s+/g, ' ').trim() : null;
   return out;
 })();`;
 
@@ -266,6 +316,20 @@ try {
     else bad('切 1 年异常 ' + JSON.stringify({ win: out.win1, on: out.segOn1, num: out.pctNum1 }));
     if (out.badge && /^\d+%?$/.test(out.badge.txt || '')) ok('★ 持仓卡徽标 = ' + out.badge.txt + '（' + out.badge.cls + '）');
     else bad('持仓卡徽标异常 ' + JSON.stringify(out.badge));
+
+    /* 新增三项 */
+    const logoAsk = out.logoAsk || [];
+    const wantLogo = ['sh601398', 'sh601288', 'sz301999'];
+    if (wantLogo.every((s) => logoAsk.indexOf(s) >= 0)) ok('★ 自选渲染时对 A股 发起官方图标解析（' + wantLogo.join('/') + '）');
+    else bad('未触发图标解析 ' + JSON.stringify(logoAsk.slice(0, 12)));
+
+    if (out.thin && out.thin.txt === '样本不足' && /lo/.test(out.thin.cls || '')) ok('★ 样本不足的 A股 显示「样本不足」占位');
+    else bad('样本不足占位异常 ' + JSON.stringify(out.thin));
+
+    if (out.failCalls === 1 && out.failLocked === false && out.callsInCooldown === 1 &&
+      out.retryCalls === 2 && out.retryHist === true && /分位\s*\d+/.test(out.retryText || ''))
+      ok('★ 取数失败不锁死：冷却内不重发，冷却过后重试成功 → ' + out.retryText);
+    else bad('重试链路异常 ' + JSON.stringify({ f: out.failCalls, locked: out.failLocked, cd: out.callsInCooldown, r: out.retryCalls, hist: out.retryHist, txt: out.retryText }));
   }
 
   const dir = path.join(PROJ, 'shots', 'yieldpct');
