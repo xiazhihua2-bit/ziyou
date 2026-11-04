@@ -1,4 +1,4 @@
-﻿/* 股息率分位 / 自选实时息率 CDP 验收：\n * ① 自选 A股行 = 「息 x.xx% + 分位 N」，ETF/港股/美股不显示；\n * ② 详情页分位区块（大数字 / 3·5·10 年切换 / 区间 / 样本）；\n * ③ 持仓卡「股价息」格的分位徽标。\n * 断网跑：数据全部来自种子，不依赖行情源。\n * 用法： node tools/shoot-yieldpct.mjs\n */
+/* 股息率分位 / 自选实时息率 CDP 验收：\n * ① 自选 A股行 = 「息 x.xx% + 分位 N」，ETF/港股/美股不显示；\n * ② 详情页分位区块（大数字 / 3·5·10 年切换 / 区间 / 样本）；\n * ③ 持仓卡「股价息」格的分位徽标。\n * 断网跑：数据全部来自种子，不依赖行情源。\n * 用法： node tools/shoot-yieldpct.mjs\n */
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -140,6 +140,15 @@ const PROBE = `(async () => {
   out.segOn5 = box5 ? (box5.querySelector('.yj-pct-btn.on') || {}).textContent : null;
   out.range5 = box5 ? (box5.querySelector('.yj-pct-range') || {}).textContent : null;
 
+  /* 切 1 年（2026-11-04 新增窗口） */
+  var b1 = document.querySelector('[data-act="setYieldPctWin"][data-y="1"]');
+  if (b1) b1.click();
+  await sleep(600);
+  out.win1 = XJ.store.state.settings.yieldPctWin;
+  var box1 = document.querySelector('.yj-pct');
+  out.pctNum1 = box1 ? (box1.querySelector('.yj-pct-num') || {}).textContent : null;
+  out.segOn1 = box1 ? (box1.querySelector('.yj-pct-btn.on') || {}).textContent : null;
+  out.line1 = box1 ? (box1.querySelector('.yj-pct-line') || {}).textContent : null;
   /* 回持仓页看卡片徽标 */
   XJ.store.setUI({ tab: 'overview', subPage: null });
   await sleep(500);
@@ -249,10 +258,12 @@ try {
 
     if (out.pctBox && /^\d+%$/.test(out.pctNum || '')) ok('★ 详情页分位大数字 = ' + out.pctNum);
     else bad('详情页分位区块异常 ' + JSON.stringify({ box: out.pctBox, num: out.pctNum }));
-    if (out.segLabels && out.segLabels.join('/') === '近3年/近5年/近10年' && out.segOn === '近3年') ok('★ 窗口切换按钮 = ' + out.segLabels.join('/') + '，当前 3年');
+    if (out.segLabels && out.segLabels.join('/') === '近1年/近2年/近3年/近5年/近10年' && out.segOn === '近3年') ok('★ 窗口切换按钮 = ' + out.segLabels.join('/') + '，当前 3年');
     else bad('窗口按钮异常 ' + JSON.stringify({ seg: out.segLabels, on: out.segOn }));
     if (out.win5 === 5 && out.segOn5 === '近5年') ok('★ 切 5 年生效（分位 ' + out.pctNum + ' → ' + out.pctNum5 + '）');
     else bad('切 5 年异常 ' + JSON.stringify({ win: out.win5, on: out.segOn5 }));
+    if (out.win1 === 1 && out.segOn1 === '近1年' && /^\d+%$/.test(out.pctNum1 || '')) ok('★ 切 1 年生效（分位 ' + out.pctNum5 + ' → ' + out.pctNum1 + '）');
+    else bad('切 1 年异常 ' + JSON.stringify({ win: out.win1, on: out.segOn1, num: out.pctNum1 }));
     if (out.badge && /^\d+%?$/.test(out.badge.txt || '')) ok('★ 持仓卡徽标 = ' + out.badge.txt + '（' + out.badge.cls + '）');
     else bad('持仓卡徽标异常 ' + JSON.stringify(out.badge));
   }
@@ -280,6 +291,8 @@ try {
 
 console.log(fail ? '\n[yieldpct] 失败 ' + fail + ' 项 ✗' : '\n[yieldpct] 全部通过 ✓');
 process.exit(fail ? 1 : 0);
+
+
 
 
 
