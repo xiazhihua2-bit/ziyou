@@ -35,10 +35,6 @@ const PROBE = `(async () => {
 
   XJ.store.init(XJ.model.fromImport(SEED_JSON));
   XJ.store.ui.accountId = XJ.calc.ALL;
-  /* 种一个新鲜 newsCache（covered + 当下 sweepMs）：newsCache 不进 fromImport（红线），
-     只能 init 后直写。目的：进新闻 Tab 时 ensureNews 不触发后台检索轮 —— 否则
-     48 词离线轮询每 400ms notify 重渲染，会把下面的长按拖拽打断（tabOrder 写不进去）。 */
-  XJ.store.state.newsCache = { v: 4, sweepMs: Date.now(), newestAt: 0, covered: true, via: 'em', hits: [] };
   XJ.store.setUI({ tab: 'overview', subPage: null });
   await sleep(400);
 
@@ -65,7 +61,7 @@ const PROBE = `(async () => {
     idleColor: csI ? csI.color : null,
   };
 
-  /* 占位页：自选（二期）→ 新闻（三期）→ 回持仓 */
+  /* 占位页：自选（二期）→ FIRE（五 Tab 改版后的第 4 位）→ 回持仓 */
   var clickTab = function (id) {
     var el = document.querySelector('.tab[data-tab="' + id + '"]');
     if (el) el.click();
@@ -77,14 +73,9 @@ const PROBE = `(async () => {
     hasChips: w.querySelectorAll('.wl-chip').length >= 5,   // 全部/持仓/美股/港股/A股
     chipLabels: Array.prototype.slice.call(w.querySelectorAll('.wl-chip')).map(function (c) { return c.textContent; }),
   };
-  clickTab('news'); await sleep(300);
+  clickTab('find'); await sleep(300);
   var nd = document.getElementById('view-body');
-  out.newsPage = {
-    hasSlogan: !!nd.querySelector('.slogan-bar'),
-    hasSwitch: !!nd.querySelector('.news-ctl .switch'),
-    hasBody: !!nd.querySelector('.news-tl') || !!nd.querySelector('.news-row') || (nd.textContent || '').indexOf('无相关动态') >= 0 || (nd.textContent || '').indexOf('个监控主体检索') >= 0,
-    hasFooter: (nd.textContent || '').indexOf('不构成投资建议') >= 0,
-  };
+  out.firePage = { hasBody: !!nd && (nd.textContent || '').length > 40 };
   clickTab('overview'); await sleep(300);
   out.backHome = { ok: !XJ.store.ui.subPage && XJ.store.ui.tab === 'overview' };
 
@@ -216,14 +207,14 @@ try {
   if (out.fatal) bad(out.fatal);
   else {
     const tb = out.tabs || {};
-    const DEF = 'overview,watchlist,calendar,news,find,mine';
-    if (tb.count === 6 && tb.ids.join(',') === DEF)
-      ok('① 六 Tab 默认顺序 = 持仓/自选/日历/新闻/FIRE/我的');
+    const DEF = 'overview,watchlist,calendar,find,mine';
+    if (tb.count === 5 && tb.ids.join(',') === DEF)
+      ok('① 五 Tab 默认顺序 = 持仓/自选/日历/FIRE/我的');
     else bad('Tab 结构异常 ' + tb.count + ' [' + (tb.ids || []).join(',') + ']');
-    if ((tb.labels || []).join('/') === '持仓/自选/日历/新闻/FIRE/我的')
+    if ((tb.labels || []).join('/') === '持仓/自选/日历/FIRE/我的')
       ok('① 标签 = ' + (tb.labels || []).join(' / '));
     else bad('标签异常 ' + JSON.stringify(tb.labels));
-    if (tb.filledIcons) ok('★ 六枚填充式图标（tab-* 字形）全部在位'); else bad('存在未填充的 Tab 图标');
+    if (tb.filledIcons) ok('★ 五枚填充式图标（tab-* 字形）全部在位'); else bad('存在未填充的 Tab 图标');
     if (tb.barWidth && tb.viewport && tb.barWidth <= tb.viewport - 20)
       ok('★ 胶囊宽度 ' + tb.barWidth + 'px ≤ 视口 ' + tb.viewport + 'px（320px 窄屏不溢出）');
     else bad('胶囊宽度异常 ' + tb.barWidth + ' @ ' + tb.viewport);
@@ -240,16 +231,16 @@ try {
     if (out.watchlistPage && out.watchlistPage.hasIndexBar && out.watchlistPage.hasChips)
       ok('② 自选页真身就位（指数栏 + 分组 chips：' + (out.watchlistPage.chipLabels || []).join('/') + '）');
     else bad('自选页异常 ' + JSON.stringify(out.watchlistPage));
-    if (out.newsPage && out.newsPage.hasSlogan && out.newsPage.hasSwitch && out.newsPage.hasBody && out.newsPage.hasFooter)
-      ok('③ 新闻页真身就位（规则横幅 + 自选开关 + 时间轴/空态 + 红线页脚）');
-    else bad('新闻页异常 ' + JSON.stringify(out.newsPage));
+    if (out.firePage && out.firePage.hasBody)
+      ok('③ FIRE 页正常渲染');
+    else bad('FIRE 页异常 ' + JSON.stringify(out.firePage));
     if (out.backHome && out.backHome.ok) ok('③ 切回持仓正常'); else bad('切回持仓异常');
 
     const dg = out.drag || {};
     if (dg.justDragged === true) ok('★ 拖拽后 350ms 防误触窗口生效'); else bad('防误触标记缺失');
     var persistedArr = [];
     try { persistedArr = JSON.parse(dg.persisted || '[]'); } catch (e) { /* 脏值 */ }
-    if (persistedArr.length === 6 && persistedArr[4] === 'watchlist')
+    if (persistedArr.length === 5 && persistedArr[4] === 'watchlist')
       ok('★ 长按拖拽生效：自选移至第 5 位，settings.tabOrder 已持久化（' + persistedArr.join(',') + '）');
     else bad('拖拽排序异常 before=[' + dg.orderBefore + '] after=[' + (dg.idsAfter || []).join(',') + '] persisted=' + dg.persisted);
     if (dg.idsAfter && dg.persisted && dg.idsAfter.join(',') === String(dg.persisted).replace(/[\[\]"]/g, '').split(',').join(','))
