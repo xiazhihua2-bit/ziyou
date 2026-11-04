@@ -721,6 +721,16 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   background:var(--blue-soft); border-radius:4px; padding:1px 4px;
   margin-left:4px; vertical-align:1px;
 }
+/* 股息率 + 分位（只做 A股）：跟在代码后面，现价一跳就重算 */
+.wl-yld{ font-style:normal; display:inline-flex; align-items:center; gap:4px; margin-left:6px; vertical-align:1px; }
+.wl-yld-t{ font-style:normal; font-size:10.5px; color:var(--text-3); font-variant-numeric:tabular-nums; }
+.wl-pct{
+  font-style:normal; text-decoration:none; font-size:10px; font-weight:700; line-height:1;
+  color:var(--blue); background:rgba(74,123,176,.11);
+  border-radius:4px; padding:2px 4px; font-variant-numeric:tabular-nums;
+}
+.wl-pct.hi{ color:#fff; background:var(--dividend); }
+.wl-pct.lo{ color:var(--text-3); background:rgba(0,0,0,.05); }
 .wl-spark{ flex:0 0 64px; height:24px; opacity:.92; }
 .wl-px{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
 .wl-price{
@@ -935,6 +945,15 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hc-cell:nth-child(n+2) .v{ text-align:right; }
 .hc-cell:nth-child(n+2) .k{ text-align:right; }
 .hc-tag{ display:inline-block; padding:1px 6px; border-radius:5px; font-size:10px; font-weight:600; margin-left:6px; vertical-align:1px; }
+/* 股息率分位徽标（跟在「股价息」百分比后面）：中性冷色，不借用涨红跌绿；
+   位置只做视觉分层：≥80 偏分红金、≤20 压灰、中间中性蓝 */
+.hc-pct{
+  display:inline-block; margin-left:4px; padding:0 4px; border-radius:5px;
+  font-size:10px; font-weight:600; font-style:normal; line-height:14px;
+  color:#4A7BB0; background:rgba(74,123,176,.11); vertical-align:1px;
+}
+.hc-pct.hi{ color:var(--dividend); background:rgba(232,70,31,.10); }
+.hc-pct.lo{ color:var(--text-3); background:var(--card-2); }
 
 /* ==================== 悬浮双入口 ==================== */
 .float-wrap{ position:fixed; right:16px; bottom:calc(96px + var(--safe-b)); z-index:70; display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
@@ -1264,6 +1283,28 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 /* 当前读数 vs 平均股息率（中性表述，只给「高于 / 低于」） */
 .yj-avg-stat{ color:var(--text-2); margin:0 0 6px; }
 .yj-avg-stat b{ font-weight:500; color:var(--text); }
+
+/* ---- 股息率分位：大数字 + 0–100 刻度条 ---- */
+.yj-pct{ background:var(--card-2); border-radius:10px; padding:10px 12px; margin:0 0 10px; }
+.yj-pct-hd{ display:flex; align-items:center; gap:8px; }
+.yj-pct-t{ font-size:11px; color:var(--text-2); letter-spacing:.02em; }
+.yj-pct-seg{ display:inline-flex; background:var(--card); border-radius:7px; padding:1px; }
+.yj-pct-btn{ font-size:11px; color:var(--text-3); padding:2px 7px; border-radius:6px; transition:background .14s ease,color .14s ease; }
+.yj-pct-btn.on{ background:var(--card-2); color:var(--text); font-weight:500; }
+.yj-pct-body{ display:flex; align-items:center; gap:12px; margin-top:6px; }
+/* 大数字用等宽数字，切窗口时宽度不跳 */
+.yj-pct-num{ font-size:30px; font-weight:600; line-height:1.05; color:#4A7BB0; font-variant-numeric:tabular-nums; }
+.yj-pct-num span{ font-size:13px; font-weight:500; margin-left:1px; }
+.yj-pct-num.hi{ color:var(--dividend); }
+.yj-pct-num.lo{ color:var(--text-3); }
+.yj-pct-side{ flex:1; min-width:0; }
+.yj-pct-line{ font-size:11px; color:var(--text-2); line-height:1.5; }
+.yj-pct-line b{ font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; }
+/* 刻度条：底槽 + 填充 + 游标，纯 CSS，不引入图表 */
+.yj-pct-bar{ position:relative; height:6px; border-radius:3px; background:var(--line-2); margin:6px 0 4px; }
+.yj-pct-bar i{ position:absolute; left:0; top:0; bottom:0; border-radius:3px; background:linear-gradient(90deg,#9FB6D6,#4A7BB0); }
+.yj-pct-bar u{ position:absolute; top:-3px; width:2px; height:12px; margin-left:-1px; border-radius:1px; background:var(--text); }
+.yj-pct-range{ color:var(--text-3); line-height:1.5; }
 
 /* 顶部区间条（对齐参考图：当日 / 本月 / 近三月 / …） */
 .nw-ranges-top{
@@ -1812,52 +1853,3 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .sync-log-l .k.k-warn{ background:var(--pend-tag-bg); color:var(--pend-text); }
 .sync-log-l .x{ color:var(--text-2); min-width:0; word-break:break-word; }
 .sync-card code{ font-size:11.5px; background:var(--fill); padding:1px 4px; border-radius:4px; }
-
-
-
-
-/* ==================== 新闻页（六 Tab 三期） ==================== */
-/* 「仅查看自选」控制卡：iOS 开关复用全局 .switch */
-.news-ctl{ display:flex; align-items:center; gap:12px; padding:13px 16px; }
-.news-ctl .row-main{ flex:1; min-width:0; }
-.news-ctl .row-t{ font-size:14.5px; font-weight:600; }
-.news-ctl .row-s{ font-size:12px; color:var(--text-3); margin-top:2px; }
-/* 自选相关 pill：分红金（与 .pill.blue 实体蓝成对） */
-.pill.gold{ background:rgba(240,163,10,.15); color:var(--dividend); }
-/* 回看进度条 */
-.news-prog{ display:flex; align-items:center; gap:6px; justify-content:center;
-  font-size:12px; color:var(--text-3); padding:2px 0 10px; }
-.news-prog svg{ animation:spin 1.1s linear infinite; }
-/* 时间轴（图六快讯风）：左列日期（同日仅首条）+ 品牌绿点 + 竖线 + 右侧内容。
-   绿点是时间轴装饰（非涨跌语义），用 Tab 品牌绿与选中态同源 */
-.news-tl{ padding:6px 0 2px; }
-.news-row{ display:flex; gap:11px; padding:11px 14px 11px 12px;
-  border-bottom:.5px solid var(--line); cursor:pointer; }
-.news-row:last-child{ border-bottom:0; }
-.news-row:active{ background:rgba(120,120,128,.06); }
-/* 重点主体行（李嘉诚家族/伯克希尔）：金色左描边 + 淡金底，仅视觉强调、不改变时间序 */
-.news-row.feat{ background:rgba(240,163,10,.07); box-shadow:inset 3px 0 0 var(--dividend); }
-.tl-side{ flex:0 0 48px; display:flex; flex-direction:column; align-items:flex-end; gap:4px; }
-.tl-date{ font-size:11px; color:var(--text-3); font-variant-numeric:tabular-nums;
-  line-height:1.3; white-space:nowrap; }
-.tl-dot{ width:9px; height:9px; border-radius:50%;
-  background:var(--tab-accent); box-shadow:0 0 0 3px rgba(0,181,120,.14);
-  flex:0 0 auto; margin-right:-1px; }
-.tl-line{ flex:1; width:1.5px; background:var(--line); margin-right:2.5px; min-height:8px; }
-.news-row:last-child .tl-line{ display:none; }
-.tl-body{ flex:1; min-width:0; padding-bottom:2px; }
-.tl-body .row-t{ font-size:14.5px; font-weight:600; line-height:1.45; word-break:break-word;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.tl-sum{ font-size:12px; color:var(--text-2); margin-top:3px; line-height:1.5;
-  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.tl-meta{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:6px; }
-.tl-src{ font-size:10.5px; color:var(--text-3); }
-.nr-meta{ margin-top:7px; display:flex; gap:6px; flex-wrap:wrap; }
-/* 详情 sheet */
-.nd-tt{ font-size:16px; font-weight:700; line-height:1.55; word-break:break-word; }
-.nd-meta{ font-size:12.5px; color:var(--text-3); margin-top:6px;
-  font-variant-numeric:tabular-nums; }
-.nd-ds{ font-size:14px; line-height:1.8; color:var(--text-2); margin-top:12px;
-  white-space:pre-wrap; word-break:break-word; }
-/* 红线页脚 */
-.news-foot{ text-align:center; font-size:11.5px; color:var(--text-3); padding:14px 0 6px; }
