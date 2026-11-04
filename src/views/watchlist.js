@@ -90,7 +90,7 @@ XJ.views.watchlist = (function () {
         var v = Math.round(r.pct);
         out += '<u class="wl-pct' + (v >= 80 ? ' hi' : (v <= 20 ? ' lo' : '')) + '"' +
           ' title="股息率分位：按本财年派现（含预案）÷ 实时价，高于近 ' + w + ' 年 ' +
-          v + '% 的交易日">' + v + '</u>';
+          v + '% 的交易日">分位 ' + v + '</u>';
       }
     }
     return out;
