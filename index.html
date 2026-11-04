@@ -1309,7 +1309,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .yj-pct-seg{ display:inline-flex; background:var(--card); border-radius:7px; padding:1px; }
 .yj-pct-btn{ font-size:11px; color:var(--text-3); padding:2px 7px; border-radius:6px; transition:background .14s ease,color .14s ease; }
 .yj-pct-btn.on{ background:var(--card-2); color:var(--text); font-weight:500; }
-.yj-pct-body{ display:flex; align-items:center; gap:12px; margin-top:6px; }
+.yj-pct-body{ display:flex; align-items:flex-start; gap:12px; margin-top:6px; }
 /* 大数字用等宽数字，切窗口时宽度不跳 */
 .yj-pct-num{ font-size:30px; font-weight:600; line-height:1.05; color:#4A7BB0; font-variant-numeric:tabular-nums; }
 .yj-pct-num span{ font-size:13px; font-weight:500; margin-left:1px; }
@@ -15854,7 +15854,7 @@ XJ.views.watchlist = (function () {
         var v = Math.round(r.pct);
         out += '<u class="wl-pct' + (v >= 80 ? ' hi' : (v <= 20 ? ' lo' : '')) + '"' +
           ' title="股息率分位：按本财年派现（含预案）÷ 实时价，高于近 ' + w + ' 年 ' +
-          v + '% 的交易日">' + v + '</u>';
+          v + '% 的交易日">分位 ' + v + '</u>';
       }
     }
     return out;
@@ -17067,9 +17067,8 @@ XJ.views.symbol = (function () {
         '<div class="yj-pct-body">' +
         '<div class="yj-pct-num' + pctTone + '">' + pctR + '<span>%</span></div>' +
         '<div class="yj-pct-side">' +
-        '<div class="yj-pct-line">当前 <b>' + pctRes.cur.toFixed(2) + '%</b>' +
-        (pctRes.onClose ? '（按最近收盘价）' : '') +
-        ' · 高于近 ' + pctWin + ' 年 <b>' + pctR + '%</b> 的交易日</div>' +
+        '<div class="yj-pct-line">' + (pctRes.onClose ? '收盘 ' : '现价 ') +
+        '<b>' + pctRes.cur.toFixed(2) + '%</b> · 高于近 ' + pctWin + ' 年 <b>' + pctR + '%</b> 交易日</div>' +
         '<div class="yj-pct-bar"><i style="width:' + pctR + '%"></i><u style="left:' + pctR + '%"></u></div>' +
         '<div class="tiny yj-pct-range">区间 ' + pctRes.min.toFixed(2) + '%（' + pctRes.minDate + '）～ ' +
         pctRes.max.toFixed(2) + '%（' + pctRes.maxDate + '）· 样本 ' + pctRes.days + ' 个交易日</div>' +
