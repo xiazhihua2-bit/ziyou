@@ -354,7 +354,8 @@ XJ.views.symbol = (function () {
     /* ② 当前市值 */
     html += '<div class="card" style="margin-bottom:12px">' +
       '<div style="display:flex;align-items:center;gap:12px">' +
-      UI.avatar(name, symbol, 44, C.logoOf(h)) +
+      /* 非持仓标的 h 为 null，logo 只能从 symbols 档案里取 —— 先用 logoFor，再退回 h.logoUrl */
+      UI.avatar(name, symbol, 44, C.logoFor(symbol) || C.logoOf(h)) +
       '<div style="flex:1;min-width:0">' +
       '<div class="row-t"><span class="nm">' + U.esc(name) + '</span>' +
       (h && h.changePct !== null && h.changePct !== undefined
