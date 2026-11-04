@@ -1,4 +1,4 @@
-/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
+﻿/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
 (function () {
   var U = XJ.util, UI = XJ.ui, M = XJ.model, S = XJ.store, C = XJ.calc;
 
@@ -1867,7 +1867,7 @@
     S.setUI({ yieldAvgMode: S.ui.yieldAvgMode === 'cum' ? 'year' : 'cum' });
   });
 
-  /* 股息率分位的统计窗口（近 3 / 5 / 10 年）。只换统计区间，不重新取数。 */
+  /* 股息率分位的统计窗口（近 1 / 2 / 3 / 5 / 10 年）。只换统计区间，不重新取数。 */
   UI.on('setYieldPctWin', function (node) {
     var v = U.num(node.getAttribute('data-y'));
     if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(v) < 0) return;
@@ -4472,3 +4472,4 @@
     boot();
   }
 })();
+
