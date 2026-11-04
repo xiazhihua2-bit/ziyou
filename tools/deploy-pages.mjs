@@ -38,7 +38,6 @@ const FILES = [
   ['src/views/overview.js', 'src/views/overview.js'],
   ['src/views/watchlist.js', 'src/views/watchlist.js'],
   ['src/views/search.js', 'src/views/search.js'],
-  ['src/views/news.js', 'src/views/news.js'],
   ['src/views/plan.js', 'src/views/plan.js'],
   ['src/views/networth.js', 'src/views/networth.js'],
   ['src/views/analysis.js', 'src/views/analysis.js'],
@@ -52,10 +51,16 @@ const FILES = [
   ['tools/shoot-overview.mjs', 'tools/shoot-overview.mjs'],
   ['tools/shoot-tabs.mjs', 'tools/shoot-tabs.mjs'],
   ['tools/shoot-watchlist.mjs', 'tools/shoot-watchlist.mjs'],
-  ['tools/shoot-news.mjs', 'tools/shoot-news.mjs'],
   ['tools/shoot-theme.mjs', 'tools/shoot-theme.mjs'],
   ['tools/sync-e2e.mjs', 'tools/sync-e2e.mjs'],
   ['tools/deploy-pages.mjs', 'tools/deploy-pages.mjs'],
+];
+
+/* 已下线、需要从仓库里删掉的文件（幂等：不存在就跳过）。
+   2026-11-04 删「新闻」视图时留下这两个，不清理的话仓库里会一直躺着死代码。 */
+const PRUNE = [
+  'src/views/news.js',
+  'tools/shoot-news.mjs',
 ];
 
 async function api(method, url, body) {
@@ -86,6 +91,19 @@ for (const [repoPath, localPath] of FILES) {
   });
   if (put.status === 200 || put.status === 201) console.log('  ✓ ' + repoPath);
   else { fail++; console.log('  ✗ ' + repoPath + '  HTTP ' + put.status + ' ' + JSON.stringify(put.json || {}).slice(0, 160)); }
+}
+
+/* 删掉已下线的文件（不看内容，存在即删） */
+for (const repoPath of PRUNE) {
+  const url = '/repos/' + OWNER + '/' + REPO + '/contents/' + encodeURIComponent(repoPath).replace(/%2F/g, '/');
+  const cur = await api('GET', url + '?ref=main');
+  if (cur.status === 404) { console.log('  · ' + repoPath + ' 已不存在'); continue; }
+  if (cur.status !== 200 || !cur.json || !cur.json.sha) {
+    fail++; console.log('  ✗ ' + repoPath + ' 查询失败 HTTP ' + cur.status); continue;
+  }
+  const del = await api('DELETE', url, { message: 'chore: 下线 ' + repoPath, sha: cur.json.sha });
+  if (del.status === 200) console.log('  − ' + repoPath + ' 已删除');
+  else { fail++; console.log('  ✗ ' + repoPath + ' 删除失败 HTTP ' + del.status + ' ' + JSON.stringify(del.json || {}).slice(0, 160)); }
 }
 
 /* Pages 构建状态 */
