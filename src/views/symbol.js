@@ -238,10 +238,10 @@ XJ.views.symbol = (function () {
     /* ---- 股息率分位：当前股息率在「窗口内全部交易日」中的位置 ----
        0% = 历史最低（价格最贵），100% = 历史最高（价格最便宜）。
        分母用交易日收盘价的股息率分布，分子 cur 用**实时价**（拿不到才退收盘价），
-       所以行情一跳，这个数字就跟着动。统计窗口可切 3 / 5 / 10 年，与下方时间轴无关。 */
+       所以行情一跳，这个数字就跟着动。统计窗口可切 1 / 2 / 3 / 5 / 10 年，与下方时间轴无关。 */
     var pctWin = (function () {
       var w = st.state.settings && U.num(st.state.settings.yieldPctWin);
-      return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_WINDOWS[0];
+      return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_DEFAULT;
     })();
     var liveQuote = (st.state.quoteCache && st.state.quoteCache[symbol]) || null;
     var pctPrice = (h && h.price) || (liveQuote && liveQuote.price) || null;
@@ -588,3 +588,4 @@ XJ.views.symbol = (function () {
 
   return { render: render };
 })();
+
