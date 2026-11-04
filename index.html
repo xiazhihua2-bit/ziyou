@@ -3252,7 +3252,7 @@ XJ.model = (function () {
         unsupportedDividend: [],         // 无分红数据源的标的（美股）
         indexCompare: ['sh', 'hs300', 'hsi'],   // 资产走势里默认勾选的对比指数
         showYieldBench: false,           // 股息率曲线里是否叠加「余额宝七日年化」基准线（默认关）
-        /* 股息率分位的统计窗口（年）：3 / 5 / 10。★ 本机偏好，不进 SETTINGS_SYNC。 */
+        /* 股息率分位的统计窗口（年）：1 / 2 / 3 / 5 / 10。★ 本机偏好，不进 SETTINGS_SYNC。 */
         yieldPctWin: 3,
         /* 派息日弹窗：最近一次已经弹过的日期（'YYYY-MM-DD'）。
            当天弹过就不再打扰；存 settings 而不是 ui，是为了跨会话/跨设备导入后都不会重复弹。 */
@@ -8844,8 +8844,10 @@ XJ.calc = (function () {
   /** 整年窗口口径的最小样本量：不足则该财年段整段不画。120 个交易日 ≈ 半年。 */
   var YIELD_AVG_MIN_DAYS = 120;
 
-  /** 股息率分位可选的统计窗口（年） */
-  var YIELD_PCT_WINDOWS = [3, 5, 10];
+  /** 股息率分位可选的统计窗口（年）—— 用户 2026-11-04 追加近 1 年 / 近 2 年 */
+  var YIELD_PCT_WINDOWS = [1, 2, 3, 5, 10];
+  /** 默认窗口：3 年（既有一年多的样本，又不会被十几年前的估值中枢带偏） */
+  var YIELD_PCT_DEFAULT = 3;
   /** 分位最小样本量：不足则不给数字，只报「样本不足」。120 个交易日 ≈ 半年。 */
   var YIELD_PCT_MIN_DAYS = 120;
 
@@ -8964,7 +8966,7 @@ XJ.calc = (function () {
    *
    * @param plans  该标的全部 DividendPlan（含预案，与股息率曲线同源）
    * @param closes [['YYYY-MM-DD', close], ...] 升序日线收盘（不复权）
-   * @param opts   { years: 3|5|10（缺省 3）, today: 'YYYY-MM-DD', price: Number|null }
+   * @param opts   { years: 1|2|3|5|10（缺省 3）, today: 'YYYY-MM-DD', price: Number|null }
    * @return null（无可用财年）
    *       | { insufficient:true, days, from, to }
    *       | { pct, cur, perShare, days, from, to, min, max, minDate, maxDate, year, onClose }
@@ -8972,7 +8974,7 @@ XJ.calc = (function () {
   function yieldPercentile(plans, closes, opts) {
     var o = opts || {};
     var years = U.num(o.years);
-    if (!years || YIELD_PCT_WINDOWS.indexOf(years) < 0) years = YIELD_PCT_WINDOWS[0];
+    if (!years || YIELD_PCT_WINDOWS.indexOf(years) < 0) years = YIELD_PCT_DEFAULT;
     var today = String(o.today || '').slice(0, 10);
     var from = shiftYearsBack(today, years);
     if (!from) return null;
@@ -11694,6 +11696,7 @@ XJ.calc = (function () {
     YIELD_AVG_FROM: YIELD_AVG_FROM,
     YIELD_AVG_MIN_DAYS: YIELD_AVG_MIN_DAYS,
     YIELD_PCT_WINDOWS: YIELD_PCT_WINDOWS,
+    YIELD_PCT_DEFAULT: YIELD_PCT_DEFAULT,
     YIELD_PCT_MIN_DAYS: YIELD_PCT_MIN_DAYS,
     exDividendDates: exDividendDates,
     position: position,
@@ -13586,7 +13589,7 @@ XJ.dnd = (function () {
 
 
 /* ==================== src/views/overview.js ==================== */
-/* ==================== 视图：概览 + 持仓（含公共组件与个股档案） ==================== */
+﻿/* ==================== 视图：概览 + 持仓（含公共组件与个股档案） ==================== */
 XJ.views = XJ.views || {};
 
 /* ---------------- 公共组件 ---------------- */
@@ -14013,7 +14016,7 @@ XJ.views.overview = (function () {
       var cache = XJ.store.state.yieldHistory && XJ.store.state.yieldHistory[h.symbol];
       if (!plans.length || !cache || !cache.day) return '';
       var w = U.num(XJ.store.state.settings && XJ.store.state.settings.yieldPctWin);
-      if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) < 0) w = XJ.calc.YIELD_PCT_WINDOWS[0];
+      if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) < 0) w = XJ.calc.YIELD_PCT_DEFAULT;
       var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: h.price });
       if (!r || r.insufficient) return '';
       var v = Math.round(r.pct);
@@ -14180,6 +14183,7 @@ XJ.views.overview = (function () {
     marketChips: marketChips,
   };
 })();
+
 
 
 /* ==================== src/views/networth.js ==================== */
@@ -15762,7 +15766,7 @@ XJ.views.divsummary = (function () {
 
 
 /* ==================== src/views/watchlist.js ==================== */
-/* ==================== 视图：自选（六 Tab 二期） ====================
+﻿/* ==================== 视图：自选（六 Tab 二期） ====================
  * 顶栏（图三 + 需求 6）：左 = 指数卡（点卡片弹 8 指数 chips 切换），右 = 搜索框（进搜索子页）。
  * 分组行（图二）：全部 / 持仓（虚拟组）+ 自定义组 + 三条杠（分组弹层）。
  * 列表行：官方 Logo + 名称/代码 + 当日分时迷你曲线（懒加载 5 分钟缓存）+
@@ -15834,7 +15838,7 @@ XJ.views.watchlist = (function () {
    * 现价一跳，这里重算 → 分位实时变动。 */
   function pctWinOf(st) {
     var w = U.num(st.state.settings && st.state.settings.yieldPctWin);
-    return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_WINDOWS[0];
+    return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_DEFAULT;
   }
 
   function yieldInner(st, sym) {
@@ -16109,6 +16113,7 @@ XJ.views.watchlist = (function () {
 
   return { render: render, bind: bind, fillYield: fillYield };
 })();
+
 
 
 /* ==================== src/views/search.js ==================== */
@@ -17035,10 +17040,10 @@ XJ.views.symbol = (function () {
     /* ---- 股息率分位：当前股息率在「窗口内全部交易日」中的位置 ----
        0% = 历史最低（价格最贵），100% = 历史最高（价格最便宜）。
        分母用交易日收盘价的股息率分布，分子 cur 用**实时价**（拿不到才退收盘价），
-       所以行情一跳，这个数字就跟着动。统计窗口可切 3 / 5 / 10 年，与下方时间轴无关。 */
+       所以行情一跳，这个数字就跟着动。统计窗口可切 1 / 2 / 3 / 5 / 10 年，与下方时间轴无关。 */
     var pctWin = (function () {
       var w = st.state.settings && U.num(st.state.settings.yieldPctWin);
-      return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_WINDOWS[0];
+      return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_DEFAULT;
     })();
     var liveQuote = (st.state.quoteCache && st.state.quoteCache[symbol]) || null;
     var pctPrice = (h && h.price) || (liveQuote && liveQuote.price) || null;
@@ -17387,8 +17392,9 @@ XJ.views.symbol = (function () {
 })();
 
 
+
 /* ==================== src/app.js ==================== */
-/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
+﻿/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
 (function () {
   var U = XJ.util, UI = XJ.ui, M = XJ.model, S = XJ.store, C = XJ.calc;
 
@@ -19257,7 +19263,7 @@ XJ.views.symbol = (function () {
     S.setUI({ yieldAvgMode: S.ui.yieldAvgMode === 'cum' ? 'year' : 'cum' });
   });
 
-  /* 股息率分位的统计窗口（近 3 / 5 / 10 年）。只换统计区间，不重新取数。 */
+  /* 股息率分位的统计窗口（近 1 / 2 / 3 / 5 / 10 年）。只换统计区间，不重新取数。 */
   UI.on('setYieldPctWin', function (node) {
     var v = U.num(node.getAttribute('data-y'));
     if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(v) < 0) return;
@@ -21862,6 +21868,7 @@ XJ.views.symbol = (function () {
     boot();
   }
 })();
+
 
 })();
 </script>
