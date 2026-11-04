@@ -1291,7 +1291,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .yj-pct-seg{ display:inline-flex; background:var(--card); border-radius:7px; padding:1px; }
 .yj-pct-btn{ font-size:11px; color:var(--text-3); padding:2px 7px; border-radius:6px; transition:background .14s ease,color .14s ease; }
 .yj-pct-btn.on{ background:var(--card-2); color:var(--text); font-weight:500; }
-.yj-pct-body{ display:flex; align-items:center; gap:12px; margin-top:6px; }
+.yj-pct-body{ display:flex; align-items:flex-start; gap:12px; margin-top:6px; }
 /* 大数字用等宽数字，切窗口时宽度不跳 */
 .yj-pct-num{ font-size:30px; font-weight:600; line-height:1.05; color:#4A7BB0; font-variant-numeric:tabular-nums; }
 .yj-pct-num span{ font-size:13px; font-weight:500; margin-left:1px; }
