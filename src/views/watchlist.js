@@ -1,4 +1,4 @@
-/* ==================== 视图：自选（六 Tab 二期） ====================
+﻿/* ==================== 视图：自选（六 Tab 二期） ====================
  * 顶栏（图三 + 需求 6）：左 = 指数卡（点卡片弹 8 指数 chips 切换），右 = 搜索框（进搜索子页）。
  * 分组行（图二）：全部 / 持仓（虚拟组）+ 自定义组 + 三条杠（分组弹层）。
  * 列表行：官方 Logo + 名称/代码 + 当日分时迷你曲线（懒加载 5 分钟缓存）+
@@ -70,7 +70,7 @@ XJ.views.watchlist = (function () {
    * 现价一跳，这里重算 → 分位实时变动。 */
   function pctWinOf(st) {
     var w = U.num(st.state.settings && st.state.settings.yieldPctWin);
-    return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_WINDOWS[0];
+    return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_DEFAULT;
   }
 
   function yieldInner(st, sym) {
@@ -345,3 +345,4 @@ XJ.views.watchlist = (function () {
 
   return { render: render, bind: bind, fillYield: fillYield };
 })();
+
