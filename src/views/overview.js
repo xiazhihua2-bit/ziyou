@@ -1,4 +1,4 @@
-/* ==================== 视图：概览 + 持仓（含公共组件与个股档案） ==================== */
+﻿/* ==================== 视图：概览 + 持仓（含公共组件与个股档案） ==================== */
 XJ.views = XJ.views || {};
 
 /* ---------------- 公共组件 ---------------- */
@@ -425,7 +425,7 @@ XJ.views.overview = (function () {
       var cache = XJ.store.state.yieldHistory && XJ.store.state.yieldHistory[h.symbol];
       if (!plans.length || !cache || !cache.day) return '';
       var w = U.num(XJ.store.state.settings && XJ.store.state.settings.yieldPctWin);
-      if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) < 0) w = XJ.calc.YIELD_PCT_WINDOWS[0];
+      if (XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) < 0) w = XJ.calc.YIELD_PCT_DEFAULT;
       var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: h.price });
       if (!r || r.insufficient) return '';
       var v = Math.round(r.pct);
@@ -592,3 +592,4 @@ XJ.views.overview = (function () {
     marketChips: marketChips,
   };
 })();
+
