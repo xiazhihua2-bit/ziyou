@@ -733,21 +733,25 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .wl-av{ flex:0 0 auto; }
 .wl-nm{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
 .wl-nm span{ font-size:13.5px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.wl-nm b{ font-size:11px; font-weight:500; color:var(--text-3); }
+.wl-nm b{ font-size:11px; font-weight:500; color:var(--text-3); display:flex; align-items:center; min-width:0; white-space:nowrap; }
+.wl-nm b .wl-code{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
 .wl-tag{
   font-style:normal; font-size:9px; font-weight:650; color:var(--blue);
   background:var(--blue-soft); border-radius:4px; padding:1px 4px;
   margin-left:4px; vertical-align:1px;
 }
-/* 股息率 + 分位（只做 A股）：跟在代码后面，现价一跳就重算 */
-.wl-yld{ font-style:normal; display:inline-flex; align-items:center; gap:4px; margin-left:6px; vertical-align:1px; }
-.wl-yld-t{ font-style:normal; font-size:10.5px; color:var(--text-3); font-variant-numeric:tabular-nums; }
+/* 股息率 + 分位（只做 A股）：跟在代码后面，现价一跳就重算。
+   三者都不许换行 —— 一旦「息 5.10%」被挤断成两行，整行高度就会跳，列表看起来是坏的。 */
+.wl-yld{ font-style:normal; display:inline-flex; align-items:center; gap:4px; margin-left:6px; flex:0 0 auto; white-space:nowrap; }
+.wl-yld-t{ font-style:normal; font-size:10.5px; color:var(--text-3); font-variant-numeric:tabular-nums; white-space:nowrap; }
 .wl-pct{
   font-style:normal; text-decoration:none; font-size:10px; font-weight:700; line-height:1;
   color:var(--blue); background:rgba(74,123,176,.11);
   border-radius:4px; padding:2px 4px; font-variant-numeric:tabular-nums;
+  flex:0 0 auto; white-space:nowrap;
 }
-.wl-pct.hi{ color:#fff; background:var(--dividend); }
+/* 高位只在详情页用大色块喊；列表行用浅底彩字，免得一排红块抢走价格的位置 */
+.wl-pct.hi{ color:var(--dividend); background:rgba(232,70,31,.11); }
 .wl-pct.lo{ color:var(--text-3); background:rgba(0,0,0,.05); }
 .wl-spark{ flex:0 0 64px; height:24px; opacity:.92; }
 .wl-px{ flex:0 0 auto; display:flex; flex-direction:column; align-items:flex-end; gap:3px; }
@@ -15766,7 +15770,7 @@ XJ.views.divsummary = (function () {
 
 
 /* ==================== src/views/watchlist.js ==================== */
-﻿/* ==================== 视图：自选（六 Tab 二期） ====================
+/* ==================== 视图：自选（六 Tab 二期） ====================
  * 顶栏（图三 + 需求 6）：左 = 指数卡（点卡片弹 8 指数 chips 切换），右 = 搜索框（进搜索子页）。
  * 分组行（图二）：全部 / 持仓（虚拟组）+ 自定义组 + 三条杠（分组弹层）。
  * 列表行：官方 Logo + 名称/代码 + 当日分时迷你曲线（懒加载 5 分钟缓存）+
@@ -15854,7 +15858,11 @@ XJ.views.watchlist = (function () {
     if (cache && cache.day && cache.day.length >= 2) {
       var w = pctWinOf(st);
       var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: price });
-      if (r && !r.insufficient) {
+      if (r && r.insufficient) {
+        /* 次新股/上市不足半年的样本太少：明确写出来，别让用户以为是坏了 */
+        out += '<u class="wl-pct lo" title="近 ' + w + ' 年只有 ' + r.days +
+          ' 个交易日（不足 120 天），样本还不够算分位">样本不足</u>';
+      } else if (r) {
         var v = Math.round(r.pct);
         out += '<u class="wl-pct' + (v >= 80 ? ' hi' : (v <= 20 ? ' lo' : '')) + '"' +
           ' title="股息率分位：按本财年派现（含预案）÷ 实时价，高于近 ' + w + ' 年 ' +
@@ -15961,6 +15969,21 @@ XJ.views.watchlist = (function () {
   function bind() {
     bindSpark();
     bindYield();
+    ensureRowLogos();
+  }
+
+  /**
+   * 自选行的公司图标：老条目（加自选时还没有解析入口）档案里没有 logoUrl，一直停在中文简称头像。
+   * 进页面补一次 —— ensureLogosFor 内部按 logoStale 去重（当天试过/已拿到就不重复拉），
+   * 拿到后自己 commitNow 重绘，头像就换成官方标识了。
+   */
+  function ensureRowLogos() {
+    if (!XJ.app || !XJ.app.ensureLogosFor) return;
+    var syms = Array.prototype.slice.call(document.querySelectorAll('.wl-row[data-sym]'))
+      .map(function (el) { return el.getAttribute('data-sym'); })
+      .filter(Boolean);
+    if (!syms.length) return;
+    XJ.app.ensureLogosFor(syms);
   }
 
   function bindSpark() {
@@ -16062,8 +16085,10 @@ XJ.views.watchlist = (function () {
     var spark = sparkOf(sym);
     return '<div class="card wl-row" data-sym="' + U.esc(sym) + '" data-act="wlOpenSymbol">' +
       '<div class="wl-av">' + UI.avatar(name, sym, 40, C.logoFor(sym)) + '</div>' +
-      '<div class="wl-nm"><span>' + U.esc(name) + '</span><b>' + U.esc(code) +
-      yieldHtmlOf(st, sym) + (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</b></div>' +
+      /* 名称 / 代码 / 息·分位 三行：390px 下「代码 + 息 + 分位」挤不进一行（实测差 ~44px），
+         硬塞会把代码压成空白或把「息 5.10%」拆成两行、行高忽高忽低 */
+      '<div class="wl-nm"><span>' + U.esc(name) + '</span><b><span class="wl-code">' + U.esc(code) + '</span>' +
+      (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</b>' + yieldHtmlOf(st, sym) + '</div>' +
       '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (spark === null ? ' data-pending="1"' : '') + '>' +
       (spark || '') + '</div>' +
       '<div class="wl-px">' +
@@ -17156,7 +17181,8 @@ XJ.views.symbol = (function () {
     /* ② 当前市值 */
     html += '<div class="card" style="margin-bottom:12px">' +
       '<div style="display:flex;align-items:center;gap:12px">' +
-      UI.avatar(name, symbol, 44, C.logoOf(h)) +
+      /* 非持仓标的 h 为 null，logo 只能从 symbols 档案里取 —— 先用 logoFor，再退回 h.logoUrl */
+      UI.avatar(name, symbol, 44, C.logoFor(symbol) || C.logoOf(h)) +
       '<div style="flex:1;min-width:0">' +
       '<div class="row-t"><span class="nm">' + U.esc(name) + '</span>' +
       (h && h.changePct !== null && h.changePct !== undefined
@@ -17394,7 +17420,7 @@ XJ.views.symbol = (function () {
 
 
 /* ==================== src/app.js ==================== */
-﻿/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
+/* ==================== 入口：启动 / 路由 / 全部交互动作 ==================== */
 (function () {
   var U = XJ.util, UI = XJ.ui, M = XJ.model, S = XJ.store, C = XJ.calc;
 
@@ -18009,9 +18035,11 @@ XJ.views.symbol = (function () {
    * 这套要「最近十年」，而腾讯日线硬上限 2000 根只够 8.2 年，
    * 所以额外取一套周线（640 根 ≈ 12.5 年），由视图层按可见跨度自行切换粒度。
    *
-   * 失败的记账方式与 ensureHistory 一致（按标的、按天），避免每轮同步反复重试同一只。
+   * 失败的记账方式与 ensureHistory 一致（按标的记时间戳），但从 2026-11 起改成
+   * 「冷却 20 分钟后可重试」—— 按天锁死会让一次限流把当天曲线/分位全废掉。
    */
   var yieldBusy = false;
+  var YIELD_RETRY_MS = 20 * 60 * 1000;
   function ensureYieldHistory(force) {
     if (yieldBusy || !S.state) return Promise.resolve(0);
     var syms = S.activeSymbols().filter(function (s) { return XJ.market.supportsYieldCurve(s); });
@@ -18022,14 +18050,18 @@ XJ.views.symbol = (function () {
     var need = syms.filter(function (sym) {
       var rec = S.state.yieldHistory[sym];
       if (force) return true;
-      /* v=2 起改成「最近十年日线」（分两个窗口取），旧的双粒度缓存一律重取 */
-      if (!rec || rec.v !== 2 || !rec.day || rec.day.length < 2) return S.ui.yieldTriedAt[sym] !== today;
+      /* v=2 起改成「最近十年日线」（分两个窗口取），旧的双粒度缓存一律重取。
+         没数据时按时间戳冷却重试：失败不再锁死到第二天（取数源偶发限流很常见）。 */
+      if (!rec || rec.v !== 2 || !rec.day || rec.day.length < 2) {
+        var tried = U.n0(S.ui.yieldTriedAt[sym]);
+        return !tried || Date.now() - tried >= YIELD_RETRY_MS;
+      }
       return rec.at !== today;
     });
     if (!need.length) return Promise.resolve(0);
 
     yieldBusy = true;
-    need.forEach(function (sym) { S.ui.yieldTriedAt[sym] = today; });
+    need.forEach(function (sym) { S.ui.yieldTriedAt[sym] = Date.now(); });
 
     var codes = {};
     need.forEach(function (sym) {
@@ -18266,11 +18298,16 @@ XJ.views.symbol = (function () {
 
   /* ---------------- 自选 A股 的「息 / 分位」数据 ----------------
    * 分位要两样东西：分红方案（分子）+ 十年日线收盘（分布）。这两样只由 refreshAll（仅持仓）
-   * 填充，所以自选里非持仓的 A股 必须按需补。串行、每只每天最多一次、进视口才发起。
+   * 填充，所以自选里非持仓的 A股 必须按需补。串行、失败后隔一段时间可再试、进视口才发起。
    * 只做 A股：ETF / 港股 / 美股 / 日股 / 场外一律不请求（用户定调）。 */
   var pctQueue = [];
   var pctBusy = false;
   var PCT_FRESH_DAYS = 7;
+  /* 失败不再「当天锁死」：以前是发起请求前就写 pctTriedAt=今天，任何一次限流/超时都会让
+     这只票当天再也没有分位（用户看到的「有些股票没有分位」）。改成时间戳冷却，过期自动重试。 */
+  var PCT_RETRY_MS = 20 * 60 * 1000;
+  var PCT_MAX_TRIES = 5;          // 单次会话最多尝试几次，防死循环重试
+  var pctAttempts = {};
 
   function pctAge(sym) {
     var cache = S.state.yieldHistory && S.state.yieldHistory[sym];
@@ -18289,7 +18326,9 @@ XJ.views.symbol = (function () {
     if (XJ.market.assetType(sym) !== 'stock') return;              // 只有 A股（含北交所）
     if (S.activeSymbols().indexOf(sym) >= 0) return;               // 持仓已由 ensureYieldHistory 覆盖
     if (pctDataReady(sym)) return;
-    if (S.ui.pctTriedAt && S.ui.pctTriedAt[sym] === U.today()) return;   // 每天最多一次（失败也记）
+    if ((pctAttempts[sym] || 0) >= PCT_MAX_TRIES) return;
+    if (S.ui.pctTriedAt && S.ui.pctTriedAt[sym] &&
+      Date.now() - U.n0(S.ui.pctTriedAt[sym]) < PCT_RETRY_MS) return;   // 冷却中（失败也可过期重试）
     if (pctQueue.indexOf(sym) >= 0) return;
     pctQueue.push(sym);
     pumpPctQueue();
@@ -18300,10 +18339,11 @@ XJ.views.symbol = (function () {
     var sym = pctQueue.shift();
     pctBusy = true;
     S.ui.pctTriedAt = S.ui.pctTriedAt || {};
-    S.ui.pctTriedAt[sym] = U.today();
+    S.ui.pctTriedAt[sym] = Date.now();   // 冷却戳：失败也记，但 20 分钟后允许重试
     var needPlans = !(C.plansOf(S.state, sym) || []).length;
     var needHist = pctAge(sym) > PCT_FRESH_DAYS ||
       !(((S.state.yieldHistory || {})[sym] || {}).day || []).length;
+    pctAttempts[sym] = (pctAttempts[sym] || 0) + 1;
     var chain = needPlans ? pullPlansFor(sym) : Promise.resolve(null);
     chain.then(function () {
       if (!needHist) return null;
@@ -18316,17 +18356,37 @@ XJ.views.symbol = (function () {
         S.state.yieldHistory[sym] = { v: 2, at: U.today(), day: pack.day };
       });
     }).then(function () {
+      /* 拿不到日线就不算成功：否则「失败也当完成」，这行永远没有分位 */
+      var got = (S.state.yieldHistory || {})[sym];
+      if (needHist && !(got && got.day && got.day.length >= 2)) throw new Error('pct-empty');
       C.applyAutoReceived(S.state);
       /* 只落盘、不 notify：整页重绘会把列表滚回顶部；显示由 fillYield 就地更新 */
       XJ.storage.save(S.state);
       /* 就地填 DOM（不整页重绘，滚动不跳）—— 与分时迷你线同一套做法 */
       if (XJ.views.watchlist && XJ.views.watchlist.fillYield) XJ.views.watchlist.fillYield(sym);
+      /* 正停在这只票的详情页：整页重算一次，分位块才会从「样本不足/暂无」切到真实数字 */
+      if (S.ui.subPage === 'symbol' && S.ui.subArg === sym) S.notify();
     }).catch(function () {
-      /* 失败不重试：今天已经记过 pctTriedAt 了 */
+      /* 失败不置 success 状态：20 分钟后若这行还缺数据，再自动补一次（有次数上限） */
+      schedulePctRetry(sym);
     }).then(function () {
       pctBusy = false;
       setTimeout(pumpPctQueue, 150);
     });
+  }
+
+  /** 失败后的一次性补试：冷却到期时，若用户还停在这一页且这行仍缺数据，就再排进队列 */
+  function schedulePctRetry(sym) {
+    if ((pctAttempts[sym] || 0) >= PCT_MAX_TRIES) return;
+    if (typeof setTimeout !== 'function') return;
+    setTimeout(function () {
+      if (!S.state) return;
+      var onWl = S.ui.tab === 'watchlist' && !S.ui.subPage;
+      var onSym = S.ui.subPage === 'symbol' && S.ui.subArg === sym;
+      if (!onWl && !onSym) return;
+      if (pctDataReady(sym)) return;
+      ensurePctData(sym);
+    }, PCT_RETRY_MS + 2000);
   }
 
   /* ---------------- 通用表单辅助 ---------------- */
@@ -18639,6 +18699,8 @@ XJ.views.symbol = (function () {
     if (XJ.views.search) XJ.views.search.refreshList();
     /* 自选（非持仓）标的此前从不走图标解析 → 加自选后立即补官方 logo */
     ensureSymbolAssets(sym);
+    /* 新加自选的 A股：立刻排队补分位（进视口那一刻常常还没数据，这里先踢一脚） */
+    ensurePctData(sym);
   });
 
   UI.on('wlStarRemove', function (node) {
@@ -21850,6 +21912,8 @@ XJ.views.symbol = (function () {
     window.scrollTo(0, 0);
     ensureSymbolDividends(sym);
     ensurePctData(sym);            // A股自选标的：顺带补齐分位要的十年收盘（非 A股 内部直接返回）
+    /* 老自选股的档案里可能一直没有 logo（当年没有解析入口）→ 打开详情时补一次 */
+    ensureLogosFor([sym]);
   }
 
   XJ.app = {
