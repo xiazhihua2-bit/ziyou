@@ -771,6 +771,27 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   background:var(--fill); color:var(--text-3); margin-left:-4px;
 }
 
+/* 列表表头 · 排序（每个分组同一套，按 groupId 存状态）
+   点表头文字即排序：无 → 降序 → 升序 → 无。选中态用实底 pill + 箭头，
+   未选态只是普通文字按钮 —— 不喧宾夺主，也不至于看不见入口。
+   右对齐：与右侧价格徽章同一视觉轴线，窄屏下也不会把表头挤成两行。 */
+.wl-sortbar{ display:flex; justify-content:flex-end; align-items:center; gap:6px; padding:0 12px 8px; margin-top:-2px; }
+.wl-sortbar::before{
+  content:'排序'; flex:1; min-width:0; text-align:left;
+  font-size:10.5px; color:var(--text-3); letter-spacing:.4px;
+}
+.wl-sortbtn{
+  flex:0 0 auto; display:inline-flex; align-items:center; gap:3px; white-space:nowrap;
+  padding:4px 9px; border-radius:999px; background:transparent;
+  border:1px solid var(--line); color:var(--text-2);
+  font-size:11.5px; font-weight:600; font-variant-numeric:tabular-nums;
+  transition:background .16s ease, color .16s ease, border-color .16s ease;
+}
+.wl-sortbtn:active{ opacity:.7; }
+.wl-sortbtn.on{ background:var(--text); color:var(--bg); border-color:var(--text); font-weight:700; }
+.wl-sortmk{ font-style:normal; font-size:10px; line-height:1; opacity:.5; }
+.wl-sortmk.on{ opacity:1; }
+
 /* 分组宫格（图四 sheet / 指数切换 / 星标落组） */
 .wl-ggrid{ display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:4px 0 14px; }
 .wl-gcell{
@@ -1485,6 +1506,10 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   .topbar{ padding-left:12px; padding-right:12px; }
   .sheet{ padding-left:14px; padding-right:14px; }
   table.tbl th, table.tbl td{ padding:8px 8px; }
+  /* 自选排序表头：窄屏收紧内边距，「排序」二字可省（两个按钮本身就够明白） */
+  .wl-sortbar{ padding:0 10px 7px; gap:5px; }
+  .wl-sortbar::before{ content:''; }
+  .wl-sortbtn{ padding:4px 8px; font-size:11px; }
 }
 @media (max-width:360px){
   .hero .amount{ font-size:29px; }
@@ -15769,6 +15794,174 @@ XJ.views.divsummary = (function () {
 })();
 
 
+/* ==================== src/wl-sort.js ==================== */
+/* ==================== 自选视图 · 按分组排序（共用 hook） ====================
+ * 需求：每个分组内的股票，支持按「股息率」「百分位」排序。
+ *   ① 所有已有分组都有，以后新建的分组也自动有 —— 所以排序状态按 groupId 存，
+ *      不写死任何组；分组一旦存在就自然拥有入口（虚拟组 'all' / 'holding' 同样有）。
+ *   ② 单选：点了第二个指标就替换第一个（不做多级排序）。
+ *   ③ 三态循环：无 → 降序 → 升序 → 无。
+ *   ④ 空值 / 缺失（null、NaN、样本不足、非 A股）一律固定排最后，与升降序无关。
+ *   ⑤ 同值保持原有相对顺序（稳定排序），每次算都用同一份基序，不会「同值互相蹦」。
+ *   ⑥ 记住排序：按分组存 localStorage，刷新后恢复。
+ *
+ * 状态只放内存 + localStorage，**不落 state、不进导出、不进同步** ——
+ * 排序是「这台设备上这张列表怎么摆」的显示偏好，不是数据本身。
+ */
+XJ.wlSort = (function () {
+  var U = XJ.util;
+
+  /* 可选指标：key 与数据取法一一对应（见 valueOf） */
+  var FIELDS = [
+    { key: 'yld', label: '股息率', unit: '%' },     // 本财年派现 ÷ 现价 × 100
+    { key: 'pct', label: '百分位', unit: '' },      // 0–100，股息率在近 N 年交易日中的位置
+  ];
+
+  var DIRS = ['none', 'desc', 'asc'];
+  var LS_KEY = 'xj.wl.sort';                      // 全站唯一前缀，见 util 约定
+
+  /** 内存镜像：{ [groupId]: { field, dir } }；首次用到时从 localStorage 灌一次 */
+  var memo = null;
+
+  function lsGet() {
+    try {
+      if (typeof localStorage === 'undefined' || !localStorage) return {};
+      var raw = localStorage.getItem(LS_KEY);
+      var obj = raw ? JSON.parse(raw) : {};
+      return obj && typeof obj === 'object' ? obj : {};
+    } catch (e) { return {}; }
+  }
+
+  function lsSet(obj) {
+    try {
+      if (typeof localStorage === 'undefined' || !localStorage) return;
+      localStorage.setItem(LS_KEY, JSON.stringify(obj));
+    } catch (e) { /* 隐私模式 / 配额满：排序失效但页面照常可用 */ }
+  }
+
+  function store() {
+    if (!memo) memo = lsGet();
+    return memo;
+  }
+
+  function fieldMeta(key) {
+    return FIELDS.filter(function (f) { return f.key === key; })[0] || null;
+  }
+
+  /** 某分组的排序状态（永远返回对象，未设置 = { field: null, dir: 'none' }） */
+  function stateOf(groupId) {
+    var g = String(groupId || 'all');
+    var s = store()[g];
+    if (!s || !fieldMeta(s.field) || DIRS.indexOf(s.dir) < 0 || s.dir === 'none') {
+      return { field: null, dir: 'none' };
+    }
+    return { field: s.field, dir: s.dir };
+  }
+
+  /** 三态推进：同指标 none→desc→asc→none；点另一个指标 = 直接降序（替换，不做多级） */
+  function cycle(groupId, field) {
+    if (!fieldMeta(field)) return stateOf(groupId);
+    var g = String(groupId || 'all');
+    var cur = stateOf(g);
+    var next;
+    if (cur.field !== field) next = { field: field, dir: 'desc' };
+    else if (cur.dir === 'desc') next = { field: field, dir: 'asc' };
+    else next = { field: null, dir: 'none' };
+    var all = store();
+    if (next.dir === 'none') delete all[g]; else all[g] = next;
+    lsSet(all);
+    return next;
+  }
+
+  /* ---------------- 取值（排序依据） ----------------
+   * 取法与列表行上「息 / 分位」的显示**完全同源**：同一个 yieldNow / yieldPercentile、
+   * 同一份行情 md、同一份分位缓存 —— 保证「看到的数」和「排出来的序」不会打架。
+   *
+   * @param ctx { state, price(sym)->Number|null, win(Number) }
+   * @return { yld: Number|null, pct: Number|null }
+   */
+  function metricsOf(ctx, sym) {
+    var st = ctx.state;
+    var plans = XJ.calc.plansOf(st, sym) || [];
+    if (!plans.length) return { yld: null, pct: null };
+    var price = ctx.price(sym);
+    var yld = XJ.calc.yieldNow(plans, price, U.today());
+    var pct = null;
+    var cache = st.yieldHistory && st.yieldHistory[sym];
+    if (cache && cache.day && cache.day.length >= 2) {
+      var r = XJ.calc.yieldPercentile(plans, cache.day, { years: ctx.win, today: U.today(), price: price });
+      /* 样本不足 / 无可用财年 → 视为缺失，排最后（与行上的「样本不足」一致） */
+      if (r && !r.insufficient && typeof r.pct === 'number' && isFinite(r.pct)) pct = r.pct;
+    }
+    return { yld: yld, pct: pct };
+  }
+
+  /** 有效数值才算数：null / undefined / NaN / Infinity 一律视为「无值」 */
+  function valid(v) {
+    return typeof v === 'number' && isFinite(v);
+  }
+
+  /**
+   * 按分组状态给条目排序（稳定 + 缺失恒置底）。
+   * @param items 已经是「基序」的数组（本视图里是 addedAt 升序），不改它
+   * @param groupId 分组 id —— 状态按它取，各组的排序互不污染
+   * @param ctx  { state, price, win }
+   * @return 新数组（无排序时返回原数组的浅拷贝）
+   */
+  function sortItems(items, groupId, ctx) {
+    var list = (items || []).slice();
+    var s = stateOf(groupId);
+    if (!s.field || s.dir === 'none') return list;
+
+    /* 先算好值，再排 —— 取值只在比较器外面跑一遍，避免 O(n log n) 次重复计算 */
+    var scored = list.map(function (it, i) {
+      var m = it && it.__m ? it.__m : metricsOf(ctx, it.symbol);
+      return { it: it, i: i, v: valid(m[s.field]) ? m[s.field] : null };
+    });
+    var dir = s.dir === 'asc' ? 1 : -1;
+    scored.sort(function (a, b) {
+      var av = a.v, bv = b.v;
+      if (av === null && bv === null) return a.i - b.i;       // 都缺 → 保持原相对顺序
+      if (av === null) return 1;                              // 缺 → 恒置底（不分升降序）
+      if (bv === null) return -1;
+      if (av !== bv) return av > bv ? dir : -dir;
+      return a.i - b.i;                                       // 同值 → 保持原相对顺序
+    });
+    return scored.map(function (x) { return x.it; });
+  }
+
+  /** 表头按钮：点表头文字即排序；箭头 + 高亮标示当前态 */
+  function headerHtml(groupId) {
+    var s = stateOf(groupId);
+    return '<div class="wl-sortbar">' + FIELDS.map(function (f) {
+      var on = s.field === f.key;
+      var mark = !on ? '\u2195' : (s.dir === 'desc' ? '\u2193' : '\u2191');   // ↕ / ↓ / ↑
+      var tip = !on ? ('按' + f.label + '排序')
+        : (s.dir === 'desc' ? (f.label + '：降序 → 点一下改升序') : (f.label + '：升序 → 点一下取消'));
+      return '<button type="button" class="wl-sortbtn' + (on ? ' on' : '') + '"' +
+        ' data-act="wlSort" data-g="' + U.esc(groupId) + '" data-f="' + f.key + '"' +
+        ' aria-pressed="' + (on ? 'true' : 'false') + '" title="' + U.esc(tip) + '">' +
+        U.esc(f.label) + '<i class="wl-sortmk' + (on ? ' on' : '') + '" aria-hidden="true">' + mark + '</i>' +
+        '</button>';
+    }).join('') + '</div>';
+  }
+
+  /* 自测用：清空内存镜像（不改 localStorage） */
+  function _reset() { memo = null; }
+
+  return {
+    FIELDS: FIELDS,
+    stateOf: stateOf,
+    cycle: cycle,
+    metricsOf: metricsOf,
+    sortItems: sortItems,
+    headerHtml: headerHtml,
+    _reset: _reset,
+    LS_KEY: LS_KEY,
+  };
+})();
+
+
 /* ==================== src/views/watchlist.js ==================== */
 /* ==================== 视图：自选（六 Tab 二期） ====================
  * 顶栏（图三 + 需求 6）：左 = 指数卡（点卡片弹 8 指数 chips 切换），右 = 搜索框（进搜索子页）。
@@ -15845,6 +16038,18 @@ XJ.views.watchlist = (function () {
     return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_DEFAULT;
   }
 
+  /** 行内「息 / 分位」的取值上下文：显示与排序共用这一份，口径不会分叉 */
+  function sortCtx(st) {
+    return {
+      state: st.state,
+      win: pctWinOf(st),
+      price: function (sym) {
+        var q = quoteOf(sym);
+        return q && q.price != null ? q.price : null;
+      },
+    };
+  }
+
   function yieldInner(st, sym) {
     if (XJ.market.assetType(sym) !== 'stock') return '';
     var plans = XJ.calc.plansOf(st.state, sym) || [];
@@ -15855,8 +16060,8 @@ XJ.views.watchlist = (function () {
     var y = XJ.calc.yieldNow(plans, price, U.today());
     if (y !== null) out += '<em class="wl-yld-t">息 ' + U.pct(y) + '</em>';
     var cache = st.state.yieldHistory && st.state.yieldHistory[sym];
+    var w = pctWinOf(st);
     if (cache && cache.day && cache.day.length >= 2) {
-      var w = pctWinOf(st);
       var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: price });
       if (r && r.insufficient) {
         /* 次新股/上市不足半年的样本太少：明确写出来，别让用户以为是坏了 */
@@ -16069,7 +16274,14 @@ XJ.views.watchlist = (function () {
       UI.icon('menu', 14) + '</button></div>';
   }
 
-  function rowHtml(st, it) {
+  /**
+   * 单行 HTML。refresh / reuseSpark 是排序「就地换位」用的两个参数：
+   *   普通渲染两者都不传 → 与以前完全一样；
+   *   就地换位时复用的是页面上已经渲染好的同一行（DOM 节点整体搬动），
+   *   所以复用时必须 reuseSpark（别把已加载的迷你曲线退回待加载占位、再请求一遍），
+   *   并且 refresh=true 让「息 / 分位 / 价格」按新价重算 —— 否则排序依据变了、显示没变。
+   */
+  function rowHtml(st, it, refresh, reuseSpark) {
     var sym = it.symbol;
     var q = quoteOf(sym);
     var name = st.symbolName(sym);
@@ -16082,14 +16294,15 @@ XJ.views.watchlist = (function () {
     var dir = chg === null ? '' : (chg >= 0 ? 'up' : 'down');
     var chgTxt = chg === null ? '' :
       (chg >= 0 ? '+' : '') + U.money(chg, 2) + (pct === null ? '' : '  ' + U.signPct(pct));
-    var spark = sparkOf(sym);
+    var spark = reuseSpark ? null : sparkOf(sym);
     return '<div class="card wl-row" data-sym="' + U.esc(sym) + '" data-act="wlOpenSymbol">' +
       '<div class="wl-av">' + UI.avatar(name, sym, 40, C.logoFor(sym)) + '</div>' +
       /* 名称 / 代码 / 息·分位 三行：390px 下「代码 + 息 + 分位」挤不进一行（实测差 ~44px），
          硬塞会把代码压成空白或把「息 5.10%」拆成两行、行高忽高忽低 */
       '<div class="wl-nm"><span>' + U.esc(name) + '</span><b><span class="wl-code">' + U.esc(code) + '</span>' +
       (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</b>' + yieldHtmlOf(st, sym) + '</div>' +
-      '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (spark === null ? ' data-pending="1"' : '') + '>' +
+      '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (reuseSpark ? '' :
+        (spark === null ? ' data-pending="1"' : '')) + '>' +
       (spark || '') + '</div>' +
       '<div class="wl-px">' +
       '<b class="wl-price wl-' + (dir || 'flat') + '">' + price + '</b>' +
@@ -16100,15 +16313,89 @@ XJ.views.watchlist = (function () {
       '</div>';
   }
 
+  /* ---------------- 列表（共用组件 · 每个分组同一套） ----------------
+   * 分组只决定「取哪批条目 + 用哪个排序状态（按 groupId）」，渲染代码只有这一份：
+   * 已有分组、以后新建的分组、'all' / 'holding' 两个虚拟组，全都走同一个 listHtml。
+   * 排序状态由 XJ.wlSort 按 groupId 独立保管，切组互不污染。 */
+
+  /** 分位数据预取条数：按当前排序取前 N 只（一屏多一点），只对 A股 生效 */
+  var PCT_PREFETCH = 20;
+
+  /** 预取一批标的分位数据（走 app.ensurePctData：它自带冷却、去重与次数上限） */
+  function prepPct(list) {
+    if (!XJ.app || !XJ.app.ensurePctData) return;
+    for (var i = 0; i < list.length; i++) XJ.app.ensurePctData(list[i].symbol);
+  }
+
+  /** 当前分组的基序：加入时间（addedAt），「持仓」虚拟组按 sortOrder 稳定序 */
+  function baseRows(cur) {
+    var items = XJ.store.wlItems(cur);
+    return items.slice().sort(function (a, b) {
+      return String(a.addedAt || '').localeCompare(String(b.addedAt || ''));
+    });
+  }
+
+  /** 按当前分组状态排好序的行（缺失值恒置底、同值稳定） */
+  function sortedRows(st, cur, base) {
+    return XJ.wlSort.sortItems(base || baseRows(cur), cur, sortCtx(st));
+  }
+
+  function listHtml(st, cur, rows) {
+    return XJ.wlSort.headerHtml(cur) +
+      '<div class="wl-list" data-wl-group="' + U.esc(cur) + '">' +
+      rows.map(function (it) { return rowHtml(st, it); }).join('') + '</div>';
+  }
+
+  /** 就地换行序：按新顺序搬动已有 DOM 节点，不重建整页（不闪、不跳滚动） */
+  function applyOrder(cur, rows) {
+    var list = document.querySelector('.wl-list[data-wl-group="' + cur + '"]');
+    if (!list || !rows.length) return false;
+    var bySym = {};
+    Array.prototype.forEach.call(list.children, function (el) {
+      var sym = el.getAttribute && el.getAttribute('data-sym');
+      if (sym) bySym[sym] = el;
+    });
+    if (Object.keys(bySym).length !== rows.length) return false;
+    /* 同一 symbol 可能在列表里出现多次时，bySym 会丢节点 —— 只搬「唯一命中」的那些 */
+    var used = {};
+    var ordered = [];
+    for (var i = 0; i < rows.length; i++) {
+      var sym = rows[i].symbol;
+      var el = bySym[sym];
+      if (!el || used[sym]) return false;
+      used[sym] = true;
+      ordered.push(el);
+    }
+    ordered.forEach(function (el) { list.appendChild(el); });   // appendChild 自动搬位
+    return true;
+  }
+
+  /** 点表头：推进该分组的三态 → 就地重排；当场算不出唯一顺序则整页重绘 */
+  function toggleSort(groupId, field) {
+    var st = XJ.store;
+    var cur = groupId || st.ui.wlGroup || 'all';
+    if (cur !== (st.ui.wlGroup || 'all')) return;               // 不在这个分组上：只记状态
+    XJ.wlSort.cycle(cur, field);
+    var base = baseRows(cur);
+    var rows = sortedRows(st, cur, base);
+    if (applyOrder(cur, rows)) {
+      /* 只换头部的箭头与高亮，其余不动 */
+      var bar = document.querySelector('.wl-sortbar');
+      if (bar) {
+        var wrap = document.createElement('div');
+        wrap.innerHTML = XJ.wlSort.headerHtml(cur);
+        if (wrap.firstChild) bar.parentNode.replaceChild(wrap.firstChild, bar);
+      }
+      return;
+    }
+    st.setUI({ wlSortTick: Date.now() });                       // 兜底：换行序失败就整页重绘
+  }
+
   function render() {
     var st = XJ.store;
     var groups = st.wlGroups();
     var cur = st.ui.wlGroup || 'all';
-    var items = st.wlItems(cur);
-    /* 组内顺序 = 加入时间（addedAt）；「持仓」虚拟组按 sortOrder 稳定序 */
-    var rows = items.slice().sort(function (a, b) {
-      return String(a.addedAt || '').localeCompare(String(b.addedAt || ''));
-    });
+    var rows = sortedRows(st, cur, null);
 
     var html = '';
     html += indexBar(st);
@@ -16132,11 +16419,15 @@ XJ.views.watchlist = (function () {
     liveSyms = rows.filter(function (it) {
       return !it.holding && XJ.market.assetType(it.symbol) === 'stock';
     }).map(function (it) { return it.symbol; });
-    html += '<div class="wl-list">' + rows.map(function (it) { return rowHtml(st, it); }).join('') + '</div>';
+    /* 按当前排序取前 N 只预取分位数据：这些行可能还落在视口外（尤其升序/降序把
+       原本靠上的行挤下去），光靠 IntersectionObserver 会一直「缺失」而永远排最后。
+       冷却与去重都在 app.ensurePctData 里，这里重复调用是安全的。 */
+    if (XJ.wlSort.stateOf(cur).dir !== 'none') prepPct(rows.slice(0, PCT_PREFETCH));
+    html += listHtml(st, cur, rows);
     return html;
   }
 
-  return { render: render, bind: bind, fillYield: fillYield };
+  return { render: render, bind: bind, fillYield: fillYield, toggleSort: toggleSort };
 })();
 
 
@@ -18511,6 +18802,14 @@ XJ.views.symbol = (function () {
   UI.on('wlPickGroup', function (node) {
     S.setUI({ wlGroup: node.getAttribute('data-g') });
     UI.closeSheet();
+  });
+
+  /* 自选列表表头：点表头文字即在「无 → 降序 → 升序 → 无」间循环。
+     排序状态按分组存在 XJ.wlSort（按 groupId），这里只转发 —— 各分组互不污染，
+     以后新建的分组也自动拥有入口与状态。 */
+  UI.on('wlSort', function (node) {
+    var wl = XJ.views.watchlist;
+    if (wl && wl.toggleSort) wl.toggleSort(node.getAttribute('data-g'), node.getAttribute('data-f'));
   });
 
   /* 图四：三条杠 → 分组选择弹层（宫格 + 管理分组 / 新增分组） */
