@@ -1091,6 +1091,14 @@
     UI.closeSheet();
   });
 
+  /* 自选列表表头：点表头文字即在「无 → 降序 → 升序 → 无」间循环。
+     排序状态按分组存在 XJ.wlSort（按 groupId），这里只转发 —— 各分组互不污染，
+     以后新建的分组也自动拥有入口与状态。 */
+  UI.on('wlSort', function (node) {
+    var wl = XJ.views.watchlist;
+    if (wl && wl.toggleSort) wl.toggleSort(node.getAttribute('data-g'), node.getAttribute('data-f'));
+  });
+
   /* 图四：三条杠 → 分组选择弹层（宫格 + 管理分组 / 新增分组） */
   function openGroupSheet() {
     var groups = S.wlGroups();
