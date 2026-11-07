@@ -69,6 +69,7 @@
         divsummary: '分红汇总',
         search: '添加自选',
         symbol: S.ui.subArg ? S.symbolName(S.ui.subArg) : '个股详情',
+        pool: '股票池',
       }[S.ui.subPage] || '';
       return '<div class="topbar-row">' +
         '<button class="icon-btn" data-act="closeSubPage" aria-label="返回">' + UI.icon('back', 18) + '</button>' +
@@ -1095,8 +1096,24 @@
      排序状态按分组存在 XJ.wlSort（按 groupId），这里只转发 —— 各分组互不污染，
      以后新建的分组也自动拥有入口与状态。 */
   UI.on('wlSort', function (node) {
+    var g = node.getAttribute('data-g'), f = node.getAttribute('data-f');
+    /* 股票池共用同一套表头 HTML，按 groupId 分流；自选行为保持不变 */
+    if (g === 'pool' && XJ.views.pool && XJ.views.pool.toggleSort) {
+      XJ.views.pool.toggleSort(g, f);
+      return;
+    }
     var wl = XJ.views.watchlist;
-    if (wl && wl.toggleSort) wl.toggleSort(node.getAttribute('data-g'), node.getAttribute('data-f'));
+    if (wl && wl.toggleSort) wl.toggleSort(g, f);
+  });
+
+  /* 股票池：入口 → 独立子页；点行 → 个股详情（沿用自选的导航栈与补数链路） */
+  UI.on('poolEnter', function () {
+    navTo({ subPage: 'pool', status: '', floatOpen: false });
+    window.scrollTo(0, 0);
+  });
+  UI.on('poolOpenSymbol', function (node) {
+    var sym = node.getAttribute('data-sym');
+    if (sym) openSymbolPage(sym);
   });
 
   /* 图四：三条杠 → 分组选择弹层（宫格 + 管理分组 / 新增分组） */
@@ -4476,7 +4493,13 @@
       setTimeout(maybeShowPayoutPopup, 600);
       refreshAll({ silent: true }).then(function () { maybeShowPayoutPopup(); });
       setInterval(function () {
-        if (!document.hidden) refreshAll({ silent: true });
+        if (document.hidden) return;
+        refreshAll({ silent: true });
+        /* 股票池的 50 只不在 activeSymbols 里：跟着同一个 60s 节拍单独拉一次行情，
+           不另起定时器；拉到新价后整页重渲，息率 / 分位 / 排序一起按新价重算。 */
+        if (S.ui.subPage === 'pool' && XJ.views.pool && XJ.views.pool.tickQuotes) {
+          XJ.views.pool.tickQuotes(true);
+        }
       }, Math.max(60000, U.n0(S.state.settings.quoteRefreshMs) || 60000));
       setInterval(reminderTick, 60000);
       reminderTick();
