@@ -792,6 +792,107 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .pool-foot{ text-align:center; padding:14px 12px 4px; }
 .pool-row .av-img{ padding:10%; }
 
+/* ==================== 股东持股情况（515450 · 独立子页） ====================
+   跟随三主题变量，不写死黑底；环形图与柱线图的扇区色是数据分类色，不参与涨跌语义。 */
+.holder-enter{ display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; padding:11px 14px; margin-bottom:10px; text-align:left;
+  font-size:13px; font-weight:650; color:var(--text); cursor:pointer; }
+.holder-enter:active{ opacity:.75; }
+.holder-enter .he-t b{ font-weight:700; color:var(--tab-accent); margin-left:3px; }
+.holder-enter .he-r{ font-size:11.5px; font-weight:500; color:var(--text-3); white-space:nowrap; }
+.holder-enter .he-arrow{ display:inline-block; margin-left:5px; font-size:16px; line-height:1;
+  color:var(--text-3); vertical-align:-1px; }
+.holder-head{ padding:13px 14px; margin-bottom:8px; display:flex; flex-direction:column; gap:4px; }
+.hh-t{ display:flex; align-items:center; gap:7px; font-size:15px; font-weight:700; color:var(--text); }
+.hh-bar{ display:inline-block; width:3px; height:14px; border-radius:2px; background:var(--up); }
+.holder-filter{ display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:2px 2px 11px; font-size:12px; color:var(--text-2); }
+.hf-l,.hf-r{ display:inline-flex; align-items:center; gap:3px; white-space:nowrap; }
+.hf-sel{ font-family:inherit; font-size:12px; font-weight:650; color:var(--text);
+  background:var(--card); border:1px solid var(--line); border-radius:8px;
+  padding:4px 6px; max-width:132px; }
+.hf-sel:disabled{ color:var(--text-2); opacity:.8; }
+.holder-stats{ display:grid; grid-template-columns:repeat(5,minmax(0,1fr));
+  background:var(--card-2); border:1px solid var(--line); border-radius:12px;
+  padding:9px 0; margin-bottom:10px; }
+.hs-cell{ display:flex; flex-direction:column; align-items:center; gap:3px;
+  border-right:1px solid var(--line); min-width:0; }
+.hs-cell:last-child{ border-right:0; }
+.hs-cell span{ font-size:10px; color:var(--text-3); white-space:nowrap; }
+.hs-cell b{ font-size:13px; color:var(--text); font-variant-numeric:tabular-nums; }
+.holder-ind{ padding:12px 12px 10px; margin-bottom:10px; }
+.hi-t{ font-size:13px; font-weight:650; color:var(--text); margin-bottom:4px; }
+.hi-note{ text-align:center; padding-top:4px; }
+.holder-donut{ display:flex; align-items:center; gap:8px; }
+.holder-donut-svg{ width:140px; height:140px; flex:0 0 140px; }
+.holder-legend{ flex:1; min-width:0; display:flex; flex-direction:column; gap:5px; }
+.hl-row{ display:flex; align-items:center; gap:5px; min-width:0; font-size:11px; }
+.hl-dot{ width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+.hl-nm{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-2); }
+.hl-pct{ color:var(--text); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hl-delta{ font-style:normal; min-width:36px; text-align:right; font-size:10.5px;
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hl-delta.up{ color:var(--up); }
+.hl-delta.down{ color:var(--down); }
+.hl-delta.flat{ color:var(--text-3); }
+.holder-thead,.holder-row{
+  display:grid;
+  grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,.9fr) minmax(0,1fr) minmax(0,.62fr);
+  align-items:center; gap:3px;
+}
+.holder-thead{ padding:2px 10px 7px; font-size:10.5px; color:var(--text-3); }
+.ht-name{ text-align:left; }
+.ht-btn{ display:inline-flex; align-items:center; justify-content:center; gap:2px;
+  border:0; background:transparent; color:var(--text-3); font-family:inherit;
+  font-size:10.5px; padding:2px 0; cursor:pointer; white-space:nowrap; }
+.ht-btn.on{ color:var(--tab-accent); font-weight:700; }
+.ht-mk{ font-style:normal; opacity:.5; }
+.ht-mk.on{ opacity:1; }
+.holder-sortstat{ padding:0 12px 8px; font-size:11px; color:var(--text-3); }
+.holder-list{ display:block; }
+.holder-item{ padding:0; overflow:hidden; margin-bottom:7px; }
+.holder-row{ padding:8px 10px; cursor:pointer; font-size:11.5px; }
+.holder-row:active{ opacity:.82; }
+.hr-name{ display:flex; align-items:center; gap:6px; min-width:0; }
+.hr-name .avatar{ border-radius:8px; }
+.hr-name .av-img{ padding:8%; }
+.hr-nm{ min-width:0; display:flex; flex-direction:column; gap:2px; }
+.hr-nm b{ font-size:12px; font-weight:650; color:var(--text); white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+.hr-nm span{ font-size:9.5px; color:var(--text-3); white-space:nowrap; }
+.hr-tag{ display:inline-block; margin-left:4px; font-size:9px; line-height:1.25;
+  font-style:normal; padding:0 2px; border:1px solid currentColor; border-radius:3px; }
+.hr-tag.up{ color:var(--up); }
+.hr-tag.down{ color:var(--down); }
+.hr-v{ text-align:right; color:var(--text); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hr-v.up{ color:var(--up); }
+.hr-v.down{ color:var(--down); }
+.hr-v.flat{ color:var(--text-3); }
+.hr-rank{ text-align:right; color:var(--text-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.hr-arrow{ font-style:normal; margin-left:2px; color:var(--text-3); }
+.holder-detail{ border-top:1px solid var(--line); padding:9px 10px 10px; background:var(--card-2); }
+.hd-legend{ display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--text-2); margin-bottom:4px; }
+.hd-k{ display:inline-block; flex:0 0 auto; }
+.hd-k.bar{ width:10px; height:10px; border-radius:2px; background:#3B82F6; margin-right:2px; }
+.hd-k.line{ width:14px; height:0; border-top:2px solid #F58A2E; position:relative; margin-left:8px; margin-right:2px; }
+.hd-k.line::after{ content:''; position:absolute; width:5px; height:5px; border-radius:50%;
+  background:#F58A2E; left:4px; top:-3.5px; }
+.hd-main,.hd-brush{ width:100%; }
+.holder-bars{ display:block; width:100%; height:auto; }
+.hd-brush .xj-brush{ display:block; width:100%; height:auto; margin-top:2px; }
+.hd-more{ display:flex; align-items:center; justify-content:space-between; width:100%;
+  margin-top:8px; padding:7px 10px; border:1px solid var(--line); border-radius:9px;
+  background:var(--card); color:var(--text-2); font-family:inherit; font-size:11.5px; text-align:left; }
+.hd-more span{ font-size:15px; color:var(--text-3); }
+.hd-more:active{ opacity:.75; }
+.holder-foot{ text-align:center; padding:13px 12px 4px; line-height:1.7; }
+@media (max-width:360px){
+  .holder-donut-svg{ width:118px; height:118px; flex-basis:118px; }
+  .holder-thead,.holder-row{ gap:2px; }
+  .holder-row{ padding:7px 8px; }
+  .ht-btn{ font-size:10px; }
+}
+
 /* 分组宫格（图四 sheet / 指数切换 / 星标落组） */
 .wl-ggrid{ display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:4px 0 14px; }
 .wl-gcell{
