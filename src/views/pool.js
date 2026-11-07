@@ -119,6 +119,16 @@ XJ.views.pool = (function () {
       '</div>';
   }
 
+  /** 股东持股情况入口：另一个独立子页，不参与本页排序 / 行情逻辑 */
+  function holderEntryHtml() {
+    var H = XJ.holder515450;
+    if (!H) return '';
+    return '<button class="card holder-enter" data-act="holderEnter">' +
+      '<span class="he-t">股东持股情况 <b>' + U.esc(H.FUND) + '</b></span>' +
+      '<span class="he-r">' + H.rows(H.latest()).length + ' 家参股公司' +
+      '<span class="he-arrow">›</span></span></button>';
+  }
+
   function sortStat() {
     var s = XJ.wlSort.stateOf(GROUP);
     if (!s.field) return '默认：按成分股权重 · 共 ' + P.items().length + ' 只';
@@ -129,6 +139,7 @@ XJ.views.pool = (function () {
   function render() {
     var rows = sortedRows();
     return headHtml() +
+      holderEntryHtml() +
       XJ.wlSort.headerHtml(GROUP) +
       '<div class="pool-sortstat">' + U.esc(sortStat()) + '</div>' +
       '<div class="wl-list" data-wl-group="' + GROUP + '">' +
