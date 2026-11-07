@@ -100,7 +100,12 @@ const PROBE = `(async () => {
     pe('pointermove', c.x + (c5.x - c.x) * i / steps, c.y + (c5.y - c.y) * i / steps, dragEl);
     await sleep(24);
   }
-  pe('pointerup', c5.x + 6, c5.y, dragEl);
+  /* 补一小步越过槽位边界：dnd 用「拖拽项中心 >= 槽中心」判定，而它的 slotX
+     不含 flex gap，算出的第 5 槽中心比 DOM 实测中心右移几像素；只停在正中心
+     会卡在边界落到第 4 位（与本次股票池改动无关，属模拟落点精度）。 */
+  pe('pointermove', c5.x + 14, c5.y, dragEl);
+  await sleep(30);
+  pe('pointerup', c5.x + 14, c5.y, dragEl);
   var justAfter = XJ.dnd.isJustDragged();   /* pointerup 后立刻读防误触标记 */
   await sleep(460);                       /* 越过 350ms 防误触窗口 */
   var tabs2 = Array.prototype.slice.call(document.querySelectorAll('.tabbar-inner .tab'));
