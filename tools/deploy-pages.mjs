@@ -86,6 +86,15 @@ for (const [repoPath, localPath] of FILES) {
   if (cur.status === 200 && cur.json && cur.json.content) {
     const remote = Buffer.from(cur.json.content, 'base64');
     if (remote.equals(content)) { console.log('  · ' + repoPath + ' 未变更'); continue; }
+  } else if (cur.status === 200 && cur.json && cur.json.sha && cur.json.size === content.length) {
+    /* index.html 已超 1MB：contents API 对这类文件只给元数据、content 为空（''），
+       老逻辑会因此每次都重推一遍（每次都多一个 commit + 一次 Pages 重建）。
+       这里退回 git/blobs 拿全文再比字节。 */
+    const bl = await api('GET', '/repos/' + OWNER + '/' + REPO + '/git/blobs/' + cur.json.sha);
+    if (bl.status === 200 && bl.json && bl.json.content) {
+      const remote = Buffer.from(String(bl.json.content).replace(/\s/g, ''), 'base64');
+      if (remote.equals(content)) { console.log('  · ' + repoPath + ' 未变更(>1MB，走 blob 比对)'); continue; }
+    }
   }
   const put = await api('PUT', '/repos/' + OWNER + '/' + REPO + '/contents/' + encodeURIComponent(repoPath).replace(/%2F/g, '/'), {
     message: 'deploy: ' + repoPath + ' (anim + fire-offset + sync-fix)',
