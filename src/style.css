@@ -774,6 +774,24 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .wl-sortmk{ font-style:normal; font-size:10px; line-height:1; opacity:.5; }
 .wl-sortmk.on{ opacity:1; }
 
+/* ==================== 股票池（515450 · 独立子页） ====================
+   入口复用 .card；行完全复用 .wl-row 系列，只去掉分时列与删除按钮。 */
+.pool-enter{ display:flex; align-items:center; justify-content:space-between; gap:10px;
+  width:100%; padding:12px 14px; margin-bottom:10px; text-align:left;
+  font-size:13px; font-weight:650; color:var(--text); cursor:pointer; }
+.pool-enter:active{ opacity:.75; }
+.pool-enter .pe-t b{ font-weight:700; color:var(--tab-accent); margin-left:3px; }
+.pool-enter .pe-r{ font-size:11.5px; font-weight:500; color:var(--text-3); white-space:nowrap; }
+.pool-enter .pe-arrow{ display:inline-block; margin-left:5px; font-size:16px; line-height:1;
+  color:var(--text-3); vertical-align:-1px; }
+.pool-head{ padding:14px; margin-bottom:8px; display:flex; flex-direction:column; gap:4px; }
+.pool-h1{ font-size:16px; font-weight:700; color:var(--text); }
+.pool-h1 span{ font-size:11px; font-weight:650; color:var(--tab-accent); background:var(--tab-pill);
+  border-radius:6px; padding:2px 6px; margin-left:5px; vertical-align:2px; }
+.pool-sortstat{ padding:0 12px 9px; font-size:11px; color:var(--text-3); letter-spacing:.2px; }
+.pool-foot{ text-align:center; padding:14px 12px 4px; }
+.pool-row .av-img{ padding:10%; }
+
 /* 分组宫格（图四 sheet / 指数切换 / 星标落组） */
 .wl-ggrid{ display:grid; grid-template-columns:1fr 1fr; gap:9px; margin:4px 0 14px; }
 .wl-gcell{
