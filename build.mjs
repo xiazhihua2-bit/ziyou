@@ -27,6 +27,7 @@ const JS_FILES = [
   'src/chart.js',
   'src/calc.js',
   'src/pool-515450.js',    // 515450 股票池静态快照（tools/build-pool-515450.mjs 生成）
+  'src/holder-515450.js',  // 515450 股东持股快照（tools/build-holder-515450.mjs 生成）
   'src/store.js',
   'src/anim.js',           // 全局数字动效（值比对 → 模糊→清晰 + count-up），render 与 firePatchDom 共用
   'src/sync-transport.js', // 传输层（换后端只改这个文件）
@@ -39,8 +40,11 @@ const JS_FILES = [
   'src/views/plan.js',
   'src/views/divsummary.js',
   'src/wl-sort.js',        // 自选列表排序 hook（按 groupId 存状态，所有分组共用）
+  'src/holder-sort.js',     // 股东持股四列排序（独立 LS key，不动 wl-sort）
+  'src/holder-chart.js',    // 股东持股环形图 / 双轴柱线图（复用 chart.js 的 brush）
   'src/views/watchlist.js',
   'src/views/pool.js',      // 股票池独立子页（依赖 wl-sort / pool-515450）
+  'src/views/holder.js',    // 股东持股独立子页（依赖 holder-* / holder-515450）
   'src/views/search.js',
   'src/views/mine.js',
   'src/views/analysis.js',
