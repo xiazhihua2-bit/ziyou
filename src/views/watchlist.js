@@ -73,6 +73,18 @@ XJ.views.watchlist = (function () {
     return XJ.calc.YIELD_PCT_WINDOWS.indexOf(w) >= 0 ? w : XJ.calc.YIELD_PCT_DEFAULT;
   }
 
+  /** 行内「息 / 分位」的取值上下文：显示与排序共用这一份，口径不会分叉 */
+  function sortCtx(st) {
+    return {
+      state: st.state,
+      win: pctWinOf(st),
+      price: function (sym) {
+        var q = quoteOf(sym);
+        return q && q.price != null ? q.price : null;
+      },
+    };
+  }
+
   function yieldInner(st, sym) {
     if (XJ.market.assetType(sym) !== 'stock') return '';
     var plans = XJ.calc.plansOf(st.state, sym) || [];
@@ -83,8 +95,8 @@ XJ.views.watchlist = (function () {
     var y = XJ.calc.yieldNow(plans, price, U.today());
     if (y !== null) out += '<em class="wl-yld-t">息 ' + U.pct(y) + '</em>';
     var cache = st.state.yieldHistory && st.state.yieldHistory[sym];
+    var w = pctWinOf(st);
     if (cache && cache.day && cache.day.length >= 2) {
-      var w = pctWinOf(st);
       var r = XJ.calc.yieldPercentile(plans, cache.day, { years: w, today: U.today(), price: price });
       if (r && r.insufficient) {
         /* 次新股/上市不足半年的样本太少：明确写出来，别让用户以为是坏了 */
@@ -297,7 +309,14 @@ XJ.views.watchlist = (function () {
       UI.icon('menu', 14) + '</button></div>';
   }
 
-  function rowHtml(st, it) {
+  /**
+   * 单行 HTML。refresh / reuseSpark 是排序「就地换位」用的两个参数：
+   *   普通渲染两者都不传 → 与以前完全一样；
+   *   就地换位时复用的是页面上已经渲染好的同一行（DOM 节点整体搬动），
+   *   所以复用时必须 reuseSpark（别把已加载的迷你曲线退回待加载占位、再请求一遍），
+   *   并且 refresh=true 让「息 / 分位 / 价格」按新价重算 —— 否则排序依据变了、显示没变。
+   */
+  function rowHtml(st, it, refresh, reuseSpark) {
     var sym = it.symbol;
     var q = quoteOf(sym);
     var name = st.symbolName(sym);
@@ -310,14 +329,15 @@ XJ.views.watchlist = (function () {
     var dir = chg === null ? '' : (chg >= 0 ? 'up' : 'down');
     var chgTxt = chg === null ? '' :
       (chg >= 0 ? '+' : '') + U.money(chg, 2) + (pct === null ? '' : '  ' + U.signPct(pct));
-    var spark = sparkOf(sym);
+    var spark = reuseSpark ? null : sparkOf(sym);
     return '<div class="card wl-row" data-sym="' + U.esc(sym) + '" data-act="wlOpenSymbol">' +
       '<div class="wl-av">' + UI.avatar(name, sym, 40, C.logoFor(sym)) + '</div>' +
       /* 名称 / 代码 / 息·分位 三行：390px 下「代码 + 息 + 分位」挤不进一行（实测差 ~44px），
          硬塞会把代码压成空白或把「息 5.10%」拆成两行、行高忽高忽低 */
       '<div class="wl-nm"><span>' + U.esc(name) + '</span><b><span class="wl-code">' + U.esc(code) + '</span>' +
       (it.holding ? '<i class="wl-tag">持仓</i>' : '') + '</b>' + yieldHtmlOf(st, sym) + '</div>' +
-      '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (spark === null ? ' data-pending="1"' : '') + '>' +
+      '<div class="wl-spark" data-spark="' + U.esc(sym) + '"' + (reuseSpark ? '' :
+        (spark === null ? ' data-pending="1"' : '')) + '>' +
       (spark || '') + '</div>' +
       '<div class="wl-px">' +
       '<b class="wl-price wl-' + (dir || 'flat') + '">' + price + '</b>' +
@@ -328,15 +348,89 @@ XJ.views.watchlist = (function () {
       '</div>';
   }
 
+  /* ---------------- 列表（共用组件 · 每个分组同一套） ----------------
+   * 分组只决定「取哪批条目 + 用哪个排序状态（按 groupId）」，渲染代码只有这一份：
+   * 已有分组、以后新建的分组、'all' / 'holding' 两个虚拟组，全都走同一个 listHtml。
+   * 排序状态由 XJ.wlSort 按 groupId 独立保管，切组互不污染。 */
+
+  /** 分位数据预取条数：按当前排序取前 N 只（一屏多一点），只对 A股 生效 */
+  var PCT_PREFETCH = 20;
+
+  /** 预取一批标的分位数据（走 app.ensurePctData：它自带冷却、去重与次数上限） */
+  function prepPct(list) {
+    if (!XJ.app || !XJ.app.ensurePctData) return;
+    for (var i = 0; i < list.length; i++) XJ.app.ensurePctData(list[i].symbol);
+  }
+
+  /** 当前分组的基序：加入时间（addedAt），「持仓」虚拟组按 sortOrder 稳定序 */
+  function baseRows(cur) {
+    var items = XJ.store.wlItems(cur);
+    return items.slice().sort(function (a, b) {
+      return String(a.addedAt || '').localeCompare(String(b.addedAt || ''));
+    });
+  }
+
+  /** 按当前分组状态排好序的行（缺失值恒置底、同值稳定） */
+  function sortedRows(st, cur, base) {
+    return XJ.wlSort.sortItems(base || baseRows(cur), cur, sortCtx(st));
+  }
+
+  function listHtml(st, cur, rows) {
+    return XJ.wlSort.headerHtml(cur) +
+      '<div class="wl-list" data-wl-group="' + U.esc(cur) + '">' +
+      rows.map(function (it) { return rowHtml(st, it); }).join('') + '</div>';
+  }
+
+  /** 就地换行序：按新顺序搬动已有 DOM 节点，不重建整页（不闪、不跳滚动） */
+  function applyOrder(cur, rows) {
+    var list = document.querySelector('.wl-list[data-wl-group="' + cur + '"]');
+    if (!list || !rows.length) return false;
+    var bySym = {};
+    Array.prototype.forEach.call(list.children, function (el) {
+      var sym = el.getAttribute && el.getAttribute('data-sym');
+      if (sym) bySym[sym] = el;
+    });
+    if (Object.keys(bySym).length !== rows.length) return false;
+    /* 同一 symbol 可能在列表里出现多次时，bySym 会丢节点 —— 只搬「唯一命中」的那些 */
+    var used = {};
+    var ordered = [];
+    for (var i = 0; i < rows.length; i++) {
+      var sym = rows[i].symbol;
+      var el = bySym[sym];
+      if (!el || used[sym]) return false;
+      used[sym] = true;
+      ordered.push(el);
+    }
+    ordered.forEach(function (el) { list.appendChild(el); });   // appendChild 自动搬位
+    return true;
+  }
+
+  /** 点表头：推进该分组的三态 → 就地重排；当场算不出唯一顺序则整页重绘 */
+  function toggleSort(groupId, field) {
+    var st = XJ.store;
+    var cur = groupId || st.ui.wlGroup || 'all';
+    if (cur !== (st.ui.wlGroup || 'all')) return;               // 不在这个分组上：只记状态
+    XJ.wlSort.cycle(cur, field);
+    var base = baseRows(cur);
+    var rows = sortedRows(st, cur, base);
+    if (applyOrder(cur, rows)) {
+      /* 只换头部的箭头与高亮，其余不动 */
+      var bar = document.querySelector('.wl-sortbar');
+      if (bar) {
+        var wrap = document.createElement('div');
+        wrap.innerHTML = XJ.wlSort.headerHtml(cur);
+        if (wrap.firstChild) bar.parentNode.replaceChild(wrap.firstChild, bar);
+      }
+      return;
+    }
+    st.setUI({ wlSortTick: Date.now() });                       // 兜底：换行序失败就整页重绘
+  }
+
   function render() {
     var st = XJ.store;
     var groups = st.wlGroups();
     var cur = st.ui.wlGroup || 'all';
-    var items = st.wlItems(cur);
-    /* 组内顺序 = 加入时间（addedAt）；「持仓」虚拟组按 sortOrder 稳定序 */
-    var rows = items.slice().sort(function (a, b) {
-      return String(a.addedAt || '').localeCompare(String(b.addedAt || ''));
-    });
+    var rows = sortedRows(st, cur, null);
 
     var html = '';
     html += indexBar(st);
@@ -360,10 +454,14 @@ XJ.views.watchlist = (function () {
     liveSyms = rows.filter(function (it) {
       return !it.holding && XJ.market.assetType(it.symbol) === 'stock';
     }).map(function (it) { return it.symbol; });
-    html += '<div class="wl-list">' + rows.map(function (it) { return rowHtml(st, it); }).join('') + '</div>';
+    /* 按当前排序取前 N 只预取分位数据：这些行可能还落在视口外（尤其升序/降序把
+       原本靠上的行挤下去），光靠 IntersectionObserver 会一直「缺失」而永远排最后。
+       冷却与去重都在 app.ensurePctData 里，这里重复调用是安全的。 */
+    if (XJ.wlSort.stateOf(cur).dir !== 'none') prepPct(rows.slice(0, PCT_PREFETCH));
+    html += listHtml(st, cur, rows);
     return html;
   }
 
-  return { render: render, bind: bind, fillYield: fillYield };
+  return { render: render, bind: bind, fillYield: fillYield, toggleSort: toggleSort };
 })();
 
