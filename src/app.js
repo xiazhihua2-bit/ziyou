@@ -70,6 +70,7 @@
         search: '添加自选',
         symbol: S.ui.subArg ? S.symbolName(S.ui.subArg) : '个股详情',
         pool: '股票池',
+        holder: '股东持股情况',
       }[S.ui.subPage] || '';
       return '<div class="topbar-row">' +
         '<button class="icon-btn" data-act="closeSubPage" aria-label="返回">' + UI.icon('back', 18) + '</button>' +
@@ -1112,6 +1113,28 @@
     window.scrollTo(0, 0);
   });
   UI.on('poolOpenSymbol', function (node) {
+    var sym = node.getAttribute('data-sym');
+    if (sym) openSymbolPage(sym);
+  });
+
+  /* 股东持股情况：独立子页（五大流通股东口径），与股票池共用入口层但互不共享状态。
+     报告期切换走 data-change（UI 的 change 委托），其余走 data-act。 */
+  UI.on('holderEnter', function () {
+    navTo({ subPage: 'holder', status: '', floatOpen: false });
+    window.scrollTo(0, 0);
+  });
+  UI.on('holderPeriod', function (node) {
+    var end = node && node.value;
+    if (end && XJ.views.holder) XJ.views.holder.setPeriod(end);
+  });
+  UI.on('holderSort', function (node) {
+    if (XJ.views.holder) XJ.views.holder.toggleSort(node.getAttribute('data-g'), node.getAttribute('data-f'));
+  });
+  UI.on('holderExpand', function (node) {
+    var code = node.getAttribute('data-code');
+    if (code && XJ.views.holder) XJ.views.holder.toggleExpand(code);
+  });
+  UI.on('holderOpenSymbol', function (node) {
     var sym = node.getAttribute('data-sym');
     if (sym) openSymbolPage(sym);
   });
