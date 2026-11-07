@@ -37,6 +37,7 @@ const JS_FILES = [
   'src/views/calendar.js',
   'src/views/plan.js',
   'src/views/divsummary.js',
+  'src/wl-sort.js',        // 自选列表排序 hook（按 groupId 存状态，所有分组共用）
   'src/views/watchlist.js',
   'src/views/search.js',
   'src/views/mine.js',
