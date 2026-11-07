@@ -426,6 +426,15 @@ XJ.views.watchlist = (function () {
     st.setUI({ wlSortTick: Date.now() });                       // 兜底：换行序失败就整页重绘
   }
 
+  /** 股票池入口：独立子页，不参与本页分组 / 排序 / 行情逻辑 */
+  function poolEntryHtml() {
+    if (!XJ.pool515450) return '';
+    return '<button class="card pool-enter" data-act="poolEnter">' +
+      '<span class="pe-t">股票池 <b>' + U.esc(XJ.pool515450.FUND) + '</b></span>' +
+      '<span class="pe-r">' + XJ.pool515450.items().length + ' 只成分股' +
+      '<span class="pe-arrow">›</span></span></button>';
+  }
+
   function render() {
     var st = XJ.store;
     var groups = st.wlGroups();
@@ -433,6 +442,7 @@ XJ.views.watchlist = (function () {
     var rows = sortedRows(st, cur, null);
 
     var html = '';
+    html += poolEntryHtml();
     html += indexBar(st);
     html += chipsBar(st, groups, cur);
 
