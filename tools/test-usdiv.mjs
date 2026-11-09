@@ -280,6 +280,69 @@ async function main() {
   D.useRequester(null);
   D.clearSuffixCache();
 
+  /* ============ ⑧ 美股行情别名（伯克希尔 BRK 裸代码无数据） ============ */
+  section('【8】美股行情别名：usBRK → usBRK.B（收盘价 / 市值 / 涨跌徽章）');
+  eq('别名表 BRK → BRK.B', MK.US_QUOTE_ALIAS.BRK, 'BRK.B');
+  eq('usQuoteCode(usBRK) = usBRK.B', MK.usQuoteCode('usBRK'), 'usBRK.B');
+  eq('usQuoteCode(usAAPL) 保持裸代码', MK.usQuoteCode('usAAPL'), 'usAAPL');
+  eq('非美股不受影响', MK.usQuoteCode('sh600023'), 'sh600023');
+  eq('带点代码拆出容器 v_usBRK / 键 B', JSON.stringify(MK.quoteVarParts('usBRK.B')),
+    JSON.stringify({ holder: 'v_usBRK', key: 'B' }));
+  eq('普通代码无容器', MK.quoteVarParts('usAAPL'), null);
+
+  /* 真链路：mock <script> 注入，验证别名 URL、容器预定义、同批其它标的互不干扰 */
+  function fakeRaw(code, price, prev, chg, pct) {
+    const f = new Array(52).fill('');
+    f[1] = '测试名'; f[2] = code;
+    f[3] = String(price); f[4] = String(prev); f[5] = String(price);
+    f[30] = '20261109113758'; f[31] = String(chg); f[32] = String(pct);
+    f[33] = String(price); f[34] = String(price); f[35] = 'USD';
+    f[36] = '1000'; f[37] = '1000'; f[38] = '0.1'; f[39] = '15';
+    f[44] = '100'; f[45] = '100';
+    return f.join('~');
+  }
+  const win = sandbox.window;
+  let lastSrc = '';
+  let holderWasObject = false;
+  sandbox.document = {
+    createElement: function () {
+      return { async: false, charset: '', src: '', onload: null, onerror: null, parentNode: null };
+    },
+    head: {
+      appendChild: function (s) {
+        lastSrc = s.src;
+        const m = /q=([^&]*)/.exec(s.src);
+        const codes = (m ? decodeURIComponent(m[1]) : '').split(',');
+        codes.forEach(function (c) {
+          const parts = MK.quoteVarParts(c);
+          const isBrk = c.indexOf('BRK') >= 0;
+          const raw = isBrk
+            ? fakeRaw('BRK.B.N', 569.07, 570.89, -1.82, -0.32)
+            : fakeRaw('AAPL.OQ', 349.82, 342.37, 7.45, 2.18);
+          if (parts) {
+            holderWasObject = !!win[parts.holder] && typeof win[parts.holder] === 'object';
+            if (!win[parts.holder]) win[parts.holder] = {};
+            win[parts.holder][parts.key] = raw;   // 对应腾讯 `v_usBRK.B="..."` 的属性赋值
+          } else {
+            win['v_' + c] = raw;
+          }
+        });
+        setTimeout(function () { if (s.onload) s.onload(); }, 0);
+      },
+    },
+  };
+  const quotes = await XJ.fetcher.fetchQuotes(['usBRK', 'usAAPL']);
+  eq('请求 URL 用别名 usBRK.B（不是无数据的 usBRK）',
+    lastSrc.indexOf('usBRK.B') >= 0 && lastSrc.indexOf('usBRK,') < 0, true);
+  eq('注入前已预定义 window.v_usBRK 容器（否则腾讯 script 抛 ReferenceError）', holderWasObject, true);
+  eq('★ 伯克希尔拿到行情（原来的 usBRK 返回空）', !!quotes.usBRK, true);
+  close('★ BRK 收盘价 = 569.07 USD', quotes.usBRK && quotes.usBRK.price, 569.07);
+  close('★ BRK 涨跌幅 = -0.32%（涨跌徽章可渲染）', quotes.usBRK && quotes.usBRK.changePct, -0.32);
+  eq('★ BRK 行情代码 = BRK.B.N（K 线可用）', quotes.usBRK && quotes.usBRK.code, 'BRK.B.N');
+  eq('★ 同一批次 AAPL 不受带点代码影响', !!quotes.usAAPL, true);
+  close('AAPL 收盘价 = 349.82', quotes.usAAPL && quotes.usAAPL.price, 349.82);
+  delete sandbox.document;
+
   /* ---------------- 汇总 ---------------- */
   console.log('\n============================================');
   console.log('test-usdiv: ' + pass + ' passed, ' + fail + ' failed');
