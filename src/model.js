@@ -214,7 +214,7 @@ XJ.model = (function () {
           lastUsedAt: null,
         },
         showLogo: true,                  // 优先展示股票官方图标（取不到则回退字母头像）
-        unsupportedDividend: [],         // 无分红数据源的标的（美股）
+        unsupportedDividend: [],         // 无分红数据源的标的（日股等；美股已支持自动同步）
         indexCompare: ['sh', 'hs300', 'hsi'],   // 资产走势里默认勾选的对比指数
         showYieldBench: false,           // 股息率曲线里是否叠加「余额宝七日年化」基准线（默认关）
         /* 股息率分位的统计窗口（年）：1 / 2 / 3 / 5 / 10。★ 本机偏好，不进 SETTINGS_SYNC。 */
