@@ -78,6 +78,19 @@ XJ.fetcher = (function () {
     document.head.appendChild(s);
   }
 
+  /**
+   * 读取腾讯行情变量。带点代码（usBRK.B）的响应是 `v_usBRK.B="..."`，
+   * 值落在容器的属性上，普通代码（usAAPL）直接落在 window 上。
+   */
+  function readQuoteVar(reqCode) {
+    var parts = XJ.market.quoteVarParts(reqCode);
+    if (parts) {
+      var box = window[parts.holder];
+      return box ? box[parts.key] : null;
+    }
+    return window['v_' + reqCode];
+  }
+
   /** 拉取行情：分片并发，单只失败不影响整体（非行情类标的自动跳过） */
   function fetchQuotes(symbols) {
     symbols = (symbols || []).filter(function (s, i, a) {
@@ -85,26 +98,39 @@ XJ.fetcher = (function () {
     });
     if (!symbols.length) return Promise.resolve({});
 
+    /* 美股别名：usBRK → usBRK.B。腾讯对带点代码返回 `v_usBRK.B="..."`，
+       注入 script 前必须先建好 window.v_usBRK 容器，否则整段脚本抛 ReferenceError，
+       同一批次里的其它标的也会一并取不到。 */
+    var items = symbols.map(function (s) {
+      return { sym: s, req: XJ.market.usQuoteCode(s) };
+    });
     var chunks = [];
-    for (var i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
+    for (var i = 0; i < items.length; i += CHUNK) chunks.push(items.slice(i, i + CHUNK));
 
     var out = {};
     var pending = chunks.length;
 
     return new Promise(function (resolve) {
       function oneChunk(ch) {
-        loadScript(QUOTE_URL + ch.join(','), 'GBK', QUOTE_TIMEOUT, function (ok) {
-          if (ok) {
-            ch.forEach(function (sym) {
-              var q = parseQuote(sym, window['v_' + sym]);
-              if (q) out[sym] = q;
-            });
-          } else {
-            lastError = new Error('行情接口请求失败');
+        ch.forEach(function (it) {
+          var parts = XJ.market.quoteVarParts(it.req);
+          if (parts && (!window[parts.holder] || typeof window[parts.holder] !== 'object')) {
+            window[parts.holder] = {};
           }
-          pending--;
-          if (pending <= 0) resolve(out);
         });
+        loadScript(QUOTE_URL + ch.map(function (it) { return it.req; }).join(','),
+          'GBK', QUOTE_TIMEOUT, function (ok) {
+            if (ok) {
+              ch.forEach(function (it) {
+                var q = parseQuote(it.sym, readQuoteVar(it.req));
+                if (q) out[it.sym] = q;
+              });
+            } else {
+              lastError = new Error('行情接口请求失败');
+            }
+            pending--;
+            if (pending <= 0) resolve(out);
+          });
       }
       chunks.forEach(oneChunk);
     });
