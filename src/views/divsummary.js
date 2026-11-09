@@ -63,7 +63,7 @@ XJ.views.divsummary = (function () {
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
             ' × ' + U.thousands(qty) + ' 股</span>' +
-            '<span class="ds-rec-a" data-anim="B">' + U.moneySign(r.amount) + '</span>' +
+            '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</span>' +
             '</div>';
         }).join('');
         return '<div class="ds-sym' + (isOpen ? ' open' : '') + '">' +
@@ -72,7 +72,7 @@ XJ.views.divsummary = (function () {
           '<span class="ds-code">' + U.esc(XJ.model.codeOf(g.symbol)) + '</span>' +
           '<span class="ds-name">' + U.esc(st.symbolName(g.symbol)) + '</span>' +
           '<span class="ds-sp"></span>' +
-          '<span class="ds-amt" data-anim="A">' + U.moneySign(g.amount) + '</span>' +
+          '<span class="ds-amt" data-anim="A">' + XJ.usdiv.moneyText(st.state, g.symbol, g.amount) + '</span>' +
           '<span class="chev">' + UI.icon('chevron', 15, 2) + '</span>' +
           '</button>' +
           (isOpen ? '<div class="ds-detail">' + rows + '</div>' : '') +
