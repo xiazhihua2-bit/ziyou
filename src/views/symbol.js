@@ -2,6 +2,14 @@
 XJ.views.symbol = (function () {
   var U = XJ.util, UI = XJ.ui, C = XJ.views.common;
 
+  /* 分红金额展示（模块级，详情页各段共用）：
+     非美股沿用原「按 cnyRateOf 折人民币」口径；
+     美股按 settings.fx.USD 实时汇率折 ¥，汇率缺失时显示 USD 原币（绝不按 1 折算）。 */
+  function divMoney(st, symbol,  amount, dec) {
+    if (XJ.market.assetType(symbol) === 'us') return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
+    return U.moneySign(amount * XJ.calc.cnyRateOf(st.state, symbol), dec);
+  }
+
   /**
    * 技术信号（BOLL 下轨 + KDJ 的 J<0）。
    * 与持仓卡片保持同一口径：中性文案、周线优先、结果不缓存、每次 render 现算。
@@ -55,14 +63,19 @@ XJ.views.symbol = (function () {
         '<div class="spacer"></div>' + (extra || '') + '</div>';
     };
 
-    /* ① 不支持的市场：美股无分红源、场外基金没有「财年派现」概念 */
+    /* ① 不支持的市场：美股没有财年切换锚点、场外基金没有「财年派现」概念 */
     if (!XJ.market.supportsYieldCurve(symbol)) {
-      var why = XJ.market.assetType(symbol) === 'of'
+      var at = XJ.market.assetType(symbol);
+      var why = at === 'of'
         ? '场外基金的分红不定期、没有「财年派现」这个概念'
-        : XJ.market.kind(symbol) + '暂无公开可用的免费分红数据源';
+        : at === 'us'
+          ? '美股按季度/月度派息，没有「年报预案公告日」这个财年切换锚点'
+          : XJ.market.kind(symbol) + '暂无公开可用的免费分红数据源';
       return open + head('不适用') +
         '<div class="tiny" style="line-height:1.7">因' + U.esc(why) +
-        '，无法按财年口径绘制股息率曲线。</div></div>';
+        '，无法按财年口径绘制股息率曲线。' +
+        (at === 'us' ? '分红记录、日历、预测年分红与回本进度照常支持。' : '') +
+        '</div></div>';
     }
 
     var steps = XJ.calc.yieldFiscalSteps(plans || []);
@@ -328,8 +341,16 @@ XJ.views.symbol = (function () {
     var sigObj = signalOf(symbol, price);
     var sig = sigObj ? '<span class="hc-sig ' + sigObj.cls + '">' + U.esc(sigObj.text) + '</span>' : '';
 
-    /* 无分红数据源的市场（如美股）如实提示，并给出手工补录的出口 */
-    if (!XJ.market.supportsDividend(symbol)) {
+    /* 美股给口径说明；日股等无分红源的市场如实提示，并给出手工补录的出口 */
+    var isUs = XJ.market.assetType(symbol) === 'us';
+    if (isUs) {
+      html += '<div class="warn-card"><span class="ic">ⓘ</span><span>' +
+        '<b>美股分红口径</b>：方案自动同步自东方财富美股 F10 公开报表，' +
+        U.esc(XJ.usdiv.rateNote(st.state, symbol)) + '。<br>' +
+        '实施状态按【除息日推断】（数据源没有官方进度字段）；派息日为数据源给出的真实发放日。<br>' +
+        '美股按季度/月度派息，没有年报预案公告日，不绘制按财年口径的股息率曲线；' +
+        '预测年分红按近 12 个月（除息日归属）年化。</span></div>';
+    } else if (!XJ.market.supportsDividend(symbol)) {
       html += '<div class="warn-card"><span class="ic">ⓘ</span><span>' +
         '<b>' + U.esc(XJ.market.kind(symbol)) + '暂无公开可用的免费分红数据源</b>，无法自动同步分红方案与派息日。<br>' +
         '可在下方「分红记录」中手工补录历史分红，系统会照常计算股价息率与分红回本进度。</span></div>';
@@ -437,10 +458,9 @@ XJ.views.symbol = (function () {
      * 另外把该标的的**分红到账**以只读行并入，这样「分红摊薄成本」是怎么降下来的能直接看到
      * （同花顺的交易流水也是这么呈现的）。分红只是展示，真正的计算仍走 received 记录，
      * 因此不会与分红记录重复计数。 */
-    /* 分红记录/流水里的「金额」一列都带 ¥，所以先换成人民币，避免港币分红显示成 ¥ 原值 */
-    var yRate = XJ.calc.cnyRateOf(st.state, symbol);
+    /* 金额列统一走 divMoney（港股折人民币 / 美股按实时汇率折 ¥），底层金额仍是原币 */
     var divRows = recs.map(function (r) {
-      return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount) * yRate, perShare: U.n0(r.perShareAmount),
+      return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount), perShare: U.n0(r.perShareAmount),
                qty: U.n0(r.qtyAtRecord), source: r.source };
     });
     var txFolded = XJ.store.folded('foldTx');   // 默认折叠（util.FOLD.collapsed）
@@ -473,7 +493,7 @@ XJ.views.symbol = (function () {
             '<td><span class="pill div">分红摊薄</span></td>' +
             '<td><span class="muted">—</span></td>' +
             '<td>' + (row.perShare > 0 ? U.money(row.perShare, 4) : '<span class="muted">—</span>') + '</td>' +
-            '<td class="c-div">' + U.moneySign(row.amount) + '</td>' +
+            '<td class="c-div">' + divMoney(st, symbol, row.amount) + '</td>' +
             '<td class="tx-edit">' + (row.source === 'AUTO' ? '<span class="tiny">自动</span>' : '<span class="tiny">手动</span>') + '</td>' +
             '</tr>';
           return;
@@ -556,8 +576,10 @@ XJ.views.symbol = (function () {
     html += '<div class="card flush" style="margin-bottom:12px">';
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0"><h2>分红记录</h2>' +
       '<div class="spacer"></div><span class="hint">累计 ' +
-      U.moneySign(U.sum(recs, function (r) { return r.amount; }) * yRate) + '</span>' +
-      '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div></div>';
+      divMoney(st, symbol, U.sum(recs, function (r) { return r.amount; })) + '</span>' +
+      '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div>' +
+      (XJ.usdiv.isUs(symbol) ? '<div class="tiny" style="padding:0 16px 8px">' + U.esc(XJ.usdiv.rateNote(st.state, symbol)) + '</div>' : '') +
+      '</div>';
     if (!recs.length) {
       html += '<div style="padding:0 16px 16px" class="tiny">还没有到账记录。已实施且派息日已过的方案会自动登记；历史数据可手动补录。</div>';
     } else {
@@ -568,7 +590,7 @@ XJ.views.symbol = (function () {
           (r.source === 'AUTO' ? '自动' : '手动') + '</div></td>' +
           '<td>' + (r.perShareAmount > 0 ? U.money(r.perShareAmount, 4) : '<span class="muted">—</span>') + '</td>' +
           '<td>' + (r.qtyAtRecord > 0 ? U.thousands(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
-          '<td class="c-div">' + U.moneySign(r.amount * yRate) +
+          '<td class="c-div">' + divMoney(st, symbol, r.amount) +
           (r.source === 'MANUAL'
             ? '<div><button class="tiny" style="color:var(--up);margin-top:2px" data-act="deleteReceive" data-id="' +
             U.esc(r.recId) + '">删除</button></div>'
