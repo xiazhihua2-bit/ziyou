@@ -2490,14 +2490,15 @@ XJ.market = (function () {
    *  场内基金/ETF/LOF  → 天天基金分红接口        dividend: 'fund'
    *  场外基金(of)      → 天天基金分红接口        dividend: 'fund'
    *  港股              → 东财港股 F10 分红接口   dividend: 'hk'
-   *  美股              → 暂无公开可用的分红源    dividend: null（不支持自动同步，可手工补录）
+   *  美股              → 东财美股 F10 分红接口   dividend: 'us'（src/usdiv.js）
+   *  日股              → 暂无公开可用的分红源    dividend: null
    */
   var ASSET = {
     stock: { key: 'stock', label: '股票', dividend: 'cn',   quote: true  },
     etf:   { key: 'etf',   label: 'ETF',  dividend: 'fund', quote: true  },
     of:    { key: 'of',    label: '场外基金', dividend: 'fund', quote: false },
     hk:    { key: 'hk',    label: '港股', dividend: 'hk',   quote: true  },
-    us:    { key: 'us',    label: '美股', dividend: null,   quote: true  },
+    us:    { key: 'us',    label: '美股', dividend: 'us',   quote: true  },
     /* 日股：腾讯实时行情可达（qt.gtimg.cn/q=jp8058），但分时/日K 历史无浏览器可达源；
        分红亦无源。公司官网域名无免费 F10 接口 → 图标回退汉字头像（已知限制）。 */
     jp:    { key: 'jp',    label: '日股', dividend: null,   quote: true  },
@@ -2636,22 +2637,26 @@ XJ.market = (function () {
   }
 
   function dividendSource(symbol) { var a = asset(symbol); return a ? a.dividend : null; }
-  /** 该标的是否支持自动同步分红（美股暂无公开可用的免费分红源） */
+  /** 该标的是否支持自动同步分红（A股 / 港股 / ETF / 美股；日股暂无公开免费源） */
   function supportsDividend(symbol) { return !!dividendSource(symbol); }
 
   /**
    * 该标的是否能画「按财年」的股息率曲线。
-   *   · 美股    → 没有分红数据源，取不到任何方案
+   *   · 美股    → 按季度/月度派息，没有「年报预案公告日」这个财年切换锚点，财年口径不适用
    *   · 场外基金 → 分红不定期、没有「财年派现」这个概念，且没有盘中 K 线
    * 其余（A股 / 港股 / ETF）都可以。这个判定必须与 fetcher.fetchYieldHistory 的过滤条件一致，
    * 否则会出现「界面说能画、数据却永远取不到」的空态。
    */
   function supportsYieldCurve(symbol) {
-    return supportsDividend(symbol) && assetType(symbol) !== 'of';
+    var t = assetType(symbol);
+    return supportsDividend(symbol) && t !== 'of' && t !== 'us';
   }
   /** 分红数据源的中文说明（用于界面提示） */
   function dividendSourceLabel(symbol) {
-    return ({ cn: '东方财富股票分红', hk: '东方财富港股 F10 分红', fund: '天天基金分红' })[dividendSource(symbol)] || '暂不支持自动同步';
+    return ({
+      cn: '东方财富股票分红', hk: '东方财富港股 F10 分红',
+      fund: '天天基金分红', us: '东方财富美股 F10 分红',
+    })[dividendSource(symbol)] || '暂不支持自动同步';
   }
   function isQuoteable(symbol) { var a = asset(symbol); return !!(a && a.quote); }
 
@@ -3397,7 +3402,7 @@ XJ.model = (function () {
           lastUsedAt: null,
         },
         showLogo: true,                  // 优先展示股票官方图标（取不到则回退字母头像）
-        unsupportedDividend: [],         // 无分红数据源的标的（美股）
+        unsupportedDividend: [],         // 无分红数据源的标的（日股等；美股已支持自动同步）
         indexCompare: ['sh', 'hs300', 'hsi'],   // 资产走势里默认勾选的对比指数
         showYieldBench: false,           // 股息率曲线里是否叠加「余额宝七日年化」基准线（默认关）
         /* 股息率分位的统计窗口（年）：1 / 2 / 3 / 5 / 10。★ 本机偏好，不进 SETTINGS_SYNC。 */
@@ -5910,6 +5915,263 @@ XJ.syncCore = (function () {
 })();
 
 
+/* ==================== src/usdiv.js ==================== */
+/* ==================== 美股分红（东方财富美股 F10 公开报表） ====================
+ * 数据源：https://datacenter-web.eastmoney.com/api/data/v1/get
+ *         reportName=RPT_USF10_INFO_DIVIDEND（公开、无需登录、支持 JSONP callback）
+ * 合规边界：只读取无需登录的公开公司行为数据；不访问任何原产品服务端，
+ *           不携带/不模拟会员凭证，不读取需授权的用户数据，不对外分发。
+ *
+ * 口径（与 A股/港股方案同形，日历 / 到账 / 预测 / 回本 / CSV / 统计复用同一套逻辑）：
+ *   · 只收 ASSIGN_TYPE=Cash；拆股、股票股息不进分红台账
+ *   · pretaxBonusPer10 = 每股美元 × 10（全站内部单位「元/10股」），一律【税前】
+ *   · BONUS_PAY_DATE 是数据源给出的【真实派息日】，标为确定值，不是「预计派息日」
+ *   · reportDate = 除息日所在自然年 + '-12-31'（仅作分组键）
+ *   · 预测年度分红不走财年口径：美股按季/月派息，年内未派完会系统性低估 →
+ *     由 calc.annualBasePerShare 对 source='us' 改走近 12 个月（按除息日归属）合计
+ *   · isImplemented 以「除息日 ≤ 今天」推断；数据源没有进度字段，界面如实写「按除息日推断」
+ *   · 币种 USD；金额税前；展示按 settings.fx.USD 实时汇率折人民币；【未计入】境外预扣税
+ *   · 按财年口径的股息率曲线对美股不适用（没有年报预案公告日这个切换锚点）
+ */
+XJ.usdiv = (function () {
+  'use strict';
+  var U = XJ.util;
+
+  var API = 'https://datacenter-web.eastmoney.com/api/data/v1/get';
+  var REPORT = 'RPT_USF10_INFO_DIVIDEND';
+  /* SECUCODE 后缀：.O 纳斯达克 / .N 纽交所 / .A 美交所·ARCA。
+     实测 AAPL.O MSFT.O NVDA.O QQQ.O、KO.N JNJ.N V.N O.N TSM.N、SCHD.A SPY.A 命中；
+     AAPL.N / KO.O 返回 0 行（不是接口报错）。 */
+  var SUFFIXES = ['.O', '.N', '.A'];
+  var TIMEOUT = 12000;
+  var GAP = 90;                // 批量逐只间隔（ms），避免限流
+  var cbSeq = 0;
+  var suffixMap = {};          // symbol -> 命中的后缀（本次会话内存缓存，不落盘、不进同步）
+  var requester = null;        // 可注入的请求实现（独立测试用；生产恒为 null）
+
+  /** 东财日期可能是 '2026-08-07 00:00:00' 或 '2026/08/07'，统一成 YYYY-MM-DD */
+  function d10(v) {
+    if (!v) return null;
+    var s = String(v).trim().slice(0, 10).replace(/\//g, '-');
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  }
+
+  /**
+   * 解析「每1股派0.27美元股息 / 每1份派0.75143美元股息 / 每1份ADR派1.085439美元股息」。
+   * 返回【每股（份）税前美元金额】；每股金额 = 宣派金额 ÷ 份数。
+   * 只认美元文案：其它币种宁可留空也不猜。拆股 / 股票股息不匹配 → null。
+   */
+  function parsePerShare(text) {
+    if (!text) return null;
+    var t = String(text);
+    var m = t.match(/每\s*([\d.]+)\s*(?:股|份\s*(?:ADR)?)\s*派\s*([\d.]+)\s*(?:美元|美金)/i);
+    if (!m) return null;
+    if (!/(美元|美金|USD)/i.test(t)) return null;
+    var units = U.num(m[1]), amt = U.num(m[2]);
+    if (units === null || amt === null || units <= 0 || amt <= 0) return null;
+    return amt / units;
+  }
+
+  /** 原始行 → 与 A股/港股/基金完全同形的 DividendPlan */
+  function toPlan(row, symbol, suffix, today) {
+    if (!row || !symbol) return null;
+    /* 只收现金派息：股票股息 / 拆股 / 配股都不进分红台账 */
+    if (!/^cash/i.test(String(row.ASSIGN_TYPE || ''))) return null;
+
+    var ex = d10(row.EX_DIVIDEND_DATE);
+    var pay = d10(row.BONUS_PAY_DATE);
+    var rec = d10(row.EQUITY_RECORD_DATE);
+    var notice = d10(row.NOTICE_DATE);
+    var per = parsePerShare(row.PLAN_EXPLAIN);
+    if (per === null || per <= 0) return null;
+    if (!ex && !pay) return null;
+
+    var anchor = ex || pay || notice || '';
+    var year = anchor ? anchor.slice(0, 4) : String(U.today()).slice(0, 4);
+    var reportDate = year + '-12-31';                    // 自然年分组键
+    var implemented = !!ex && ex <= (today || U.today()); // 按除息日推断，非官方进度
+
+    return {
+      planId: symbol + '_' + (ex || pay || notice || 'na') + '_' + per.toFixed(6),
+      symbol: symbol,
+      securityCode: row.SECURITY_CODE || XJ.market.codeOf(symbol),
+      securityName: row.SECURITY_NAME_ABBR || '',
+      reportDate: reportDate,
+      reportType: row.ASSIGN_PERIOD || '美股分红',
+      pretaxBonusPer10: per * 10,
+      afterTaxPer10: null,                              // 税前口径，未计入境外预扣税
+      implPlanProfile: row.PLAN_EXPLAIN || ('每1股派' + per + '美元股息'),
+      planNoticeDate: notice,
+      noticeDate: notice,
+      equityRecordDate: rec,
+      exDividendDate: ex,
+      payoutDate: pay,                                  // 真实派息日
+      assignProgress: implemented ? '实施分配' : '公告预案',
+      progressRank: implemented ? 100 : 60,
+      isImplemented: implemented,
+      dividendRatio: null,
+      currency: 'USD',
+      source: 'us',
+      assignType: row.ASSIGN_TYPE || 'Cash',
+      assignPeriod: row.ASSIGN_PERIOD || null,
+      marketSuffix: suffix || null,
+      fetchedAt: U.nowStamp(),
+    };
+  }
+
+  function buildUrl(secucode) {
+    return API +
+      '?reportName=' + REPORT + '&columns=ALL' +
+      '&filter=' + encodeURIComponent('(SECUCODE="' + secucode + '")') +
+      '&pageNumber=1&pageSize=200&sortColumns=EX_DIVIDEND_DATE&sortTypes=-1' +
+      '&source=WEB&client=WEB';
+  }
+
+  /** JSONP：file:// 单文件页面唯一可靠通道（与港股分红同一 host）。任何失败都 resolve(null) */
+  function jsonp(url) {
+    return new Promise(function (resolve) {
+      var name = 'xjus_' + (++cbSeq) + '_' + Date.now().toString(36);
+      var s = document.createElement('script');
+      var settled = false;
+      var timer = setTimeout(function () { finish(null); }, TIMEOUT);
+      function cleanup() {
+        clearTimeout(timer);
+        try { delete window[name]; } catch (e) { window[name] = undefined; }
+        try { if (s.parentNode) s.parentNode.removeChild(s); } catch (e) { /* noop */ }
+      }
+      function finish(v) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(v || null);
+      }
+      window[name] = function (res) { finish(res || null); };
+      s.charset = 'utf-8';
+      s.src = url + '&callback=' + name;
+      s.onerror = function () { finish(null); };
+      document.head.appendChild(s);
+    });
+  }
+
+  /** 取一个 SECUCODE 的原始行；接口失败 / 空数据都返回 []（绝不 reject） */
+  function fetchOne(secucode) {
+    if (requester) {
+      return Promise.resolve().then(function () { return requester(secucode); })
+        .then(function (rows) { return Array.isArray(rows) ? rows : []; })
+        .catch(function () { return []; });
+    }
+    return jsonp(buildUrl(secucode)).then(function (res) {
+      if (!res || !res.result || !Array.isArray(res.result.data)) return [];
+      return res.result.data;
+    }).catch(function () { return []; });
+  }
+
+  /**
+   * 后缀探测与正式取数【合并为同一次请求】：.O→.N→.A，第一个返回非空数据的即为该标的后缀，
+   * 命中后直接用这一批 rows 解析（不再发第二次请求），并缓存后缀。
+   * 三个后缀都空 = 公开报表无记录 / 该标的不派息 → 返回空方案（界面如实展示空态，不编造）。
+   */
+  function fetchSymbol(symbol) {
+    var code = XJ.market.codeOf(symbol);
+    var known = suffixMap[symbol];
+    var candidates = known
+      ? [known].concat(SUFFIXES.filter(function (x) { return x !== known; }))
+      : SUFFIXES.slice();
+    var today = U.today();
+    var i = 0;
+
+    function step() {
+      if (i >= candidates.length) {
+        return Promise.resolve({ symbol: symbol, plans: [], suffix: null, noData: true });
+      }
+      var suf = candidates[i++];
+      return fetchOne(code + suf).then(function (rows) {
+        if (!rows || !rows.length) return step();
+        suffixMap[symbol] = suf;
+        var seen = {}, plans = [];
+        rows.forEach(function (r) {
+          var p = toPlan(r, symbol, suf, today);
+          if (p && !seen[p.planId]) { seen[p.planId] = true; plans.push(p); }
+        });
+        plans.sort(function (a, b) {
+          var x = a.exDividendDate || a.payoutDate || '';
+          var y = b.exDividendDate || b.payoutDate || '';
+          return x < y ? 1 : -1;
+        });
+        return { symbol: symbol, plans: plans, suffix: suf, noData: false };
+      });
+    }
+    return step();
+  }
+
+  /** 批量串行 + 间隔；单只失败不中断其它标的。返回 { plans: {sym: plans[]}, noData: sym[] } */
+  function fetchAll(symbols, onProgress) {
+    symbols = (symbols || []).filter(function (s, i, a) { return s && a.indexOf(s) === i; });
+    var bySym = {}, noData = [], i = 0;
+    function step() {
+      if (i >= symbols.length) return Promise.resolve({ plans: bySym, noData: noData });
+      var sym = symbols[i++];
+      return fetchSymbol(sym).then(function (r) {
+        bySym[sym] = r.plans;
+        if (r.noData) noData.push(sym);
+        if (onProgress) onProgress(i, symbols.length, sym);
+        if (i >= symbols.length) return { plans: bySym, noData: noData };
+        return new Promise(function (res) { setTimeout(res, GAP); }).then(step);
+      });
+    }
+    if (!symbols.length) return Promise.resolve({ plans: bySym, noData: noData });
+    return step();
+  }
+
+  /* ---------------- 展示层辅助（仅美股，底层金额仍存 USD 税前原币） ---------------- */
+
+  function isUs(symbol) { return XJ.market.assetType(symbol) === 'us'; }
+
+  /** 实时汇率 settings.fx.USD（腾讯 whUSDCNY）；缺失或非法返回 null */
+  function usdRate(state) {
+    var fx = state && state.settings && state.settings.fx;
+    var v = fx ? U.num(fx.USD) : null;
+    return (v && v > 0) ? v : null;
+  }
+
+  /**
+   * 单笔分红金额的展示文本：
+   *   · 非美股 → 沿用 U.moneySign（¥ 原值，既有口径不动）
+   *   · 美股 + 汇率可用 → 按实时汇率折成 ¥
+   *   · 美股 + 汇率缺失 → 显示 USD 原币「$x.xx」，绝不按 1 折算造成 1 美元当 1 元的假数字
+   */
+  function moneyText(state, symbol, amount, dec) {
+    if (!isUs(symbol)) return U.moneySign(amount, dec);
+    var r = usdRate(state);
+    if (!r) return '$' + U.money(amount, dec);
+    return U.moneySign(U.n0(amount) * r, dec);
+  }
+
+  /** 金额旁的口径说明（税前 / 汇率 / 未计税） */
+  function rateNote(state, symbol) {
+    if (!isUs(symbol)) return '';
+    var r = usdRate(state);
+    return (r ? '按实时汇率 ' + r + ' 折人民币' : '汇率未取到，暂未折算（USD 原币）') +
+      ' · 税前，未计入境外预扣税';
+  }
+
+  /** 测试注入点：useRequester(fn) 替换底层取数，useRequester(null) 复位 */
+  function useRequester(fn) { requester = fn || null; }
+  function clearSuffixCache() {
+    Object.keys(suffixMap).forEach(function (k) { delete suffixMap[k]; });
+  }
+
+  return {
+    API: API, REPORT: REPORT, SUFFIXES: SUFFIXES,
+    suffixMap: suffixMap,
+    d10: d10, parsePerShare: parsePerShare, toPlan: toPlan, buildUrl: buildUrl,
+    fetchOne: fetchOne, fetchSymbol: fetchSymbol, fetchAll: fetchAll,
+    isUs: isUs, usdRate: usdRate, moneyText: moneyText, rateNote: rateNote,
+    useRequester: useRequester, clearSuffixCache: clearSuffixCache,
+  };
+})();
+
+
 /* ==================== src/fetcher.js ==================== */
 /* ==================== 取数层 ====================
  * 两个数据源均通过 <script> 注入实现，天然绕开 CORS，file:// 下可直接用。
@@ -6354,7 +6616,7 @@ XJ.fetcher = (function () {
    *       EX_DIVIDEND_DATE 除净日 · DIVIDEND_DATE 派息日 · TRANSFER_END_DATE 截止过户日
    *       IS_BFP = 1 表示「未派发或宣派股息」，需过滤
    * 优势：港股带【独立派息日】，不必像 A 股那样用 T+1 推算。
-   * 注意：美股暂无公开可用的免费分红源，不做自动同步（可手工补录）。
+   * 注意：日股暂无公开可用的免费分红源，不做自动同步（可手工补录）；美股已由 XJ.usdiv 接入。
    */
   var HK_PLAN_URL = 'https://datacenter-web.eastmoney.com/api/data/v1/get';
 
@@ -7343,12 +7605,13 @@ XJ.fetcher = (function () {
 
   /**
    * A股 → 东财股票分红；港股 → 东财港股 F10；ETF/场外基金 → 天天基金；
-   * 美股 → 无公开免费源，归入 unsupported（界面提供手工补录）
+   * 美股 → 东财美股 F10（XJ.usdiv，后缀探测 + 串行 90ms）；日股 → 暂无源，归入 unsupported。
+   * 单只失败 / 三个后缀都空 / 整批失败都返回空方案，不中断其它市场。
    * 返回 { plans: {symbol: DividendPlan[]}, unsupported: symbol[], groups }
    */
   function fetchDividends(symbols, onProgress) {
     symbols = (symbols || []).filter(function (s, i, a) { return s && a.indexOf(s) === i; });
-    var groups = { cn: [], hk: [], fund: [], none: [] };
+    var groups = { cn: [], hk: [], fund: [], us: [], none: [] };
     symbols.forEach(function (s) {
       var src = XJ.market.dividendSource(s) || 'none';
       (groups[src] || groups.none).push(s);
@@ -7385,6 +7648,17 @@ XJ.fetcher = (function () {
           var rows = byCode[XJ.model.codeOf(sym)] || [];
           out[sym] = rows.map(function (r) { return fundRowToPlan(r, sym); });
         });
+      });
+    }
+
+    if (groups.us.length) {
+      chain = chain.then(function () {
+        /* 整批失败也只吞掉美股这一组：返回空方案，不 reject、不拖垮 cn/hk/fund */
+        return XJ.usdiv.fetchAll(groups.us, function (i, t, sym) {
+          if (onProgress) onProgress('us', i, t, sym, '美股分红方案');
+        }).catch(function () { return { plans: {}, noData: groups.us.slice() }; });
+      }).then(function (m) {
+        Object.keys(m.plans || {}).forEach(function (k) { out[k] = m.plans[k]; });
       });
     }
 
@@ -8775,14 +9049,15 @@ XJ.calc = (function () {
   }
   /**
    * 派息落地日期（到账日）。优先级：
-   *   1) plan.payoutDate —— 仅当数据源确实给了独立派息日时采用（基金 / 港股）
+   *   1) plan.payoutDate —— 仅当数据源确实给了独立派息日时采用（基金 / 港股 / 美股）
    *   2) 除权除息日      —— A 股数据源没有独立派息日字段，且按产品口径
    *                        「A 股派息日 = 除权除息日」（同一天），不做 T+1 推算
    *   3) 股权登记日      —— 兜底
    * exact=true 表示是数据源给出的确定日期，UI 才可以说「派息日」而非「预计派息日」。
    */
   function payoutInfo(plan) {
-    var hasRealPayout = (plan.source === 'hk' || plan.source === 'fund') && plan.payoutDate;
+    /* 真实派息日白名单：这些来源的 payoutDate 是官方给出的确定发放日，不是推算值 */
+    var hasRealPayout = (plan.source === 'hk' || plan.source === 'fund' || plan.source === 'us') && plan.payoutDate;
     if (hasRealPayout) return { date: plan.payoutDate, exact: true };
     if (plan.exDividendDate) return { date: plan.exDividendDate, exact: false };
     if (plan.equityRecordDate) return { date: plan.equityRecordDate, exact: false };
@@ -8848,6 +9123,12 @@ XJ.calc = (function () {
     if (impl[0].source === 'fund') {
       var ft = trailingPerShare(plans, U.today());
       return { perShare: ft, total: ft, basis: 'fundTtm', year: null, years: 0 };
+    }
+    /* 美股按季度/月度派息，没有「年报方案 + 预案公告日」的财年结构；
+       走财年口径会把年内未派完的季度系统性低估。统一按近 12 个月（除息日归属）年化。 */
+    if (impl[0].source === 'us') {
+      var ut = trailingPerShare(plans, U.today());
+      return { perShare: ut, total: ut, basis: 'usTtm', year: null, years: 0 };
     }
 
     var allYears = impl.map(reportYear).filter(function (y) { return y; });
@@ -9560,7 +9841,8 @@ XJ.calc = (function () {
       var txs = txOf(state, acc, h.symbol);
       var plans = plansOf(state, h.symbol);
       plans.forEach(function (p) {
-        var hasDate = p.equityRecordDate || p.exDividendDate;
+        /* 美股方案可能只有真实派息日而缺登记日/除息日，此时也应进日历 */
+        var hasDate = p.equityRecordDate || p.exDividendDate || (p.source === 'us' && p.payoutDate);
         if (!hasDate) return;
 
         var posAtReg = position(txs, p.equityRecordDate || p.exDividendDate);
@@ -13920,6 +14202,7 @@ XJ.views.common = (function () {
     }
     if (h.annualBasis === 'ttm') return '按近 12 个月方案年化';
     if (h.annualBasis === 'fundTtm') return '按近 12 个月已分配金额年化';
+    if (h.annualBasis === 'usTtm') return '按近 12 个月（除息日归属）美股派息年化';
     if (h.annualBasis === 'single') return '按 ' + h.annualBasisYear + ' 年方案预估';
     return '暂无分红方案';
   }
@@ -15237,14 +15520,18 @@ XJ.views.calendar = (function () {
   }
 
   /* ---------------- 日历 ---------------- */
-  function eventLine(e) {
+  /* st 用于取 settings.fx.USD：美股单笔金额按实时汇率折人民币展示，
+     汇率未取到时 moneyText 会显示 USD 原币，不会把 1 美元当 1 元。 */
+  function eventLine(e, st) {
     var m = TYPE_META[e.type] || TYPE_META.payout;
+    var amtTxt = XJ.usdiv.moneyText(st.state, e.symbol, e.amount);
     var right = e.amount === null || e.amount === undefined
       ? ''
-      : '<div class="row-v c-div">' + U.moneySign(e.amount) + '</div>';
+      : '<div class="row-v c-div">' + amtTxt + '</div>';
     var sub = (e.type === 'payout')
       ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股 · ' +
-      (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + U.moneySign(e.amount)
+      (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + amtTxt +
+      (XJ.usdiv.isUs(e.symbol) ? '（税前 USD）' : '')
       : '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股';
     return '<button class="list-row" data-act="openSymbol" data-symbol="' + U.esc(e.symbol) + '">' +
       UI.avatar(e.name, e.symbol, 38, C.logoFor(e.symbol)) +
@@ -15328,7 +15615,7 @@ XJ.views.calendar = (function () {
       '</div>' +
       '<div class="note-line" style="justify-content:center;margin-top:12px">' +
       UI.icon('info', 13) +
-      '<span>分红数据已更新至上一个交易日，新披露的方案次日排入日历；A 股口径为「派息日 = 除权除息日」（数据源无独立派息日字段），基金与港股为数据源给出的真实发放日</span>' +
+      '<span>分红数据已更新至上一个交易日，新披露的方案次日排入日历；A 股口径为「派息日 = 除权除息日」（数据源无独立派息日字段），基金 / 港股 / 美股为数据源给出的真实发放日。美股实施状态按除息日推断，单笔金额按实时汇率折人民币（税前，未计入境外预扣税）；跨市场合计沿用原有口径</span>' +
       '</div>' +
       '</div>';
 
@@ -15347,7 +15634,7 @@ XJ.views.calendar = (function () {
       html += '<div class="card"><div class="tiny" style="text-align:center;padding:14px 0">' +
         (sel ? '这一天没有分红安排。' : '本月没有分红安排。') + '</div></div>';
     } else {
-      html += '<div class="list">' + listEvents.map(eventLine).join('') + '</div>';
+      html += '<div class="list">' + listEvents.map(function (e) { return eventLine(e, st); }).join('') + '</div>';
     }
     html += '</div>';                 // 收 .cal-col
     html += '</div>';                 // 收 .cal-split
@@ -15429,7 +15716,7 @@ XJ.views.calendar = (function () {
           U.esc(r.exDividendDate) + ' 到账 · ' + U.thousands(r.qtyAtRecord) + ' 股 × ' +
           U.money(r.perShareAmount, 4) + '</div>' +
           '</div>' +
-          '<div class="row-right"><div class="row-v c-div">' + U.moneySign(r.amount) + '</div></div>' +
+          '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</div></div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
       }).join('') + '</div>';
@@ -15942,7 +16229,7 @@ XJ.views.divsummary = (function () {
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
             ' × ' + U.thousands(qty) + ' 股</span>' +
-            '<span class="ds-rec-a" data-anim="B">' + U.moneySign(r.amount) + '</span>' +
+            '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</span>' +
             '</div>';
         }).join('');
         return '<div class="ds-sym' + (isOpen ? ' open' : '') + '">' +
@@ -15951,7 +16238,7 @@ XJ.views.divsummary = (function () {
           '<span class="ds-code">' + U.esc(XJ.model.codeOf(g.symbol)) + '</span>' +
           '<span class="ds-name">' + U.esc(st.symbolName(g.symbol)) + '</span>' +
           '<span class="ds-sp"></span>' +
-          '<span class="ds-amt" data-anim="A">' + U.moneySign(g.amount) + '</span>' +
+          '<span class="ds-amt" data-anim="A">' + XJ.usdiv.moneyText(st.state, g.symbol, g.amount) + '</span>' +
           '<span class="chev">' + UI.icon('chevron', 15, 2) + '</span>' +
           '</button>' +
           (isOpen ? '<div class="ds-detail">' + rows + '</div>' : '') +
@@ -17989,12 +18276,14 @@ XJ.views.mine = (function () {
       '<b>自由</b> · 单文件 PWA。数据默认全部保存在你自己的浏览器里，' +
       '只在取行情与分红时访问公开接口。<br><br>' +
       '<b>只做记录</b>：本应用不提供股票买卖、不推荐标的、不提供任何投资建议或收益承诺。<br><br>' +
-      '<b>数据来源</b>：行情来自腾讯财经公开接口，分红方案来自东方财富与天天基金公开接口，均为公开信息的整理，可能存在延迟或偏差，请以券商与交易所披露为准。<br><br>' +
+      '<b>数据来源</b>：行情与汇率来自腾讯财经公开接口，分红方案来自东方财富（A股 / 港股 / 美股）与天天基金公开接口，均为公开信息的整理，可能存在延迟或偏差，请以券商与交易所披露为准。<br><br>' +
       '<b>已知局限</b>：<br>' +
-      '· A 股分红数据源没有独立的「派息日」字段，口径上「派息日 = 除权除息日」，界面标注为「预计派息日」；基金与港股为数据源给出的真实派息日<br>' +
-      '· 美股无公开可用的免费分红源，只提供行情、成本与盈亏，分红可在个股页手工补录<br>' +
-      '· 分红统一按税前口径，未计入分红个税<br>' +
-      '· 多币种以人民币折算为主口径；汇率缺失时按 1 折算<br>' +
+      '· A 股分红数据源没有独立的「派息日」字段，口径上「派息日 = 除权除息日」，界面标注为「预计派息日」；基金、港股、美股为数据源给出的真实派息日<br>' +
+      '· 美股分红自动同步自东方财富美股 F10 公开报表；实施状态按【除息日推断】，并非官方进度；币种 USD、金额税前，未计入境外预扣税（美股通常 10%）<br>' +
+      '· 美股单笔分红按实时汇率折人民币展示；汇率未取到时显示 USD 原币、不折算。跨市场汇总数字仍沿用原有口径<br>' +
+      '· 美股按季度/月度派息，没有年报预案公告日，不绘制按财年口径的股息率曲线；预测年分红按近 12 个月（除息日归属）年化<br>' +
+      '· 分红统一按税前口径，未计入分红个税与境外预扣税<br>' +
+      '· 多币种以人民币折算为主口径；其它统计在汇率缺失时按 1 折算<br>' +
       '· 跨设备迁移用「跨设备搬运」或 JSON 导出导入，数据不经过任何服务器<br>' +
       '· 直接以 file:// 打开时浏览器不支持 Service Worker 与系统级推送' +
       '</div></div>';
@@ -18210,6 +18499,14 @@ XJ.views.analysis = (function () {
 XJ.views.symbol = (function () {
   var U = XJ.util, UI = XJ.ui, C = XJ.views.common;
 
+  /* 分红金额展示（模块级，详情页各段共用）：
+     非美股沿用原「按 cnyRateOf 折人民币」口径；
+     美股按 settings.fx.USD 实时汇率折 ¥，汇率缺失时显示 USD 原币（绝不按 1 折算）。 */
+  function divMoney(st, symbol,  amount, dec) {
+    if (XJ.market.assetType(symbol) === 'us') return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
+    return U.moneySign(amount * XJ.calc.cnyRateOf(st.state, symbol), dec);
+  }
+
   /**
    * 技术信号（BOLL 下轨 + KDJ 的 J<0）。
    * 与持仓卡片保持同一口径：中性文案、周线优先、结果不缓存、每次 render 现算。
@@ -18263,14 +18560,19 @@ XJ.views.symbol = (function () {
         '<div class="spacer"></div>' + (extra || '') + '</div>';
     };
 
-    /* ① 不支持的市场：美股无分红源、场外基金没有「财年派现」概念 */
+    /* ① 不支持的市场：美股没有财年切换锚点、场外基金没有「财年派现」概念 */
     if (!XJ.market.supportsYieldCurve(symbol)) {
-      var why = XJ.market.assetType(symbol) === 'of'
+      var at = XJ.market.assetType(symbol);
+      var why = at === 'of'
         ? '场外基金的分红不定期、没有「财年派现」这个概念'
-        : XJ.market.kind(symbol) + '暂无公开可用的免费分红数据源';
+        : at === 'us'
+          ? '美股按季度/月度派息，没有「年报预案公告日」这个财年切换锚点'
+          : XJ.market.kind(symbol) + '暂无公开可用的免费分红数据源';
       return open + head('不适用') +
         '<div class="tiny" style="line-height:1.7">因' + U.esc(why) +
-        '，无法按财年口径绘制股息率曲线。</div></div>';
+        '，无法按财年口径绘制股息率曲线。' +
+        (at === 'us' ? '分红记录、日历、预测年分红与回本进度照常支持。' : '') +
+        '</div></div>';
     }
 
     var steps = XJ.calc.yieldFiscalSteps(plans || []);
@@ -18536,8 +18838,16 @@ XJ.views.symbol = (function () {
     var sigObj = signalOf(symbol, price);
     var sig = sigObj ? '<span class="hc-sig ' + sigObj.cls + '">' + U.esc(sigObj.text) + '</span>' : '';
 
-    /* 无分红数据源的市场（如美股）如实提示，并给出手工补录的出口 */
-    if (!XJ.market.supportsDividend(symbol)) {
+    /* 美股给口径说明；日股等无分红源的市场如实提示，并给出手工补录的出口 */
+    var isUs = XJ.market.assetType(symbol) === 'us';
+    if (isUs) {
+      html += '<div class="warn-card"><span class="ic">ⓘ</span><span>' +
+        '<b>美股分红口径</b>：方案自动同步自东方财富美股 F10 公开报表，' +
+        U.esc(XJ.usdiv.rateNote(st.state, symbol)) + '。<br>' +
+        '实施状态按【除息日推断】（数据源没有官方进度字段）；派息日为数据源给出的真实发放日。<br>' +
+        '美股按季度/月度派息，没有年报预案公告日，不绘制按财年口径的股息率曲线；' +
+        '预测年分红按近 12 个月（除息日归属）年化。</span></div>';
+    } else if (!XJ.market.supportsDividend(symbol)) {
       html += '<div class="warn-card"><span class="ic">ⓘ</span><span>' +
         '<b>' + U.esc(XJ.market.kind(symbol)) + '暂无公开可用的免费分红数据源</b>，无法自动同步分红方案与派息日。<br>' +
         '可在下方「分红记录」中手工补录历史分红，系统会照常计算股价息率与分红回本进度。</span></div>';
@@ -18645,10 +18955,9 @@ XJ.views.symbol = (function () {
      * 另外把该标的的**分红到账**以只读行并入，这样「分红摊薄成本」是怎么降下来的能直接看到
      * （同花顺的交易流水也是这么呈现的）。分红只是展示，真正的计算仍走 received 记录，
      * 因此不会与分红记录重复计数。 */
-    /* 分红记录/流水里的「金额」一列都带 ¥，所以先换成人民币，避免港币分红显示成 ¥ 原值 */
-    var yRate = XJ.calc.cnyRateOf(st.state, symbol);
+    /* 金额列统一走 divMoney（港股折人民币 / 美股按实时汇率折 ¥），底层金额仍是原币 */
     var divRows = recs.map(function (r) {
-      return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount) * yRate, perShare: U.n0(r.perShareAmount),
+      return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount), perShare: U.n0(r.perShareAmount),
                qty: U.n0(r.qtyAtRecord), source: r.source };
     });
     var txFolded = XJ.store.folded('foldTx');   // 默认折叠（util.FOLD.collapsed）
@@ -18681,7 +18990,7 @@ XJ.views.symbol = (function () {
             '<td><span class="pill div">分红摊薄</span></td>' +
             '<td><span class="muted">—</span></td>' +
             '<td>' + (row.perShare > 0 ? U.money(row.perShare, 4) : '<span class="muted">—</span>') + '</td>' +
-            '<td class="c-div">' + U.moneySign(row.amount) + '</td>' +
+            '<td class="c-div">' + divMoney(st, symbol, row.amount) + '</td>' +
             '<td class="tx-edit">' + (row.source === 'AUTO' ? '<span class="tiny">自动</span>' : '<span class="tiny">手动</span>') + '</td>' +
             '</tr>';
           return;
@@ -18764,8 +19073,10 @@ XJ.views.symbol = (function () {
     html += '<div class="card flush" style="margin-bottom:12px">';
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0"><h2>分红记录</h2>' +
       '<div class="spacer"></div><span class="hint">累计 ' +
-      U.moneySign(U.sum(recs, function (r) { return r.amount; }) * yRate) + '</span>' +
-      '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div></div>';
+      divMoney(st, symbol, U.sum(recs, function (r) { return r.amount; })) + '</span>' +
+      '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div>' +
+      (XJ.usdiv.isUs(symbol) ? '<div class="tiny" style="padding:0 16px 8px">' + U.esc(XJ.usdiv.rateNote(st.state, symbol)) + '</div>' : '') +
+      '</div>';
     if (!recs.length) {
       html += '<div style="padding:0 16px 16px" class="tiny">还没有到账记录。已实施且派息日已过的方案会自动登记；历史数据可手动补录。</div>';
     } else {
@@ -18776,7 +19087,7 @@ XJ.views.symbol = (function () {
           (r.source === 'AUTO' ? '自动' : '手动') + '</div></td>' +
           '<td>' + (r.perShareAmount > 0 ? U.money(r.perShareAmount, 4) : '<span class="muted">—</span>') + '</td>' +
           '<td>' + (r.qtyAtRecord > 0 ? U.thousands(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
-          '<td class="c-div">' + U.moneySign(r.amount * yRate) +
+          '<td class="c-div">' + divMoney(st, symbol, r.amount) +
           (r.source === 'MANUAL'
             ? '<div><button class="tiny" style="color:var(--up);margin-top:2px" data-act="deleteReceive" data-id="' +
             U.esc(r.recId) + '">删除</button></div>'
@@ -19054,7 +19365,7 @@ XJ.views.symbol = (function () {
         if (!opts.silent) {
           var msg = '已同步 ' + syms.length + ' 只标的' + (recAdded ? '，新增 ' + recAdded + ' 笔到账' : '');
           if (healed) msg += '，补全 ' + healed + ' 个名称';
-          if (unsupported.length) msg += '；' + unsupported.length + ' 只美股暂无分红数据源，可手工补录';
+          if (unsupported.length) msg += '；' + unsupported.length + ' 只标的（日股等）暂无分红数据源，可手工补录';
           UI.toast(msg);
         }
         /* 收尾工作放后台：官方图标解析、历史行情、对比指数（都可能慢，不该卡住主流程） */
@@ -19589,7 +19900,7 @@ XJ.views.symbol = (function () {
   }
 
   /**
-   * 按市场拉取单只标的的分红方案并落库。美股无公开免费源 → 直接返回空数组。
+   * 按市场拉取单只标的的分红方案并落库。无公开分红源的市场（日股）直接返回空数组。
    */
   function pullPlansFor(sym) {
     if (!XJ.market.dividendSource(sym)) return Promise.resolve([]);
@@ -19641,7 +19952,8 @@ XJ.views.symbol = (function () {
    * 打开自选（非持仓）标的详情时自动补分红数据 —— 修「股息率/分红档案/分红记录全空白」。
    * 根因：state.plans / received / yieldHistory 只由 refreshAll（仅持仓）填充，
    * 而 symbol 页纯读缓存不发请求。这里按单只补齐：方案 + 长历史收盘（股息率曲线）+ 实时行情。
-   * 去重：已有方案 / 在途请求直接跳过；美股日股无分红源 → 不拉，详情页走警示卡。
+   * 去重：已有方案 / 在途请求直接跳过；日股等无分红源的市场不拉，详情页走警示卡。
+   * 美股已接入 XJ.usdiv 自动同步，会正常走这里。
    */
   var divPending = {};
   function ensureSymbolDividends(sym) {
