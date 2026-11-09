@@ -18,14 +18,15 @@ XJ.calc = (function () {
   }
   /**
    * 派息落地日期（到账日）。优先级：
-   *   1) plan.payoutDate —— 仅当数据源确实给了独立派息日时采用（基金 / 港股）
+   *   1) plan.payoutDate —— 仅当数据源确实给了独立派息日时采用（基金 / 港股 / 美股）
    *   2) 除权除息日      —— A 股数据源没有独立派息日字段，且按产品口径
    *                        「A 股派息日 = 除权除息日」（同一天），不做 T+1 推算
    *   3) 股权登记日      —— 兜底
    * exact=true 表示是数据源给出的确定日期，UI 才可以说「派息日」而非「预计派息日」。
    */
   function payoutInfo(plan) {
-    var hasRealPayout = (plan.source === 'hk' || plan.source === 'fund') && plan.payoutDate;
+    /* 真实派息日白名单：这些来源的 payoutDate 是官方给出的确定发放日，不是推算值 */
+    var hasRealPayout = (plan.source === 'hk' || plan.source === 'fund' || plan.source === 'us') && plan.payoutDate;
     if (hasRealPayout) return { date: plan.payoutDate, exact: true };
     if (plan.exDividendDate) return { date: plan.exDividendDate, exact: false };
     if (plan.equityRecordDate) return { date: plan.equityRecordDate, exact: false };
@@ -91,6 +92,12 @@ XJ.calc = (function () {
     if (impl[0].source === 'fund') {
       var ft = trailingPerShare(plans, U.today());
       return { perShare: ft, total: ft, basis: 'fundTtm', year: null, years: 0 };
+    }
+    /* 美股按季度/月度派息，没有「年报方案 + 预案公告日」的财年结构；
+       走财年口径会把年内未派完的季度系统性低估。统一按近 12 个月（除息日归属）年化。 */
+    if (impl[0].source === 'us') {
+      var ut = trailingPerShare(plans, U.today());
+      return { perShare: ut, total: ut, basis: 'usTtm', year: null, years: 0 };
     }
 
     var allYears = impl.map(reportYear).filter(function (y) { return y; });
@@ -803,7 +810,8 @@ XJ.calc = (function () {
       var txs = txOf(state, acc, h.symbol);
       var plans = plansOf(state, h.symbol);
       plans.forEach(function (p) {
-        var hasDate = p.equityRecordDate || p.exDividendDate;
+        /* 美股方案可能只有真实派息日而缺登记日/除息日，此时也应进日历 */
+        var hasDate = p.equityRecordDate || p.exDividendDate || (p.source === 'us' && p.payoutDate);
         if (!hasDate) return;
 
         var posAtReg = position(txs, p.equityRecordDate || p.exDividendDate);
