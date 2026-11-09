@@ -61,6 +61,7 @@ XJ.views.common = (function () {
     }
     if (h.annualBasis === 'ttm') return '按近 12 个月方案年化';
     if (h.annualBasis === 'fundTtm') return '按近 12 个月已分配金额年化';
+    if (h.annualBasis === 'usTtm') return '按近 12 个月（除息日归属）美股派息年化';
     if (h.annualBasis === 'single') return '按 ' + h.annualBasisYear + ' 年方案预估';
     return '暂无分红方案';
   }
