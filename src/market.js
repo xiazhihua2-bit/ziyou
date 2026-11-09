@@ -17,10 +17,11 @@ XJ.market = (function () {
     bj: { key: 'bj', label: '北', kind: '北交所', currency: 'CNY', symbol: '¥'  },
     hk: { key: 'hk', label: '港', kind: '港股',   currency: 'HKD', symbol: 'HK$' },
     us: { key: 'us', label: '美', kind: '美股',   currency: 'USD', symbol: '$'  },
+    jp: { key: 'jp', label: '日', kind: '日股',   currency: 'JPY', symbol: '¥'  },
     of: { key: 'of', label: '基', kind: '场外基金', currency: 'CNY', symbol: '¥' },
   };
 
-  var PREFIXES = ['sh', 'sz', 'bj', 'hk', 'us', 'of'];
+  var PREFIXES = ['sh', 'sz', 'bj', 'hk', 'us', 'jp', 'of'];
 
   function meta(symbol) {
     if (!symbol) return null;
@@ -35,14 +36,18 @@ XJ.market = (function () {
    *  场内基金/ETF/LOF  → 天天基金分红接口        dividend: 'fund'
    *  场外基金(of)      → 天天基金分红接口        dividend: 'fund'
    *  港股              → 东财港股 F10 分红接口   dividend: 'hk'
-   *  美股              → 暂无公开可用的分红源    dividend: null（不支持自动同步，可手工补录）
+   *  美股              → 东财美股 F10 分红接口   dividend: 'us'（src/usdiv.js）
+   *  日股              → 暂无公开可用的分红源    dividend: null
    */
   var ASSET = {
     stock: { key: 'stock', label: '股票', dividend: 'cn',   quote: true  },
     etf:   { key: 'etf',   label: 'ETF',  dividend: 'fund', quote: true  },
     of:    { key: 'of',    label: '场外基金', dividend: 'fund', quote: false },
     hk:    { key: 'hk',    label: '港股', dividend: 'hk',   quote: true  },
-    us:    { key: 'us',    label: '美股', dividend: null,   quote: true  },
+    us:    { key: 'us',    label: '美股', dividend: 'us',   quote: true  },
+    /* 日股：腾讯实时行情可达（qt.gtimg.cn/q=jp8058），但分时/日K 历史无浏览器可达源；
+       分红亦无源。公司官网域名无免费 F10 接口 → 图标回退汉字头像（已知限制）。 */
+    jp:    { key: 'jp',    label: '日股', dividend: null,   quote: true  },
   };
 
   function assetType(symbol) {
@@ -51,6 +56,7 @@ XJ.market = (function () {
     if (mk === 'of') return 'of';
     if (mk === 'hk') return 'hk';
     if (mk === 'us') return 'us';
+    if (mk === 'jp') return 'jp';
     if (mk === 'sh' && /^5/.test(code)) return 'etf';   // 沪市 5xxxxx：ETF / LOF / REITs
     if (mk === 'sz' && /^1/.test(code)) return 'etf';   // 深市 1xxxxx：ETF / LOF
     return 'stock';
@@ -177,22 +183,26 @@ XJ.market = (function () {
   }
 
   function dividendSource(symbol) { var a = asset(symbol); return a ? a.dividend : null; }
-  /** 该标的是否支持自动同步分红（美股暂无公开可用的免费分红源） */
+  /** 该标的是否支持自动同步分红（A股 / 港股 / ETF / 美股；日股暂无公开免费源） */
   function supportsDividend(symbol) { return !!dividendSource(symbol); }
 
   /**
    * 该标的是否能画「按财年」的股息率曲线。
-   *   · 美股    → 没有分红数据源，取不到任何方案
+   *   · 美股    → 按季度/月度派息，没有「年报预案公告日」这个财年切换锚点，财年口径不适用
    *   · 场外基金 → 分红不定期、没有「财年派现」这个概念，且没有盘中 K 线
    * 其余（A股 / 港股 / ETF）都可以。这个判定必须与 fetcher.fetchYieldHistory 的过滤条件一致，
    * 否则会出现「界面说能画、数据却永远取不到」的空态。
    */
   function supportsYieldCurve(symbol) {
-    return supportsDividend(symbol) && assetType(symbol) !== 'of';
+    var t = assetType(symbol);
+    return supportsDividend(symbol) && t !== 'of' && t !== 'us';
   }
   /** 分红数据源的中文说明（用于界面提示） */
   function dividendSourceLabel(symbol) {
-    return ({ cn: '东方财富股票分红', hk: '东方财富港股 F10 分红', fund: '天天基金分红' })[dividendSource(symbol)] || '暂不支持自动同步';
+    return ({
+      cn: '东方财富股票分红', hk: '东方财富港股 F10 分红',
+      fund: '天天基金分红', us: '东方财富美股 F10 分红',
+    })[dividendSource(symbol)] || '暂不支持自动同步';
   }
   function isQuoteable(symbol) { var a = asset(symbol); return !!(a && a.quote); }
 
@@ -233,6 +243,7 @@ XJ.market = (function () {
     var t = assetType(symbol);
     if (t === 'hk') return '港';
     if (t === 'us') return '美';
+    if (t === 'jp') return '日';
     if (t === 'of') return '基';
     if (t === 'etf') return 'E';
     var m = marketOf(symbol);
@@ -294,6 +305,7 @@ XJ.market = (function () {
     var m = marketOf(symbol);
     if (m === 'hk') return 'HKD';
     if (m === 'us') return 'USD';
+    if (m === 'jp') return 'JPY';
     return 'CNY';
   }
   function curSymbol(symbol) {
@@ -395,13 +407,16 @@ XJ.market = (function () {
     if (marketHint && MARKETS[marketHint]) return normalizeTo(s, marketHint);
 
     var lower = s.toLowerCase();
-    // 1) 显式前缀： sh600023 / hk00700 / usAAPL / of110022
-    var m = lower.match(/^(sh|sz|bj|hk|us|of)[._-]?(.+)$/);
+    // 1) 显式前缀： sh600023 / hk00700 / usAAPL / jp8058 / of110022
+    var m = lower.match(/^(sh|sz|bj|hk|us|jp|of)[._-]?(.+)$/);
     if (m) return normalizeTo(m[2], m[1]);
 
-    // 2) 后缀形式： 600023.SH / 00700.HK / AAPL.OQ / 110022.OF
-    var m2 = s.match(/^([A-Za-z0-9._-]+)[.](SH|SZ|BJ|HK|US|OF)$/i);
+    // 2) 后缀形式： 600023.SH / 00700.HK / AAPL.OQ / 8058.T / 110022.OF
+    var m2 = s.match(/^([A-Za-z0-9._-]+)[.](SH|SZ|BJ|HK|US|JP|OF)$/i);
     if (m2) return normalizeTo(m2[1], m2[2].toLowerCase());
+    // 东京交易所后缀： 8058.T（注意与美股 .T 冲突极小：美股白名单不含单字母 T 开头此类代码）
+    var m3 = s.match(/^(\d{4})[.]T$/i);
+    if (m3) return normalizeTo(m3[1], 'jp');
 
     // 3) 纯数字
     if (/^\d{6}$/.test(s)) return prefixForAStock(s) + s;
@@ -427,6 +442,9 @@ XJ.market = (function () {
     if (market === 'hk') {
       if (/^\d{1,5}$/.test(b)) return 'hk' + pad5(b);
       return null;
+    }
+    if (market === 'jp') {
+      return /^\d{4}$/.test(b) ? 'jp' + b : null;
     }
     if (market === 'of') {
       return /^\d{6}$/.test(b) ? 'of' + b : null;
@@ -466,14 +484,18 @@ XJ.market = (function () {
     if (!price || price <= 0) return null;
 
     var isCn = (mk === 'sh' || mk === 'sz' || mk === 'bj');
+    /* 日股串与美/港布局略有错位：成交额在 [45]、[44] 是英文名而非市值，市值位不可用 */
+    var isJp = mk === 'jp';
     // 市值单位：A股/港股为「亿」，美股 [44]/[45] 亦为「亿」但需按币种理解
     return {
       symbol: symbol,
       market: mk,
       currency: mk === 'us' ? (f[35] || 'USD') : currency(symbol),
-      name: cleanName(f[1]),
       nameTruncated: isTruncatedName(f[1]),
       code: f[2] || codeOf(symbol),
+      /* 日股腾讯回的是英文名（Mitsubishi Corporation）—— 换成成分白名单里的中文名，
+         否则行情同步会把搜索时的中文名覆盖成英文 */
+      name: (mk === 'jp' && XJ.universe && XJ.universe.jpName(codeOf(symbol))) || cleanName(f[1]),
       price: price,
       prevClose: prevClose,
       open: U.num(f[5]),
@@ -482,11 +504,11 @@ XJ.market = (function () {
       high: U.num(f[33]),
       low: U.num(f[34]),
       volume: U.num(f[36]),
-      amount: U.num(f[37]),
+      amount: isJp ? U.num(f[45]) : U.num(f[37]),
       turnover: U.num(f[38]),
       pe: U.num(f[39]),
-      floatCap: U.num(f[44]),      // 亿（当地货币）
-      totalCap: U.num(f[45]),
+      floatCap: isJp ? null : U.num(f[44]),      // 亿（当地货币）
+      totalCap: isJp ? null : U.num(f[45]),
       // 只有 A 股有涨跌停制度；港股/美股的 [47]/[48] 是别的含义，不可复用
       limitUp: isCn ? U.num(f[47]) : null,
       limitDown: isCn ? U.num(f[48]) : null,
