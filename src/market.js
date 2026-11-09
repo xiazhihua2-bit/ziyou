@@ -534,6 +534,33 @@ XJ.market = (function () {
     return isQuoteable(symbol) ? symbol : null;
   }
 
+  /* ---------------- 美股行情代码别名 ----------------
+   * 实测（2026-11-10，qt.gtimg.cn）：
+   *   q=usBRK      → 无数据（伯克希尔裸代码不存在）
+   *   q=usBRK.B    → 有数据，f[2]=BRK.B.N，现价 569.07、涨跌幅 -0.32%
+   *   q=usBRK.A    → 有数据，f[2]=BRK.A.N
+   * normalize 会把 "BRK.B" / "BRK.A" 都收成 usBRK，导致伯克希尔永远取不到行情
+   * → 收盘价、当前市值、涨跌徽章全空。默认回退到流通性更好的 B 股。
+   * 其它美股（AAPL.OQ / BABA.N 等）用裸代码即可，保持 symbol 本身。 */
+  var US_QUOTE_ALIAS = { BRK: 'BRK.B' };
+
+  function usQuoteCode(symbol) {
+    var c = codeOf(symbol);
+    return US_QUOTE_ALIAS[c] ? 'us' + US_QUOTE_ALIAS[c] : symbol;
+  }
+
+  /**
+   * 带点请求代码 → 腾讯响应变量名的「容器 / 键」。
+   * q=usBRK.B 返回的是 `v_usBRK.B="..."`（属性赋值语法）。
+   * 若 window.v_usBRK 未预定义，整段 script 会抛 ReferenceError，
+   * 连带同一批次里的其它标的也全部取不到 —— 取数前必须先建好容器，见 fetcher.readQuoteVar。
+   * 普通代码（usAAPL）不带点，返回 null。
+   */
+  function quoteVarParts(reqCode) {
+    var s = String(reqCode || ''), i = s.indexOf('.');
+    return i < 0 ? null : { holder: 'v_' + s.slice(0, i), key: s.slice(i + 1) };
+  }
+
   /* ---------------- 币种换算 ---------------- */
   var FX_SYMBOL = { HKD: 'whHKDCNY', USD: 'whUSDCNY' };
 
@@ -574,6 +601,7 @@ XJ.market = (function () {
     parseQuoteFields: parseQuoteFields,
     cleanName: cleanName, isTruncatedName: isTruncatedName,
     quoteCode: quoteCode,
+    US_QUOTE_ALIAS: US_QUOTE_ALIAS, usQuoteCode: usQuoteCode, quoteVarParts: quoteVarParts,
     fxCode: fxCode, parseFx: parseFx,
     FX_SYMBOL: FX_SYMBOL,
   };
