@@ -5,9 +5,21 @@ XJ.views.symbol = (function () {
   /* 分红金额展示（模块级，详情页各段共用）：
      非美股沿用原「按 cnyRateOf 折人民币」口径；
      美股按 settings.fx.USD 实时汇率折 ¥，汇率缺失时显示 USD 原币（绝不按 1 折算）。 */
-  function divMoney(st, symbol,  amount, dec) {
+  function divMoney(st, symbol, amount, dec) {
     if (XJ.market.assetType(symbol) === 'us') return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
     return U.moneySign(amount * XJ.calc.cnyRateOf(st.state, symbol), dec);
+  }
+
+  /* 交易明细是账户【原币流水】：美股一律用 $ 原币（买入金额、分红摊薄都按 USD 记账）。
+     下方「分红记录」卡片仍按实时汇率折人民币，两个卡片口径不同、各自标注清楚。 */
+  function txMoney(symbol, v, dec) {
+    if (XJ.market.assetType(symbol) === 'us') return '$' + U.money(v, dec);
+    return U.moneySign(v, dec);
+  }
+  function txSignMoney(symbol, v, dec) {
+    if (XJ.market.assetType(symbol) !== 'us') return U.signMoney(v, dec);
+    var n = U.n0(v);
+    return (n > 0 ? '+' : n < 0 ? '-' : '') + '$' + U.money(Math.abs(n), dec);
   }
 
   /**
@@ -458,7 +470,7 @@ XJ.views.symbol = (function () {
      * 另外把该标的的**分红到账**以只读行并入，这样「分红摊薄成本」是怎么降下来的能直接看到
      * （同花顺的交易流水也是这么呈现的）。分红只是展示，真正的计算仍走 received 记录，
      * 因此不会与分红记录重复计数。 */
-    /* 金额列统一走 divMoney（港股折人民币 / 美股按实时汇率折 ¥），底层金额仍是原币 */
+    /* 金额列按账户原币显示（美股 $、其它 ¥）；下方「分红记录」卡片才按汇率折人民币 */
     var divRows = recs.map(function (r) {
       return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount), perShare: U.n0(r.perShareAmount),
                qty: U.n0(r.qtyAtRecord), source: r.source };
@@ -473,7 +485,8 @@ XJ.views.symbol = (function () {
       '</button>' +
       '<div class="spacer"></div>' +
       '<button class="ghost-btn" data-act="addTxFor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div>' +
-      '<div class="tiny" style="margin-top:2px">点击任意一行即可编辑；送股/转增用 0 元买入记录即可（股数增加而总成本不变）</div>' +
+      '<div class="tiny" style="margin-top:2px">点击任意一行即可编辑；送股/转增用 0 元买入记录即可（股数增加而总成本不变）' +
+      (XJ.usdiv.isUs(symbol) ? '；美股金额按 USD 原币显示（$），下方「分红记录」按实时汇率折人民币' : '') + '</div>' +
       '</div>';
     if (!txs.length && !divRows.length) {
       html += '<div style="padding:0 16px 16px" class="tiny">暂无交易记录。</div>';
@@ -493,7 +506,7 @@ XJ.views.symbol = (function () {
             '<td><span class="pill div">分红摊薄</span></td>' +
             '<td><span class="muted">—</span></td>' +
             '<td>' + (row.perShare > 0 ? U.money(row.perShare, 4) : '<span class="muted">—</span>') + '</td>' +
-            '<td class="c-div">' + divMoney(st, symbol, row.amount) + '</td>' +
+            '<td class="c-div">' + txMoney(symbol, row.amount) + '</td>' +
             '<td class="tx-edit">' + (row.source === 'AUTO' ? '<span class="tiny">自动</span>' : '<span class="tiny">手动</span>') + '</td>' +
             '</tr>';
           return;
@@ -510,7 +523,7 @@ XJ.views.symbol = (function () {
           '<td>' + dirPill + '</td>' +
           '<td>' + (isAdj ? '<span class="muted">—</span>' : U.thousands(t.quantity)) + '</td>' +
           '<td>' + (isAdj ? '<span class="muted">—</span>' : U.money(t.price, 4)) + '</td>' +
-          '<td class="' + (isAdj ? U.dirClass(amt) : '') + '">' + U.signMoney(amt) + '</td>' +
+          '<td class="' + (isAdj ? U.dirClass(amt) : '') + '">' + txSignMoney(symbol, amt) + '</td>' +
           '<td class="tx-edit">' + UI.icon('edit', 13) + '</td>' +
           '</tr>';
       });
