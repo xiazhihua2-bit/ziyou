@@ -251,7 +251,7 @@
         if (!opts.silent) {
           var msg = '已同步 ' + syms.length + ' 只标的' + (recAdded ? '，新增 ' + recAdded + ' 笔到账' : '');
           if (healed) msg += '，补全 ' + healed + ' 个名称';
-          if (unsupported.length) msg += '；' + unsupported.length + ' 只美股暂无分红数据源，可手工补录';
+          if (unsupported.length) msg += '；' + unsupported.length + ' 只标的（日股等）暂无分红数据源，可手工补录';
           UI.toast(msg);
         }
         /* 收尾工作放后台：官方图标解析、历史行情、对比指数（都可能慢，不该卡住主流程） */
@@ -786,7 +786,7 @@
   }
 
   /**
-   * 按市场拉取单只标的的分红方案并落库。美股无公开免费源 → 直接返回空数组。
+   * 按市场拉取单只标的的分红方案并落库。无公开分红源的市场（日股）直接返回空数组。
    */
   function pullPlansFor(sym) {
     if (!XJ.market.dividendSource(sym)) return Promise.resolve([]);
@@ -838,7 +838,8 @@
    * 打开自选（非持仓）标的详情时自动补分红数据 —— 修「股息率/分红档案/分红记录全空白」。
    * 根因：state.plans / received / yieldHistory 只由 refreshAll（仅持仓）填充，
    * 而 symbol 页纯读缓存不发请求。这里按单只补齐：方案 + 长历史收盘（股息率曲线）+ 实时行情。
-   * 去重：已有方案 / 在途请求直接跳过；美股日股无分红源 → 不拉，详情页走警示卡。
+   * 去重：已有方案 / 在途请求直接跳过；日股等无分红源的市场不拉，详情页走警示卡。
+   * 美股已接入 XJ.usdiv 自动同步，会正常走这里。
    */
   var divPending = {};
   function ensureSymbolDividends(sym) {
