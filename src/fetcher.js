@@ -441,7 +441,7 @@ XJ.fetcher = (function () {
    *       EX_DIVIDEND_DATE 除净日 · DIVIDEND_DATE 派息日 · TRANSFER_END_DATE 截止过户日
    *       IS_BFP = 1 表示「未派发或宣派股息」，需过滤
    * 优势：港股带【独立派息日】，不必像 A 股那样用 T+1 推算。
-   * 注意：美股暂无公开可用的免费分红源，不做自动同步（可手工补录）。
+   * 注意：日股暂无公开可用的免费分红源，不做自动同步（可手工补录）；美股已由 XJ.usdiv 接入。
    */
   var HK_PLAN_URL = 'https://datacenter-web.eastmoney.com/api/data/v1/get';
 
@@ -1430,12 +1430,13 @@ XJ.fetcher = (function () {
 
   /**
    * A股 → 东财股票分红；港股 → 东财港股 F10；ETF/场外基金 → 天天基金；
-   * 美股 → 无公开免费源，归入 unsupported（界面提供手工补录）
+   * 美股 → 东财美股 F10（XJ.usdiv，后缀探测 + 串行 90ms）；日股 → 暂无源，归入 unsupported。
+   * 单只失败 / 三个后缀都空 / 整批失败都返回空方案，不中断其它市场。
    * 返回 { plans: {symbol: DividendPlan[]}, unsupported: symbol[], groups }
    */
   function fetchDividends(symbols, onProgress) {
     symbols = (symbols || []).filter(function (s, i, a) { return s && a.indexOf(s) === i; });
-    var groups = { cn: [], hk: [], fund: [], none: [] };
+    var groups = { cn: [], hk: [], fund: [], us: [], none: [] };
     symbols.forEach(function (s) {
       var src = XJ.market.dividendSource(s) || 'none';
       (groups[src] || groups.none).push(s);
@@ -1472,6 +1473,17 @@ XJ.fetcher = (function () {
           var rows = byCode[XJ.model.codeOf(sym)] || [];
           out[sym] = rows.map(function (r) { return fundRowToPlan(r, sym); });
         });
+      });
+    }
+
+    if (groups.us.length) {
+      chain = chain.then(function () {
+        /* 整批失败也只吞掉美股这一组：返回空方案，不 reject、不拖垮 cn/hk/fund */
+        return XJ.usdiv.fetchAll(groups.us, function (i, t, sym) {
+          if (onProgress) onProgress('us', i, t, sym, '美股分红方案');
+        }).catch(function () { return { plans: {}, noData: groups.us.slice() }; });
+      }).then(function (m) {
+        Object.keys(m.plans || {}).forEach(function (k) { out[k] = m.plans[k]; });
       });
     }
 
