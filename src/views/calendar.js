@@ -71,14 +71,18 @@ XJ.views.calendar = (function () {
   }
 
   /* ---------------- 日历 ---------------- */
-  function eventLine(e) {
+  /* st 用于取 settings.fx.USD：美股单笔金额按实时汇率折人民币展示，
+     汇率未取到时 moneyText 会显示 USD 原币，不会把 1 美元当 1 元。 */
+  function eventLine(e, st) {
     var m = TYPE_META[e.type] || TYPE_META.payout;
+    var amtTxt = XJ.usdiv.moneyText(st.state, e.symbol, e.amount);
     var right = e.amount === null || e.amount === undefined
       ? ''
-      : '<div class="row-v c-div">' + U.moneySign(e.amount) + '</div>';
+      : '<div class="row-v c-div">' + amtTxt + '</div>';
     var sub = (e.type === 'payout')
       ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股 · ' +
-      (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + U.moneySign(e.amount)
+      (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + amtTxt +
+      (XJ.usdiv.isUs(e.symbol) ? '（税前 USD）' : '')
       : '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股';
     return '<button class="list-row" data-act="openSymbol" data-symbol="' + U.esc(e.symbol) + '">' +
       UI.avatar(e.name, e.symbol, 38, C.logoFor(e.symbol)) +
@@ -162,7 +166,7 @@ XJ.views.calendar = (function () {
       '</div>' +
       '<div class="note-line" style="justify-content:center;margin-top:12px">' +
       UI.icon('info', 13) +
-      '<span>分红数据已更新至上一个交易日，新披露的方案次日排入日历；A 股口径为「派息日 = 除权除息日」（数据源无独立派息日字段），基金与港股为数据源给出的真实发放日</span>' +
+      '<span>分红数据已更新至上一个交易日，新披露的方案次日排入日历；A 股口径为「派息日 = 除权除息日」（数据源无独立派息日字段），基金 / 港股 / 美股为数据源给出的真实发放日。美股实施状态按除息日推断，单笔金额按实时汇率折人民币（税前，未计入境外预扣税）；跨市场合计沿用原有口径</span>' +
       '</div>' +
       '</div>';
 
@@ -181,7 +185,7 @@ XJ.views.calendar = (function () {
       html += '<div class="card"><div class="tiny" style="text-align:center;padding:14px 0">' +
         (sel ? '这一天没有分红安排。' : '本月没有分红安排。') + '</div></div>';
     } else {
-      html += '<div class="list">' + listEvents.map(eventLine).join('') + '</div>';
+      html += '<div class="list">' + listEvents.map(function (e) { return eventLine(e, st); }).join('') + '</div>';
     }
     html += '</div>';                 // 收 .cal-col
     html += '</div>';                 // 收 .cal-split
@@ -263,7 +267,7 @@ XJ.views.calendar = (function () {
           U.esc(r.exDividendDate) + ' 到账 · ' + U.thousands(r.qtyAtRecord) + ' 股 × ' +
           U.money(r.perShareAmount, 4) + '</div>' +
           '</div>' +
-          '<div class="row-right"><div class="row-v c-div">' + U.moneySign(r.amount) + '</div></div>' +
+          '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</div></div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
       }).join('') + '</div>';
