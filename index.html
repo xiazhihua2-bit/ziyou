@@ -2988,6 +2988,33 @@ XJ.market = (function () {
     return isQuoteable(symbol) ? symbol : null;
   }
 
+  /* ---------------- 美股行情代码别名 ----------------
+   * 实测（2026-11-10，qt.gtimg.cn）：
+   *   q=usBRK      → 无数据（伯克希尔裸代码不存在）
+   *   q=usBRK.B    → 有数据，f[2]=BRK.B.N，现价 569.07、涨跌幅 -0.32%
+   *   q=usBRK.A    → 有数据，f[2]=BRK.A.N
+   * normalize 会把 "BRK.B" / "BRK.A" 都收成 usBRK，导致伯克希尔永远取不到行情
+   * → 收盘价、当前市值、涨跌徽章全空。默认回退到流通性更好的 B 股。
+   * 其它美股（AAPL.OQ / BABA.N 等）用裸代码即可，保持 symbol 本身。 */
+  var US_QUOTE_ALIAS = { BRK: 'BRK.B' };
+
+  function usQuoteCode(symbol) {
+    var c = codeOf(symbol);
+    return US_QUOTE_ALIAS[c] ? 'us' + US_QUOTE_ALIAS[c] : symbol;
+  }
+
+  /**
+   * 带点请求代码 → 腾讯响应变量名的「容器 / 键」。
+   * q=usBRK.B 返回的是 `v_usBRK.B="..."`（属性赋值语法）。
+   * 若 window.v_usBRK 未预定义，整段 script 会抛 ReferenceError，
+   * 连带同一批次里的其它标的也全部取不到 —— 取数前必须先建好容器，见 fetcher.readQuoteVar。
+   * 普通代码（usAAPL）不带点，返回 null。
+   */
+  function quoteVarParts(reqCode) {
+    var s = String(reqCode || ''), i = s.indexOf('.');
+    return i < 0 ? null : { holder: 'v_' + s.slice(0, i), key: s.slice(i + 1) };
+  }
+
   /* ---------------- 币种换算 ---------------- */
   var FX_SYMBOL = { HKD: 'whHKDCNY', USD: 'whUSDCNY' };
 
@@ -3028,6 +3055,7 @@ XJ.market = (function () {
     parseQuoteFields: parseQuoteFields,
     cleanName: cleanName, isTruncatedName: isTruncatedName,
     quoteCode: quoteCode,
+    US_QUOTE_ALIAS: US_QUOTE_ALIAS, usQuoteCode: usQuoteCode, quoteVarParts: quoteVarParts,
     fxCode: fxCode, parseFx: parseFx,
     FX_SYMBOL: FX_SYMBOL,
   };
@@ -6253,6 +6281,19 @@ XJ.fetcher = (function () {
     document.head.appendChild(s);
   }
 
+  /**
+   * 读取腾讯行情变量。带点代码（usBRK.B）的响应是 `v_usBRK.B="..."`，
+   * 值落在容器的属性上，普通代码（usAAPL）直接落在 window 上。
+   */
+  function readQuoteVar(reqCode) {
+    var parts = XJ.market.quoteVarParts(reqCode);
+    if (parts) {
+      var box = window[parts.holder];
+      return box ? box[parts.key] : null;
+    }
+    return window['v_' + reqCode];
+  }
+
   /** 拉取行情：分片并发，单只失败不影响整体（非行情类标的自动跳过） */
   function fetchQuotes(symbols) {
     symbols = (symbols || []).filter(function (s, i, a) {
@@ -6260,26 +6301,39 @@ XJ.fetcher = (function () {
     });
     if (!symbols.length) return Promise.resolve({});
 
+    /* 美股别名：usBRK → usBRK.B。腾讯对带点代码返回 `v_usBRK.B="..."`，
+       注入 script 前必须先建好 window.v_usBRK 容器，否则整段脚本抛 ReferenceError，
+       同一批次里的其它标的也会一并取不到。 */
+    var items = symbols.map(function (s) {
+      return { sym: s, req: XJ.market.usQuoteCode(s) };
+    });
     var chunks = [];
-    for (var i = 0; i < symbols.length; i += CHUNK) chunks.push(symbols.slice(i, i + CHUNK));
+    for (var i = 0; i < items.length; i += CHUNK) chunks.push(items.slice(i, i + CHUNK));
 
     var out = {};
     var pending = chunks.length;
 
     return new Promise(function (resolve) {
       function oneChunk(ch) {
-        loadScript(QUOTE_URL + ch.join(','), 'GBK', QUOTE_TIMEOUT, function (ok) {
-          if (ok) {
-            ch.forEach(function (sym) {
-              var q = parseQuote(sym, window['v_' + sym]);
-              if (q) out[sym] = q;
-            });
-          } else {
-            lastError = new Error('行情接口请求失败');
+        ch.forEach(function (it) {
+          var parts = XJ.market.quoteVarParts(it.req);
+          if (parts && (!window[parts.holder] || typeof window[parts.holder] !== 'object')) {
+            window[parts.holder] = {};
           }
-          pending--;
-          if (pending <= 0) resolve(out);
         });
+        loadScript(QUOTE_URL + ch.map(function (it) { return it.req; }).join(','),
+          'GBK', QUOTE_TIMEOUT, function (ok) {
+            if (ok) {
+              ch.forEach(function (it) {
+                var q = parseQuote(it.sym, readQuoteVar(it.req));
+                if (q) out[it.sym] = q;
+              });
+            } else {
+              lastError = new Error('行情接口请求失败');
+            }
+            pending--;
+            if (pending <= 0) resolve(out);
+          });
       }
       chunks.forEach(oneChunk);
     });
@@ -18502,9 +18556,21 @@ XJ.views.symbol = (function () {
   /* 分红金额展示（模块级，详情页各段共用）：
      非美股沿用原「按 cnyRateOf 折人民币」口径；
      美股按 settings.fx.USD 实时汇率折 ¥，汇率缺失时显示 USD 原币（绝不按 1 折算）。 */
-  function divMoney(st, symbol,  amount, dec) {
+  function divMoney(st, symbol, amount, dec) {
     if (XJ.market.assetType(symbol) === 'us') return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
     return U.moneySign(amount * XJ.calc.cnyRateOf(st.state, symbol), dec);
+  }
+
+  /* 交易明细是账户【原币流水】：美股一律用 $ 原币（买入金额、分红摊薄都按 USD 记账）。
+     下方「分红记录」卡片仍按实时汇率折人民币，两个卡片口径不同、各自标注清楚。 */
+  function txMoney(symbol, v, dec) {
+    if (XJ.market.assetType(symbol) === 'us') return '$' + U.money(v, dec);
+    return U.moneySign(v, dec);
+  }
+  function txSignMoney(symbol, v, dec) {
+    if (XJ.market.assetType(symbol) !== 'us') return U.signMoney(v, dec);
+    var n = U.n0(v);
+    return (n > 0 ? '+' : n < 0 ? '-' : '') + '$' + U.money(Math.abs(n), dec);
   }
 
   /**
@@ -18955,7 +19021,7 @@ XJ.views.symbol = (function () {
      * 另外把该标的的**分红到账**以只读行并入，这样「分红摊薄成本」是怎么降下来的能直接看到
      * （同花顺的交易流水也是这么呈现的）。分红只是展示，真正的计算仍走 received 记录，
      * 因此不会与分红记录重复计数。 */
-    /* 金额列统一走 divMoney（港股折人民币 / 美股按实时汇率折 ¥），底层金额仍是原币 */
+    /* 金额列按账户原币显示（美股 $、其它 ¥）；下方「分红记录」卡片才按汇率折人民币 */
     var divRows = recs.map(function (r) {
       return { kind: 'div', date: r.exDividendDate, amount: U.n0(r.amount), perShare: U.n0(r.perShareAmount),
                qty: U.n0(r.qtyAtRecord), source: r.source };
@@ -18970,7 +19036,8 @@ XJ.views.symbol = (function () {
       '</button>' +
       '<div class="spacer"></div>' +
       '<button class="ghost-btn" data-act="addTxFor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div>' +
-      '<div class="tiny" style="margin-top:2px">点击任意一行即可编辑；送股/转增用 0 元买入记录即可（股数增加而总成本不变）</div>' +
+      '<div class="tiny" style="margin-top:2px">点击任意一行即可编辑；送股/转增用 0 元买入记录即可（股数增加而总成本不变）' +
+      (XJ.usdiv.isUs(symbol) ? '；美股金额按 USD 原币显示（$），下方「分红记录」按实时汇率折人民币' : '') + '</div>' +
       '</div>';
     if (!txs.length && !divRows.length) {
       html += '<div style="padding:0 16px 16px" class="tiny">暂无交易记录。</div>';
@@ -18990,7 +19057,7 @@ XJ.views.symbol = (function () {
             '<td><span class="pill div">分红摊薄</span></td>' +
             '<td><span class="muted">—</span></td>' +
             '<td>' + (row.perShare > 0 ? U.money(row.perShare, 4) : '<span class="muted">—</span>') + '</td>' +
-            '<td class="c-div">' + divMoney(st, symbol, row.amount) + '</td>' +
+            '<td class="c-div">' + txMoney(symbol, row.amount) + '</td>' +
             '<td class="tx-edit">' + (row.source === 'AUTO' ? '<span class="tiny">自动</span>' : '<span class="tiny">手动</span>') + '</td>' +
             '</tr>';
           return;
@@ -19007,7 +19074,7 @@ XJ.views.symbol = (function () {
           '<td>' + dirPill + '</td>' +
           '<td>' + (isAdj ? '<span class="muted">—</span>' : U.thousands(t.quantity)) + '</td>' +
           '<td>' + (isAdj ? '<span class="muted">—</span>' : U.money(t.price, 4)) + '</td>' +
-          '<td class="' + (isAdj ? U.dirClass(amt) : '') + '">' + U.signMoney(amt) + '</td>' +
+          '<td class="' + (isAdj ? U.dirClass(amt) : '') + '">' + txSignMoney(symbol, amt) + '</td>' +
           '<td class="tx-edit">' + UI.icon('edit', 13) + '</td>' +
           '</tr>';
       });
