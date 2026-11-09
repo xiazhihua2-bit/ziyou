@@ -22,6 +22,7 @@ const JS_FILES = [
   'src/storage.js',
   'src/transfer.js',
   'src/sync-core.js',      // 同步纯逻辑内核（依赖 transfer 的 base64url 工具）
+  'src/usdiv.js',          // 美股分红（东财 F10：后缀探测 + JSONP + 同形方案 + 金额折算）
   'src/fetcher.js',
   'src/ocr.js',
   'src/chart.js',
