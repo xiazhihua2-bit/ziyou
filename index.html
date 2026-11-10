@@ -2233,9 +2233,26 @@ XJ.util = (function () {
   function n0(v) { var n = num(v); return n === null ? 0 : n; }
 
   function thousands(str) {
-    var parts = String(str).split('.');
+    var s = String(str);
+    /* 股数是浮点累加出来的，会带出 1.9440000000000002 这类尾数：统一收敛到最多 4 位小数。
+       U.money 传进来的已是 toFixed(≤4) 的字符串，不会被改写；A股整数股原样输出。 */
+    if (/^-?\d+\.\d{5,}$/.test(s)) s = Number(s).toFixed(4).replace(/\.?0+$/, '') || '0';
+    var parts = s.split('.');
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return parts.join('.');
+  }
+  /**
+   * 股数展示：统一「最多 4 位小数」。
+   * 美股允许小数股（如 1.944 股），而 position() 用浮点累加会暴露
+   * 1.9440000000000002 这类尾数。这里四舍五入到 4 位并去掉尾随 0，
+   * 整数仍是整数（1000 → 1,000），A股整数股显示不受影响。
+   */
+  function qtyText(v) {
+    var n = num(v);
+    if (n === null) return '—';
+    var s = Math.abs(n).toFixed(4).replace(/\.?0+$/, '');
+    if (!s) s = '0';
+    return (n < 0 ? '-' : '') + thousands(s);
   }
 
   /** 金额：默认 2 位小数 + 千分位 */
@@ -2440,7 +2457,7 @@ XJ.util = (function () {
     yearOf: yearOf, monthOf: monthOf, ymOf: ymOf,
     num: num, n0: n0, money: money, moneySign: moneySign, moneyCompact: moneyCompact,
     moneyAxis: moneyAxis, pctAxis: pctAxis,
-    pct: pct, signPct: signPct, signMoney: signMoney, thousands: thousands,
+    pct: pct, signPct: signPct, signMoney: signMoney, thousands: thousands, qtyText: qtyText,
     dirClass: dirClass, direction: direction,
     uid: uid, esc: esc, initial: initial, shortName: shortName, colorOf: colorOf,
     clamp: clamp, sum: sum, groupBy: groupBy, download: download, cn: cn,
@@ -2585,6 +2602,26 @@ XJ.market = (function () {
     if (assetType(symbol) !== 'stock') return null;
     var code = codeOf(symbol);
     return code ? 'https://basic.10jqka.com.cn/' + code + '/company.html' : null;
+  }
+
+  /* ---------------- 美股官方域名（图标兜底） ----------------
+   * 东财 RPT_USF10_INFO_ORGPROFILE 实测（2026-11-10）对多数个股有 ORG_WEB
+   * （AAPL→www.apple.com、KO→www.coca-colacompany.com、MSFT→www.microsoft.com …），
+   * 但对伯克希尔（BRK / BRK.B / BRK.B.N）与 ETF（QQQ / SCHD / SPY / VOO …）返回空数据。
+   * 这些标的用公开的公司官网 / ETF 发行商域名兜底，全部实测 icon.horse 能取到官方图标。
+   * 只登记已核实的公开域名，不猜测。 */
+  var US_OFFICIAL_DOMAINS = {
+    BRK: 'www.berkshirehathaway.com',
+    AAPL: 'www.apple.com', MSFT: 'www.microsoft.com', NVDA: 'www.nvidia.com',
+    KO: 'www.coca-colacompany.com', O: 'www.realtyincome.com', TSM: 'www.tsmc.com',
+    QQQ: 'www.invesco.com', DIA: 'www.invesco.com',
+    SCHD: 'www.schwab.com', VOO: 'www.vanguard.com', VTI: 'www.vanguard.com',
+    IVV: 'www.ishares.com',
+  };
+
+  function usOfficialDomain(symbol) {
+    if (assetType(symbol) !== 'us') return null;
+    return US_OFFICIAL_DOMAINS[String(codeOf(symbol)).toUpperCase()] || null;
   }
 
   /**
@@ -3044,6 +3081,7 @@ XJ.market = (function () {
     secucodeOf: secucodeOf, logoUrl: logoUrl, logoVerdict: logoVerdict,
     rootDomain: rootDomain, cleanDomain: cleanDomain,
     logoCandidates: logoCandidates, thsF10Url: thsF10Url,
+    US_OFFICIAL_DOMAINS: US_OFFICIAL_DOMAINS, usOfficialDomain: usOfficialDomain,
     parseThsLogo: parseThsLogo, THS_LOGO_RE: THS_LOGO_RE,
     logoStale: logoStale,
     prefixForAStock: prefixForAStock, pad5: pad5,
@@ -6818,6 +6856,16 @@ XJ.fetcher = (function () {
     var out = {};
     var i = 0;
 
+    /* 美股：先查核实过的官方域名表。东财 F10 对 BRK 与 ETF 一律返回空，
+       没有这层兜底这些标的永远拿不到域名 → 只能显示中文头像。 */
+    list = list.filter(function (sym) {
+      var d = XJ.market.usOfficialDomain(sym);
+      if (!d) return true;
+      out[sym] = d;
+      return false;
+    });
+    if (!list.length) return Promise.resolve(out);
+
     function one(sym) {
       var q = XJ.market.orgInfoQuery(sym);
       var cbName = 'xjdom_' + (++cbSeq) + '_' + Date.now().toString(36);
@@ -7244,7 +7292,7 @@ XJ.fetcher = (function () {
    * 每次调整判定规则都要 +1：缓存里低于当前版本的结论会被视为过期并重新解析，
    * 否则用户当天看到的旧结论（尤其是 'bad'）会一直保留到第二天。
    */
-  var LOGO_ALGO = 2;
+  var LOGO_ALGO = 3;
 
   /**
    * 解析单只标的的公司标识，返回 { symbol, url, source } 或 null（→ 用文字头像）。
@@ -7264,7 +7312,10 @@ XJ.fetcher = (function () {
         if (idx >= cands.length) return Promise.resolve(null);
         var url = cands[idx++];
         return checkLogo(url).then(function (v) {
-          if (v === 'ok') return { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO };
+          /* checkLogo 的 'unknown'（超时 / ICO 解码失败 / 无 fetch）按「可显示」处理：
+             <img> 本身不需要 CORS 也不依赖 createImageBitmap，且 UI.avatar 有 onerror 回退。
+             早先只认 'ok' 会把真实的官方 ICO 图标误杀成中文头像。 */
+          if (v !== 'bad') return { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO };
           return next();
         });
       }
@@ -10833,12 +10884,15 @@ XJ.calc = (function () {
     var f = fx || (state.settings && state.settings.fx) || {};
     var rate = { CNY: 1, HKD: U.n0(f.HKD) || 1, USD: U.n0(f.USD) || 1 };
 
-    var mv = 0, cost = 0, pred = 0;
+    var mv = 0, cost = 0, pred = 0, net = 0;
     s.holdings.forEach(function (h) {
       var r = rate[h.currency] || 1;
       if (h.marketValue !== null) mv += h.marketValue * r;
       cost += h.costValue * r;
       pred += h.predictedDividend * r;
+      /* 累计净投入也写进快照：资产走势的 nw = mv + recv − net 三项必须同一汇率口径。
+         早先只存 mv/cost，历史日拿快照市值减「当前汇率」重算的净投入，混了两套汇率。 */
+      net += U.n0(h.netInvested) * r;
     });
 
     var recv = 0;
@@ -10849,7 +10903,7 @@ XJ.calc = (function () {
 
     var r2 = function (v) { return Math.round(v * 100) / 100; };
     return {
-      mv: r2(mv), cost: r2(cost), pred: r2(pred), recv: r2(recv),
+      mv: r2(mv), cost: r2(cost), pred: r2(pred), recv: r2(recv), net: r2(net),
       fx: (f.HKD || f.USD) ? { HKD: U.num(f.HKD), USD: U.num(f.USD) } : null,
     };
   }
@@ -11354,6 +11408,31 @@ XJ.calc = (function () {
     var snapDates = state.snapshots ? Object.keys(state.snapshots) : [];
     snapDates.forEach(function (d) { dateSet[d] = true; });   // 快照日期也纳入（可能有 K 线没有的日期）
 
+    /* ★ 按日汇率（A股 + 美股混合组合的历史曲线必须稳定）
+       实时汇率每 30s 刷新一次。若所有历史日都用「当前汇率」折算，汇率一变整条
+       持仓市值 / 累计收益 / 收益率曲线会整体重算漂移；而 twrIndex 的
+       flow = net(t) − net(t−1) 会凭空出现「外部现金流」，收益率被压平。
+       每日快照里存了写入当时的 fx（buildSnapshot），所以：
+         · 有快照的历史日        → 用该日快照汇率
+         · 两条快照之间的历史日  → 沿用不晚于该日的最近一条快照汇率
+         · 早于第一条快照        → 用第一条快照汇率
+         · 今天 / 更晚          → 用当前实时汇率（用户要求「用实时汇率显示数据」）
+       A股 CNY 恒为 1，不受影响；USD/HKD 按各自当日汇率折算，三项曲线同一口径。 */
+    var fxDays = snapDates.filter(function (d) {
+      var s = state.snapshots[d];
+      return s && s.fx && (U.num(s.fx.HKD) || U.num(s.fx.USD));
+    }).sort();
+    function fxOn(d) {
+      if (!fxDays.length) return fx;
+      if (d >= fxDays[fxDays.length - 1]) return fx;
+      var pick = state.snapshots[fxDays[0]].fx;
+      for (var k = 0; k < fxDays.length; k++) {
+        if (fxDays[k] > d) break;
+        pick = state.snapshots[fxDays[k]].fx;
+      }
+      return pick;
+    }
+
     var dates = Object.keys(dateSet)
       .filter(function (d) { return d >= firstTx; })
       .filter(function (d) { return (!opts.beg || d >= opts.beg) && (!opts.end || d <= opts.end); })
@@ -11394,20 +11473,28 @@ XJ.calc = (function () {
     }
 
     var series = [];
+    var prevNetLocal = {};   // sym -> 上一个曲线日的【原币】累计净投入
     for (var i = 0; i < dates.length; i++) {
       var d = dates[i];
-      var mv = 0, cost = 0, net = 0, recv = 0, hasAny = false;
+      var dayFx = fxOn(d);
+      var mv = 0, cost = 0, net = 0, recv = 0, flow = 0, hasAny = false;
       used.forEach(function (sym) {
         var info = perSym[sym];
         var px = priceOn(info.points, d);
-        if (px === null) return;
-        var pos = position(info.txs, d, info.method, receivedOn(info.recs, d));
-        if (pos.qty <= 0) return;
-        var rate = fxRate(info.currency, fx);
+        var recOn = receivedOn(info.recs, d);
+        var pos = position(info.txs, d, info.method, recOn);
+        var rate = fxRate(info.currency, dayFx);
+        /* 外部现金流只由真实交易驱动：用【原币】净投入的差分再按当日汇率折算。
+           若直接用 net(t) − net(t−1)（人民币口径），汇率一变就凭空多出/少掉一笔本金进出，
+           TWR 会把汇率损益误当现金流，收益率曲线被压平。 */
+        var prevLocal = prevNetLocal[sym] || 0;
+        flow += (pos.netInvested - prevLocal) * rate;
+        prevNetLocal[sym] = pos.netInvested;
+        if (px === null || pos.qty <= 0) return;
         mv += pos.qty * px * rate;
         cost += pos.costBasis * rate;
         net += pos.netInvested * rate;
-        recv += receivedOn(info.recs, d) * rate;
+        recv += recOn * rate;
         hasAny = true;
       });
       if (!hasAny) continue;
@@ -11415,15 +11502,23 @@ XJ.calc = (function () {
       var snap = state.snapshots && state.snapshots[d];
       var useMv = (snap && U.num(snap.mv) !== null) ? U.n0(snap.mv) : null;
       var mvOut = useMv !== null ? useMv : Math.round(mv * 100) / 100;
-      var netOut = Math.round(net * 100) / 100;
+      /* 有完整新快照（同时带 fx 与 net）：net / recv 也取快照，
+         三项都是同一天、同一汇率口径写入的定值，不出现混口径台阶。
+         旧快照只有 mv/cost/pred/recv，没有 fx/net，无法确定其汇率 →
+         一律按按日汇率重算，保持旧数据兼容（mv 仍按旧逻辑用快照覆盖）。 */
+      var fullSnap = !!(snap && snap.fx && U.num(snap.net) !== null);
+      var netOut = fullSnap ? U.n0(snap.net) : Math.round(net * 100) / 100;
+      var recvOut = (fullSnap && U.num(snap.recv) !== null)
+        ? U.n0(snap.recv) : Math.round(recv * 100) / 100;
       /* 净资产 = 持仓总市值 + 累计已收分红 − 累计净投入（含股息的总收益口径，用户确认） */
       series.push({
         date: d,
         mv: mvOut,
         cost: useMv !== null ? U.n0(snap.cost) : Math.round(cost * 100) / 100,
         net: netOut,
-        recv: Math.round(recv * 100) / 100,
-        nw: Math.round((mvOut + recv - net) * 100) / 100,
+        recv: recvOut,
+        flow: Math.round(flow * 100) / 100,
+        nw: Math.round((mvOut + recvOut - netOut) * 100) / 100,
         source: useMv !== null ? 'snapshot' : 'kline',
       });
     }
@@ -11500,7 +11595,8 @@ XJ.calc = (function () {
       if (prevV === null) {
         out.push({ date: p.date, idx: 1, mv: p.mv, net: net, recv: p.recv });
       } else {
-        var flow = net - prevNet;
+        /* 优先用 marketValueSeries 给出的「真实交易现金流」；老序列没有 flow 时回退到净投入差分 */
+        var flow = (p.flow === undefined || p.flow === null) ? (net - prevNet) : U.n0(p.flow);
         var r = prevV > 1e-6 ? (V - prevV - flow) / prevV : 0;
         if (!isFinite(r)) r = 0;
         idx = idx * (1 + r);
@@ -14670,7 +14766,7 @@ XJ.views.overview = (function () {
       '</div>' +
       intra +
       '<div class="hc-grid">' +
-      '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.thousands(h.qty) + '股</div></div>' +
+      '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.qtyText(h.qty) + '股</div></div>' +
       '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
       '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
       '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + pctBadge + '</div></div>' +
@@ -15284,6 +15380,13 @@ XJ.views.networth = (function () {
     } else {
       notes.push('按「交易流水还原持股数 × 当日真实收盘价」折算人民币；同日有每日快照时以快照为准');
     }
+    /* 汇率口径：历史日按当日快照汇率（不随实时汇率漂移），今天用实时汇率 */
+    var liveFx = (st.state && st.state.settings && st.state.settings.fx) || {};
+    if (U.num(liveFx.USD)) {
+      notes.push('A股 + 美股按实时汇率 USD/CNY ' + U.money(U.num(liveFx.USD), 4) +
+        ' 折算；历史日期用当日快照汇率，实时汇率只影响今天');
+    }
+    if (st.ui.fxError) notes.push('本次汇率刷新失败，仍在用上一次取到的汇率');
     if (!isToday && b.res.missing.length) {
       notes.push('有 ' + b.res.missing.length + ' 只标的没有历史行情（场外基金净值或长期停牌），未计入曲线');
     }
@@ -15556,7 +15659,7 @@ XJ.views.calendar = (function () {
           '<span class="pi-amt" data-anim="A">' + U.moneySign(it.amount) + '</span>' +
           '</span>' +
           '<span class="pi-row">' +
-          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.thousands(it.qty) + '股</span>' +
+          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.qtyText(it.qty) + '股</span>' +
           '<span class="pi-when">' + (it.exDate
             ? '除权日 ' + U.esc(String(it.exDate).slice(5))
             : '<i class="pi-tbd">除权日待定</i>') +
@@ -15583,10 +15686,10 @@ XJ.views.calendar = (function () {
       ? ''
       : '<div class="row-v c-div">' + amtTxt + '</div>';
     var sub = (e.type === 'payout')
-      ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股 · ' +
+      ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股 · ' +
       (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + amtTxt +
       (XJ.usdiv.isUs(e.symbol) ? '（税前 USD）' : '')
-      : '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股';
+      : '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股';
     return '<button class="list-row" data-act="openSymbol" data-symbol="' + U.esc(e.symbol) + '">' +
       UI.avatar(e.name, e.symbol, 38, C.logoFor(e.symbol)) +
       '<div class="row-main">' +
@@ -15767,7 +15870,7 @@ XJ.views.calendar = (function () {
           '<div class="row-main">' +
           '<div class="row-t"><span class="nm">' + U.esc(XJ.store.symbolName(r.symbol)) + '</span></div>' +
           '<div class="row-s">' + U.esc(XJ.market.displayCode(r.symbol)) + ' · ' +
-          U.esc(r.exDividendDate) + ' 到账 · ' + U.thousands(r.qtyAtRecord) + ' 股 × ' +
+          U.esc(r.exDividendDate) + ' 到账 · ' + U.qtyText(r.qtyAtRecord) + ' 股 × ' +
           U.money(r.perShareAmount, 4) + '</div>' +
           '</div>' +
           '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</div></div>' +
@@ -16282,7 +16385,7 @@ XJ.views.divsummary = (function () {
           return '<div class="ds-rec">' +
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
-            ' × ' + U.thousands(qty) + ' 股</span>' +
+            ' × ' + U.qtyText(qty) + ' 股</span>' +
             '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</span>' +
             '</div>';
         }).join('');
@@ -18026,6 +18129,26 @@ XJ.views.search = (function () {
 XJ.views.mine = (function () {
   var U = XJ.util, UI = XJ.ui;
 
+  /* 实时汇率（本机 settings.fx，刻意不进跨设备同步）：显示当前数值与更新时间，
+     让「用实时汇率显示数据」这件事在界面上可被验证。 */
+  function fxLine() {
+    var fx = (XJ.store.state && XJ.store.state.settings && XJ.store.state.settings.fx) || {};
+    var usd = U.num(fx.USD), hkd = U.num(fx.HKD);
+    if (!usd && !hkd) return '尚未取到（腾讯 whUSDCNY / whHKDCNY 公开接口），美股数据暂按原币显示';
+    var parts = [];
+    if (usd) parts.push('USD/CNY ' + U.money(usd, 4));
+    if (hkd) parts.push('HKD/CNY ' + U.money(hkd, 4));
+    var at = String(fx.updatedAt || '');
+    if (at) {
+      var d = new Date(at);
+      if (!isNaN(d.getTime())) {
+        parts.push('更新于 ' + U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes()) + ':' + U.pad2(d.getSeconds()));
+      }
+    }
+    return parts.join(' · ') + '（每 30 秒刷新，回到前台立即刷新）' +
+      (XJ.store.ui.fxError ? ' · 本次刷新失败，仍用上一次的汇率' : '');
+  }
+
   function renderAccounts() {
     var st = XJ.store;
     var list = st.accounts();
@@ -18091,7 +18214,7 @@ XJ.views.mine = (function () {
           '</div>' +
           '<div class="row-s">' + U.esc(XJ.market.displayCode(t.symbol)) + ' · ' + U.esc(t.date) + ' · ' +
           U.esc(st.accountName(t.accountId)) +
-          (isAdj ? '' : ' · ' + U.thousands(t.quantity) + '股 @ ' + U.money(t.price, 3)) + '</div>' +
+          (isAdj ? '' : ' · ' + U.qtyText(t.quantity) + '股 @ ' + U.money(t.price, 3)) + '</div>' +
           '</div>' +
           '<div class="row-right"><div class="row-v' + (isAdj ? ' ' + U.dirClass(amt) : '') + '" data-anim="A">' + U.signMoney(amt) + '</div>' +
           (!isAdj && U.n0(t.fee) ? '<div class="row-v2" data-anim="A">费 ' + U.money(t.fee) + '</div>' : '') +
@@ -18331,6 +18454,7 @@ XJ.views.mine = (function () {
       '只在取行情与分红时访问公开接口。<br><br>' +
       '<b>只做记录</b>：本应用不提供股票买卖、不推荐标的、不提供任何投资建议或收益承诺。<br><br>' +
       '<b>数据来源</b>：行情与汇率来自腾讯财经公开接口，分红方案来自东方财富（A股 / 港股 / 美股）与天天基金公开接口，均为公开信息的整理，可能存在延迟或偏差，请以券商与交易所披露为准。<br><br>' +
+      '<b>实时汇率</b>：' + U.esc(fxLine()) + '<br><br>' +
       '<b>已知局限</b>：<br>' +
       '· A 股分红数据源没有独立的「派息日」字段，口径上「派息日 = 除权除息日」，界面标注为「预计派息日」；基金、港股、美股为数据源给出的真实派息日<br>' +
       '· 美股分红自动同步自东方财富美股 F10 公开报表；实施状态按【除息日推断】，并非官方进度；币种 USD、金额税前，未计入境外预扣税（美股通常 10%）<br>' +
@@ -18927,7 +19051,7 @@ XJ.views.symbol = (function () {
         '<div class="muted" style="font-size:12px">预测年分红</div>' +
         '<div style="font-size:32px;font-weight:750;letter-spacing:-1.2px;color:var(--dividend);margin-top:3px">' +
         U.moneySign(h.predictedDividendCny) + '</div>' +
-        '<div class="tiny" style="margin-top:6px">每股 ' + U.money(h.annualPerShare, 4) + ' × ' + U.thousands(h.qty) + '股</div>' +
+        '<div class="tiny" style="margin-top:6px">每股 ' + U.money(h.annualPerShare, 4) + ' × ' + U.qtyText(h.qty) + '股</div>' +
         '<div class="tiny" style="margin-top:2px">' + U.esc(C.planBasisLabel(h)) + '</div>' +
         '</div>' +
         '<button class="ghost-btn" data-act="openBasisEditor" data-symbol="' + U.esc(symbol) + '">觉得不准？</button>' +
@@ -18957,7 +19081,7 @@ XJ.views.symbol = (function () {
       html += '<div class="hc-grid">' +
         '<div class="hc-cell" data-anim="B"><div class="k">当前市值</div><div class="v">' + U.moneySign(h.marketValueCny) + '</div></div>' +
         '<div class="hc-cell" data-anim="B"><div class="k">收盘价 × 股数</div><div class="v">' +
-        (price === null ? '—' : U.money(price) + ' × ' + U.thousands(h.qty)) + '</div></div>' +
+        (price === null ? '—' : U.money(price) + ' × ' + U.qtyText(h.qty)) + '</div></div>' +
         '</div>';
     } else {
       html += '<div class="tiny" style="margin-top:10px">当前账户下没有该标的的持仓。</div>';
@@ -18989,7 +19113,7 @@ XJ.views.symbol = (function () {
         '<span class="hint">点带笔的数值可修改</span></div>' +
         '<button class="kv-edit" data-act="editQty" data-symbol="' + U.esc(symbol) + '">' +
         '<span class="k">持仓数量</span>' +
-        '<span class="v">' + U.thousands(h.qty) + ' 股<span class="pen">' + UI.icon('edit', 13, 1.9) + '</span></span></button>' +
+        '<span class="v">' + U.qtyText(h.qty) + ' 股<span class="pen">' + UI.icon('edit', 13, 1.9) + '</span></span></button>' +
         '<button class="kv-edit" data-act="editCost" data-symbol="' + U.esc(symbol) + '">' +
         '<span class="k">当前成本' + C.qmark('成本口径：' + C.costMethodLabel(h.costMethod)) + '</span>' +
         '<span class="v">' + U.money(h.avgCost, 4) +
@@ -19072,7 +19196,7 @@ XJ.views.symbol = (function () {
         html += '<tr class="tx-row" data-act="editTx" data-id="' + U.esc(t.txId) + '" title="点击编辑这笔记录">' +
           '<td>' + U.esc(t.date) + '</td>' +
           '<td>' + dirPill + '</td>' +
-          '<td>' + (isAdj ? '<span class="muted">—</span>' : U.thousands(t.quantity)) + '</td>' +
+          '<td>' + (isAdj ? '<span class="muted">—</span>' : U.qtyText(t.quantity)) + '</td>' +
           '<td>' + (isAdj ? '<span class="muted">—</span>' : U.money(t.price, 4)) + '</td>' +
           '<td class="' + (isAdj ? U.dirClass(amt) : '') + '">' + txSignMoney(symbol, amt) + '</td>' +
           '<td class="tx-edit">' + UI.icon('edit', 13) + '</td>' +
@@ -19153,7 +19277,7 @@ XJ.views.symbol = (function () {
         html += '<tr><td>' + U.esc(r.exDividendDate) + '<div class="tiny">' +
           (r.source === 'AUTO' ? '自动' : '手动') + '</div></td>' +
           '<td>' + (r.perShareAmount > 0 ? U.money(r.perShareAmount, 4) : '<span class="muted">—</span>') + '</td>' +
-          '<td>' + (r.qtyAtRecord > 0 ? U.thousands(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
+          '<td>' + (r.qtyAtRecord > 0 ? U.qtyText(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
           '<td class="c-div">' + divMoney(st, symbol, r.amount) +
           (r.source === 'MANUAL'
             ? '<div><button class="tiny" style="color:var(--up);margin-top:2px" data-act="deleteReceive" data-id="' +
@@ -23696,6 +23820,39 @@ XJ.views.symbol = (function () {
       /* 派息日弹窗：这里试一次（分红方案本地就有缓存，离线也能弹），
          行情刷新完成后再试一次兜底（首装 / 缓存过期时靠那次）。两次都幂等，不会重复弹。 */
       setTimeout(maybeShowPayoutPopup, 600);
+      /* ---------------- 实时汇率（独立通道） ----------------
+       * 腾讯 whUSDCNY / whHKDCNY 是带秒级时间戳的实时汇率。行情、分红、资产走势都按它折人民币，
+       * 不能只寄生在 60s 的行情同步里：独立 30s tick + 回前台立即补一次。
+       * 历史曲线走 calc.marketValueSeries 的「按日汇率」，所以实时刷新只影响今天，不会漂移。 */
+      var fxBusy = false;
+      function refreshFx(force) {
+        if (fxBusy || !S.state) return Promise.resolve(false);
+        var cur = S.state.settings.fx || {};
+        var at = cur.updatedAt ? Date.parse(cur.updatedAt) : 0;
+        /* 与 60s 主链路错开：刚更新过就跳过，避免同一拍重复请求；回前台可强制刷新 */
+        if (!force && at && (Date.now() - at) < 25000) return Promise.resolve(false);
+        fxBusy = true;
+        return XJ.fetcher.fetchFX().then(function (fx) {
+          fxBusy = false;
+          if (!fx || !Object.keys(fx).length) { S.ui.fxError = true; return false; }
+          var changed = (U.num(fx.USD) !== U.num(cur.USD)) || (U.num(fx.HKD) !== U.num(cur.HKD));
+          S.state.settings.fx = Object.assign({}, fx, { updatedAt: U.nowStamp() });
+          S.ui.fxError = false;
+          if (changed) {
+            /* 当日快照按新汇率重写；历史快照不动 */
+            C.writeSnapshot(S.state, S.ui.accountId, S.state.settings.fx);
+            S.commitNow(null);
+          } else if (XJ.storage && XJ.storage.save) {
+            XJ.storage.save(S.state);   // 只更新 updatedAt，不打断用户滚动
+          }
+          return true;
+        }).catch(function () {
+          fxBusy = false;
+          S.ui.fxError = true;
+          return false;
+        });
+      }
+
       refreshAll({ silent: true }).then(function () { maybeShowPayoutPopup(); });
       setInterval(function () {
         if (document.hidden) return;
@@ -23706,6 +23863,13 @@ XJ.views.symbol = (function () {
           XJ.views.pool.tickQuotes(true);
         }
       }, Math.max(60000, U.n0(S.state.settings.quoteRefreshMs) || 60000));
+      /* 汇率独立刷新：页面隐藏时暂停，回到前台立刻补一次 */
+      setInterval(function () { if (!document.hidden) refreshFx(false); }, 30000);
+      if (typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) refreshFx(true);
+        });
+      }
       setInterval(reminderTick, 60000);
       reminderTick();
     }).catch(function (e) {
