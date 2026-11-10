@@ -62,7 +62,7 @@ XJ.views.divsummary = (function () {
           return '<div class="ds-rec">' +
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
-            ' × ' + U.thousands(qty) + ' 股</span>' +
+            ' × ' + U.qtyText(qty) + ' 股</span>' +
             '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</span>' +
             '</div>';
         }).join('');
