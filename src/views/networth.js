@@ -490,6 +490,13 @@ XJ.views.networth = (function () {
     } else {
       notes.push('按「交易流水还原持股数 × 当日真实收盘价」折算人民币；同日有每日快照时以快照为准');
     }
+    /* 汇率口径：历史日按当日快照汇率（不随实时汇率漂移），今天用实时汇率 */
+    var liveFx = (st.state && st.state.settings && st.state.settings.fx) || {};
+    if (U.num(liveFx.USD)) {
+      notes.push('A股 + 美股按实时汇率 USD/CNY ' + U.money(U.num(liveFx.USD), 4) +
+        ' 折算；历史日期用当日快照汇率，实时汇率只影响今天');
+    }
+    if (st.ui.fxError) notes.push('本次汇率刷新失败，仍在用上一次取到的汇率');
     if (!isToday && b.res.missing.length) {
       notes.push('有 ' + b.res.missing.length + ' 只标的没有历史行情（场外基金净值或长期停牌），未计入曲线');
     }
