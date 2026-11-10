@@ -1748,12 +1748,15 @@ XJ.calc = (function () {
     var f = fx || (state.settings && state.settings.fx) || {};
     var rate = { CNY: 1, HKD: U.n0(f.HKD) || 1, USD: U.n0(f.USD) || 1 };
 
-    var mv = 0, cost = 0, pred = 0;
+    var mv = 0, cost = 0, pred = 0, net = 0;
     s.holdings.forEach(function (h) {
       var r = rate[h.currency] || 1;
       if (h.marketValue !== null) mv += h.marketValue * r;
       cost += h.costValue * r;
       pred += h.predictedDividend * r;
+      /* 累计净投入也写进快照：资产走势的 nw = mv + recv − net 三项必须同一汇率口径。
+         早先只存 mv/cost，历史日拿快照市值减「当前汇率」重算的净投入，混了两套汇率。 */
+      net += U.n0(h.netInvested) * r;
     });
 
     var recv = 0;
@@ -1764,7 +1767,7 @@ XJ.calc = (function () {
 
     var r2 = function (v) { return Math.round(v * 100) / 100; };
     return {
-      mv: r2(mv), cost: r2(cost), pred: r2(pred), recv: r2(recv),
+      mv: r2(mv), cost: r2(cost), pred: r2(pred), recv: r2(recv), net: r2(net),
       fx: (f.HKD || f.USD) ? { HKD: U.num(f.HKD), USD: U.num(f.USD) } : null,
     };
   }
@@ -2269,6 +2272,31 @@ XJ.calc = (function () {
     var snapDates = state.snapshots ? Object.keys(state.snapshots) : [];
     snapDates.forEach(function (d) { dateSet[d] = true; });   // 快照日期也纳入（可能有 K 线没有的日期）
 
+    /* ★ 按日汇率（A股 + 美股混合组合的历史曲线必须稳定）
+       实时汇率每 30s 刷新一次。若所有历史日都用「当前汇率」折算，汇率一变整条
+       持仓市值 / 累计收益 / 收益率曲线会整体重算漂移；而 twrIndex 的
+       flow = net(t) − net(t−1) 会凭空出现「外部现金流」，收益率被压平。
+       每日快照里存了写入当时的 fx（buildSnapshot），所以：
+         · 有快照的历史日        → 用该日快照汇率
+         · 两条快照之间的历史日  → 沿用不晚于该日的最近一条快照汇率
+         · 早于第一条快照        → 用第一条快照汇率
+         · 今天 / 更晚          → 用当前实时汇率（用户要求「用实时汇率显示数据」）
+       A股 CNY 恒为 1，不受影响；USD/HKD 按各自当日汇率折算，三项曲线同一口径。 */
+    var fxDays = snapDates.filter(function (d) {
+      var s = state.snapshots[d];
+      return s && s.fx && (U.num(s.fx.HKD) || U.num(s.fx.USD));
+    }).sort();
+    function fxOn(d) {
+      if (!fxDays.length) return fx;
+      if (d >= fxDays[fxDays.length - 1]) return fx;
+      var pick = state.snapshots[fxDays[0]].fx;
+      for (var k = 0; k < fxDays.length; k++) {
+        if (fxDays[k] > d) break;
+        pick = state.snapshots[fxDays[k]].fx;
+      }
+      return pick;
+    }
+
     var dates = Object.keys(dateSet)
       .filter(function (d) { return d >= firstTx; })
       .filter(function (d) { return (!opts.beg || d >= opts.beg) && (!opts.end || d <= opts.end); })
@@ -2309,20 +2337,28 @@ XJ.calc = (function () {
     }
 
     var series = [];
+    var prevNetLocal = {};   // sym -> 上一个曲线日的【原币】累计净投入
     for (var i = 0; i < dates.length; i++) {
       var d = dates[i];
-      var mv = 0, cost = 0, net = 0, recv = 0, hasAny = false;
+      var dayFx = fxOn(d);
+      var mv = 0, cost = 0, net = 0, recv = 0, flow = 0, hasAny = false;
       used.forEach(function (sym) {
         var info = perSym[sym];
         var px = priceOn(info.points, d);
-        if (px === null) return;
-        var pos = position(info.txs, d, info.method, receivedOn(info.recs, d));
-        if (pos.qty <= 0) return;
-        var rate = fxRate(info.currency, fx);
+        var recOn = receivedOn(info.recs, d);
+        var pos = position(info.txs, d, info.method, recOn);
+        var rate = fxRate(info.currency, dayFx);
+        /* 外部现金流只由真实交易驱动：用【原币】净投入的差分再按当日汇率折算。
+           若直接用 net(t) − net(t−1)（人民币口径），汇率一变就凭空多出/少掉一笔本金进出，
+           TWR 会把汇率损益误当现金流，收益率曲线被压平。 */
+        var prevLocal = prevNetLocal[sym] || 0;
+        flow += (pos.netInvested - prevLocal) * rate;
+        prevNetLocal[sym] = pos.netInvested;
+        if (px === null || pos.qty <= 0) return;
         mv += pos.qty * px * rate;
         cost += pos.costBasis * rate;
         net += pos.netInvested * rate;
-        recv += receivedOn(info.recs, d) * rate;
+        recv += recOn * rate;
         hasAny = true;
       });
       if (!hasAny) continue;
@@ -2330,15 +2366,23 @@ XJ.calc = (function () {
       var snap = state.snapshots && state.snapshots[d];
       var useMv = (snap && U.num(snap.mv) !== null) ? U.n0(snap.mv) : null;
       var mvOut = useMv !== null ? useMv : Math.round(mv * 100) / 100;
-      var netOut = Math.round(net * 100) / 100;
+      /* 有完整新快照（同时带 fx 与 net）：net / recv 也取快照，
+         三项都是同一天、同一汇率口径写入的定值，不出现混口径台阶。
+         旧快照只有 mv/cost/pred/recv，没有 fx/net，无法确定其汇率 →
+         一律按按日汇率重算，保持旧数据兼容（mv 仍按旧逻辑用快照覆盖）。 */
+      var fullSnap = !!(snap && snap.fx && U.num(snap.net) !== null);
+      var netOut = fullSnap ? U.n0(snap.net) : Math.round(net * 100) / 100;
+      var recvOut = (fullSnap && U.num(snap.recv) !== null)
+        ? U.n0(snap.recv) : Math.round(recv * 100) / 100;
       /* 净资产 = 持仓总市值 + 累计已收分红 − 累计净投入（含股息的总收益口径，用户确认） */
       series.push({
         date: d,
         mv: mvOut,
         cost: useMv !== null ? U.n0(snap.cost) : Math.round(cost * 100) / 100,
         net: netOut,
-        recv: Math.round(recv * 100) / 100,
-        nw: Math.round((mvOut + recv - net) * 100) / 100,
+        recv: recvOut,
+        flow: Math.round(flow * 100) / 100,
+        nw: Math.round((mvOut + recvOut - netOut) * 100) / 100,
         source: useMv !== null ? 'snapshot' : 'kline',
       });
     }
@@ -2415,7 +2459,8 @@ XJ.calc = (function () {
       if (prevV === null) {
         out.push({ date: p.date, idx: 1, mv: p.mv, net: net, recv: p.recv });
       } else {
-        var flow = net - prevNet;
+        /* 优先用 marketValueSeries 给出的「真实交易现金流」；老序列没有 flow 时回退到净投入差分 */
+        var flow = (p.flow === undefined || p.flow === null) ? (net - prevNet) : U.n0(p.flow);
         var r = prevV > 1e-6 ? (V - prevV - flow) / prevV : 0;
         if (!isFinite(r)) r = 0;
         idx = idx * (1 + r);
