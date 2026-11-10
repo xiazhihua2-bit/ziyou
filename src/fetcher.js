@@ -615,6 +615,16 @@ XJ.fetcher = (function () {
     var out = {};
     var i = 0;
 
+    /* 美股：先查核实过的官方域名表。东财 F10 对 BRK 与 ETF 一律返回空，
+       没有这层兜底这些标的永远拿不到域名 → 只能显示中文头像。 */
+    list = list.filter(function (sym) {
+      var d = XJ.market.usOfficialDomain(sym);
+      if (!d) return true;
+      out[sym] = d;
+      return false;
+    });
+    if (!list.length) return Promise.resolve(out);
+
     function one(sym) {
       var q = XJ.market.orgInfoQuery(sym);
       var cbName = 'xjdom_' + (++cbSeq) + '_' + Date.now().toString(36);
@@ -1041,7 +1051,7 @@ XJ.fetcher = (function () {
    * 每次调整判定规则都要 +1：缓存里低于当前版本的结论会被视为过期并重新解析，
    * 否则用户当天看到的旧结论（尤其是 'bad'）会一直保留到第二天。
    */
-  var LOGO_ALGO = 2;
+  var LOGO_ALGO = 3;
 
   /**
    * 解析单只标的的公司标识，返回 { symbol, url, source } 或 null（→ 用文字头像）。
@@ -1061,7 +1071,10 @@ XJ.fetcher = (function () {
         if (idx >= cands.length) return Promise.resolve(null);
         var url = cands[idx++];
         return checkLogo(url).then(function (v) {
-          if (v === 'ok') return { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO };
+          /* checkLogo 的 'unknown'（超时 / ICO 解码失败 / 无 fetch）按「可显示」处理：
+             <img> 本身不需要 CORS 也不依赖 createImageBitmap，且 UI.avatar 有 onerror 回退。
+             早先只认 'ok' 会把真实的官方 ICO 图标误杀成中文头像。 */
+          if (v !== 'bad') return { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO };
           return next();
         });
       }
