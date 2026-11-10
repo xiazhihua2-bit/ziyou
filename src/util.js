@@ -56,9 +56,26 @@ XJ.util = (function () {
   function n0(v) { var n = num(v); return n === null ? 0 : n; }
 
   function thousands(str) {
-    var parts = String(str).split('.');
+    var s = String(str);
+    /* 股数是浮点累加出来的，会带出 1.9440000000000002 这类尾数：统一收敛到最多 4 位小数。
+       U.money 传进来的已是 toFixed(≤4) 的字符串，不会被改写；A股整数股原样输出。 */
+    if (/^-?\d+\.\d{5,}$/.test(s)) s = Number(s).toFixed(4).replace(/\.?0+$/, '') || '0';
+    var parts = s.split('.');
     parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     return parts.join('.');
+  }
+  /**
+   * 股数展示：统一「最多 4 位小数」。
+   * 美股允许小数股（如 1.944 股），而 position() 用浮点累加会暴露
+   * 1.9440000000000002 这类尾数。这里四舍五入到 4 位并去掉尾随 0，
+   * 整数仍是整数（1000 → 1,000），A股整数股显示不受影响。
+   */
+  function qtyText(v) {
+    var n = num(v);
+    if (n === null) return '—';
+    var s = Math.abs(n).toFixed(4).replace(/\.?0+$/, '');
+    if (!s) s = '0';
+    return (n < 0 ? '-' : '') + thousands(s);
   }
 
   /** 金额：默认 2 位小数 + 千分位 */
@@ -243,13 +260,27 @@ XJ.util = (function () {
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
   }
 
+  /* ==================== 折叠 / 展开默认值（全站唯一入口） ====================
+   * 2026-10-06 统一：全站所有可折叠区域一律【默认折叠】，用户点一下才展开。
+   * ★ 放在 util（最先加载的模块）是为了让 model / store / 各视图都能引用同一份常量，
+   *   不会出现「model 写死 false、store 写死 true」这种各写一套的情况。
+   * 新增可折叠卡片时只需两步，不要另写布尔字面量：
+   *   ① 初值：在 ui（或 settings）里用 FOLD.collapsed 赋值
+   *   ② 读取：用 XJ.store.folded('键名') —— 未设置时自动回落 FOLD.collapsed
+   * 如果哪天要改回「默认展开」，只需把这里 collapsed 改成 false。 */
+  var FOLD = {
+    collapsed: true,   // 「是否折叠」语义的键（foldXxx / xxxCollapsed）的默认值
+    open: false,       // 「是否展开」语义的键（如分类明细 openCats）的默认值
+  };
+
   return {
+    FOLD: FOLD,
     pad2: pad2, ymd: ymd, today: today, nowStamp: nowStamp, mdShort: mdShort,
     parseYmd: parseYmd, addDays: addDays, daysBetween: daysBetween,
     yearOf: yearOf, monthOf: monthOf, ymOf: ymOf,
     num: num, n0: n0, money: money, moneySign: moneySign, moneyCompact: moneyCompact,
     moneyAxis: moneyAxis, pctAxis: pctAxis,
-    pct: pct, signPct: signPct, signMoney: signMoney, thousands: thousands,
+    pct: pct, signPct: signPct, signMoney: signMoney, thousands: thousands, qtyText: qtyText,
     dirClass: dirClass, direction: direction,
     uid: uid, esc: esc, initial: initial, shortName: shortName, colorOf: colorOf,
     clamp: clamp, sum: sum, groupBy: groupBy, download: download, cn: cn,
