@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
  * 独立复算验收脚本（金标准）
  *
  * 原则：本文件【重新实现】一遍全部核心公式，不复用 src/calc.js 的任何代码，
@@ -18,10 +18,12 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
      顺带提醒自己「这个新文件也要接受同一套巡检」。 */
 const SRC_FILES = [
   'src/util.js', 'src/market.js', 'src/model.js', 'src/storage.js', 'src/store.js',
-  'src/transfer.js', 'src/sync-core.js', 'src/fetcher.js', 'src/ocr.js',
+  'src/transfer.js', 'src/sync-core.js', 'src/usdiv.js', 'src/fetcher.js', 'src/ocr.js',
   'src/chart.js', 'src/calc.js', 'src/ui.js', 'src/app.js',
   'src/views/overview.js', 'src/views/symbol.js', 'src/views/analysis.js',
   'src/views/plan.js', 'src/views/networth.js', 'src/views/divsummary.js', 'src/views/mine.js',
+  'src/pool-515450.js', 'src/views/pool.js',
+  'src/holder-515450.js', 'src/holder-sort.js', 'src/holder-chart.js', 'src/views/holder.js',
 ];
 /* ★ URL hash 键白名单：全仓只允许这两个（#xjimport= 数据搬运 / #xjsync= 同步配对）。
    新增任何一条都要同时改这里，并且想清楚它会不会泄漏 / 会被转发。 */
@@ -41,6 +43,7 @@ const sandbox = {
   console,
   Math, JSON, Object, Array, String, Number, Boolean, RegExp, Error,
   parseInt, parseFloat, isNaN, Promise, setTimeout, clearTimeout,
+  encodeURIComponent, decodeURIComponent,
 };
 /* atob / btoa：transfer.js 的 base64url 兜底路径在沙箱里可能用到（与浏览器环境保持一致）。 */
 sandbox.atob = (s) => Buffer.from(String(s), 'base64').toString('binary');
@@ -61,7 +64,7 @@ class FakeDate extends Date {
 sandbox.Date = FakeDate;
 
 vm.createContext(sandbox);
-for (const f of ['src/util.js', 'src/market.js', 'src/model.js', 'src/transfer.js', 'src/sync-core.js', 'src/fetcher.js', 'src/ocr.js', 'src/chart.js', 'src/calc.js']) {
+for (const f of ['src/util.js', 'src/market.js', 'src/model.js', 'src/transfer.js', 'src/sync-core.js', 'src/usdiv.js', 'src/fetcher.js', 'src/ocr.js', 'src/chart.js', 'src/calc.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
 }
 const XJ = sandbox.window.XJ;
@@ -206,9 +209,15 @@ function iProjection(startAssets, baseDividend, monthly, years, reinvest) {
 
 /** 息覆生活（独立实现） */
 function iCoverage(annualDividend, expenses, assumedYieldPct) {
+  /* 2026-10-05：与 calc.coverage 同口径 —— 先生存（essential）后品质（quality），类内按金额升序 */
+  const CAT = { essential: 0, quality: 1 };
   const items = expenses.filter((e) => e.enabled)
-    .map((e) => ({ key: e.key, label: e.label, annualAmount: (+e.monthlyAmount) * 12 }))
-    .sort((a, b) => a.annualAmount - b.annualAmount);
+    .map((e) => ({
+      key: e.key, label: e.label,
+      category: e.category === 'quality' ? 'quality' : 'essential',
+      annualAmount: (+e.monthlyAmount) * 12,
+    }))
+    .sort((a, b) => (CAT[a.category] - CAT[b.category]) || (a.annualAmount - b.annualAmount));
   let running = 0, lit = 0;
   const out = items.map((it) => {
     if (running + it.annualAmount <= annualDividend) {
@@ -216,6 +225,7 @@ function iCoverage(annualDividend, expenses, assumedYieldPct) {
       return { ...it, lit: true, remaining: 0, progress: 100 };
     }
     const avail = Math.max(0, annualDividend - running);
+    running += avail;   // 部分覆盖同样占额（与 calc.coverage 同口径）
     return { ...it, lit: false, remaining: it.annualAmount - avail, progress: avail / it.annualAmount * 100 };
   });
   const next = out.find((x) => !x.lit) || null;
@@ -264,7 +274,7 @@ function eq(label, actual, expected, tol = 0) {
     console.log('  ✗ ' + label + '  实际=' + actual + '  期望=' + expected + (tol ? '  容差=' + tol : ''));
   }
 }
-function close(label, actual, expected, relTol) {
+function close(label, actual, expected, relTol = 1e-9) {
   const d = Math.abs(actual - expected);
   const rel = expected === 0 ? d : d / Math.abs(expected);
   if (rel <= relTol) { pass++; console.log('  ✓ ' + label + '  →  ' + actual.toFixed(4) + '（期望 ' + expected.toFixed(4) + '，相对误差 ' + (rel * 100).toFixed(3) + '%）'); }
@@ -439,6 +449,29 @@ section('【6】息覆生活：点亮判定 / 反推加仓');
   eq('分红充足时点亮全部 6 项', c4.litCount, 6);
   eq('全部点亮后无下一目标', c4.nextItem, null);
 
+  /* ---- 两大类（生存 / 品质）：分红先填生存，生存全亮后才流向品质 ---- */
+  const ex2 = [
+    { key: 'A', label: '便宜品质', icon: '🎬', monthlyAmount: 50, enabled: true, category: 'quality', sortOrder: 1 },
+    { key: 'B', label: '贵生存', icon: '🏠', monthlyAmount: 500, enabled: true, category: 'essential', sortOrder: 2 },
+    { key: 'C', label: '中生存', icon: '🍱', monthlyAmount: 300, enabled: true, category: 'essential', sortOrder: 3 },
+  ];
+  // 年化：品质 600、生存中 3600、生存贵 6000；分红 4800 → 只够中生存(3600)，便宜品质(600)更便宜但排在生存后
+  const g1 = XJ.calc.coverage(4800, ex2, 7);
+  eq('★ 生存优先：便宜的品质项不先于未满足的生存项点亮', g1.items.find((x) => x.key === 'A').lit, false);
+  eq('中生存已点亮（3600 ≤ 4800）', g1.items.find((x) => x.key === 'C').lit, true);
+  eq('贵生存未点亮（需 9600）', g1.items.find((x) => x.key === 'B').lit, false);
+  eq('品质组点亮数 = 0（生存未满，分红不流向品质）', g1.groups.quality.litCount, 0);
+  eq('生存组 1/2', g1.groups.essential.litCount + '/' + g1.groups.essential.count, '1/2');
+  eq('下一目标落在生存类', g1.nextItem.category, 'essential');
+
+  // 分红 10200 → 生存全部(9600)满足后，剩余 600 正好点亮便宜品质
+  const g2 = XJ.calc.coverage(10200, ex2, 7);
+  eq('★ 生存全满足后分红流向品质', g2.groups.essential.litCount, g2.groups.essential.count);
+  eq('品质组已点亮', g2.groups.quality.litCount, 1);
+  eq('品质组进度 = 100%', Math.round(g2.groups.quality.progress), 100);
+  eq('生存组进度 = 100%', Math.round(g2.groups.essential.progress), 100);
+  eq('独立复算与实现一致', iCoverage(10200, ex2, 7).litCount, g2.litCount);
+
   /* 里程碑 */
   eq('覆盖率 0% 时里程碑 = 初出茅庐', XJ.calc.milestone(0).name, '初出茅庐');
   eq('覆盖率 100% 时里程碑 = 财务自由', XJ.calc.milestone(100).name, '财务自由');
@@ -547,14 +580,21 @@ section('【9】证券代码规范化与导入导出');
   eq('美股可行情', MK.isQuoteable('usAAPL'), true);
   eq('分红数据源：A股 = cn', MK.dividendSource('sh600023'), 'cn');
   eq('分红数据源：港股 = hk', MK.dividendSource('hk00700'), 'hk');
-  eq('分红数据源：美股 = null（已移除美股分红逻辑）', MK.dividendSource('usAAPL'), null);
+  eq('分红数据源：美股 = us（东财美股 F10）', MK.dividendSource('usAAPL'), 'us');
   eq('分红数据源：场外基金 = fund', MK.dividendSource('of110022'), 'fund');
-  eq('美股不支持自动同步分红', MK.supportsDividend('usAAPL'), false);
+  eq('美股支持自动同步分红', MK.supportsDividend('usAAPL'), true);
   eq('港股支持自动同步分红', MK.supportsDividend('hk00700'), true);
   eq('A股支持自动同步分红', MK.supportsDividend('sh600023'), true);
   eq('ETF 支持自动同步分红', MK.supportsDividend('sh515450'), true);
-  eq('美股分红源说明 = 暂不支持自动同步', MK.dividendSourceLabel('usAAPL'), '暂不支持自动同步');
+  eq('美股分红源说明 = 东方财富美股 F10 分红', MK.dividendSourceLabel('usAAPL'), '东方财富美股 F10 分红');
   eq('港股分红源说明', MK.dividendSourceLabel('hk00700'), '东方财富港股 F10 分红');
+  /* 美股行情别名：伯克希尔裸代码 usBRK 腾讯无数据，实测 usBRK.B / usBRK.A 有数据 */
+  eq('★ 行情别名 BRK → BRK.B', MK.US_QUOTE_ALIAS.BRK, 'BRK.B');
+  eq('★ usQuoteCode(usBRK) = usBRK.B', MK.usQuoteCode('usBRK'), 'usBRK.B');
+  eq('usQuoteCode(usAAPL) 保持裸代码', MK.usQuoteCode('usAAPL'), 'usAAPL');
+  eq('★ 带点代码拆出腾讯变量名容器', JSON.stringify(MK.quoteVarParts('usBRK.B')),
+    JSON.stringify({ holder: 'v_usBRK', key: 'B' }));
+  eq('普通代码不需要容器', MK.quoteVarParts('usAAPL'), null);
   eq('汇率代码：HKD', MK.fxCode('HKD'), 'whHKDCNY');
   eq('汇率代码：USD', MK.fxCode('USD'), 'whUSDCNY');
   eq('汇率解析（腾讯 whHKDCNY 实盘串）', MK.parseFx('310~港元人民币~HKDCNY~0.8550~0~20260910160907~0.8551~0.8551~0.8553~0.8548'), 0.8550);
@@ -1062,8 +1102,8 @@ section('【12】v3 边界与聚合');
   eq('自定义金额未被覆盖', custom.expenses[0].monthlyAmount, 88);
 }
 
-/* ---- 6.13 港股分红解析（美股分红已移除） ---- */
-section('【13】港股分红（东财 HKF10）· 美股分红已移除');
+/* ---- 6.13 港股分红解析 + 美股分红端到端 ---- */
+section('【13】港股分红（东财 HKF10）· 美股分红（东财 USF10）');
 {
   const F = XJ.fetcher, C = XJ.calc, MK = XJ.market;
 
@@ -1132,8 +1172,15 @@ section('【13】港股分红（东财 HKF10）· 美股分红已移除');
   eq('港股 · 派息事件不标「预计」', ev[0].isEstimate, false);
   eq('港股 · 派息事件文案 = 派息日', ev[0].label, '派息日');
 
-  /* 美股：可以建仓看行情，但完全不参与分红逻辑 */
+  /* 美股：已接入东财美股 F10 自动同步 —— 注入一条真实形态的方案验端到端 */
   const usHs = JSON.parse(JSON.stringify(state));
+  const usP = XJ.usdiv.toPlan({
+    SECUCODE: 'AAPL.O', SECURITY_CODE: 'AAPL', NOTICE_DATE: '2026-07-30 00:00:00',
+    ASSIGN_TYPE: 'Cash', PLAN_EXPLAIN: '每1股派0.27美元股息',
+    EQUITY_RECORD_DATE: '2026-08-10 00:00:00', EX_DIVIDEND_DATE: '2026-08-08 00:00:00',
+    BONUS_PAY_DATE: '2026-08-15 00:00:00', ASSIGN_PERIOD: '2026年中报',
+  }, 'usAAPL', '.O', REF_TODAY);
+  usHs.plans[usP.planId] = usP;
   usHs.transactions.push({
     txId: 'u1', accountId: 'acc_1', symbol: 'usAAPL', action: 'BUY',
     date: '2025-01-06', quantity: 10, price: 200, fee: 0, createdAt: '2025-01-06T01:00:00Z',
@@ -1141,12 +1188,63 @@ section('【13】港股分红（东财 HKF10）· 美股分红已移除');
   usHs.quoteCache.usAAPL = { symbol: 'usAAPL', name: '苹果', price: 315.34, prevClose: 316.22, changePct: -0.28 };
   const uh = C.holdings(usHs, 'acc_1').filter(function (x) { return x.symbol === 'usAAPL'; })[0];
   eq('美股持仓 · 可建仓并显示行情', uh.qty, 10);
-  eq('美股持仓 · 无分红方案', uh.hasPlans, false);
-  close('美股持仓 · 预测分红为 0', uh.predictedDividend, 0, 1e-12);
-  eq('美股持仓 · 分红口径 basis = none', uh.annualBasis, 'none');
-  eq('美股 · 不产生任何日历事件',
-    C.calendarEvents(usHs, 'acc_1', null, null).filter(function (e) { return e.symbol === 'usAAPL'; }).length, 0);
+  eq('美股持仓 · 有分红方案', uh.hasPlans, true);
+  close('美股持仓 · 预测分红 = 10 × 0.27 = 2.7（近 12 个月年化）', uh.predictedDividend, 2.7, 1e-9);
+  eq('美股持仓 · 分红口径 basis = usTtm', uh.annualBasis, 'usTtm');
+  eq('美股 · 产生日历派息事件（真实派息日）',
+    C.calendarEvents(usHs, 'acc_1', null, null).filter(function (e) {
+      return e.symbol === 'usAAPL' && e.type === 'payout';
+    }).length, 1);
   eq('美股 · 排序时预测分红不影响其他标的', C.holdings(usHs, 'acc_1')[0].predictedDividend > 0, true);
+}
+
+/* ---- 6.13b 美股分红纯函数：文案解析 / 方案同形 / 真实派息日 / 汇率展示 ---- */
+section('【13b】美股分红 · 东财 USF10 解析与展示口径');
+{
+  const D = XJ.usdiv, C2 = XJ.calc, MK2 = XJ.market;
+  const urow = {
+    SECUCODE: 'AAPL.O', SECURITY_CODE: 'AAPL', NOTICE_DATE: '2026-07-30 00:00:00',
+    ASSIGN_TYPE: 'Cash', PLAN_EXPLAIN: '每1股派0.27美元股息',
+    EQUITY_RECORD_DATE: '2026-08-10 00:00:00', EX_DIVIDEND_DATE: '2026-08-08 00:00:00',
+    BONUS_PAY_DATE: '2026-08-15 00:00:00', ASSIGN_PERIOD: '2026年中报',
+  };
+  const up = D.toPlan(urow, 'usAAPL', '.O', REF_TODAY);
+  close('美股文案 · 每1股派0.27美元', D.parsePerShare('每1股派0.27美元股息'), 0.27);
+  close('美股文案 · 每1份派0.75143美元', D.parsePerShare('每1份派0.75143美元股息'), 0.75143);
+  close('美股文案 · 每1份ADR派1.085439美元', D.parsePerShare('每1份ADR派1.085439美元股息'), 1.085439);
+  close('美股文案 · 每10股派2.7美金 → 每股 0.27', D.parsePerShare('每10股派2.7美金股息'), 0.27);
+  eq('美股文案 · 非美元留空', D.parsePerShare('每1股派0.27港元股息'), null);
+  eq('美股 · 股票股息不进台账', D.toPlan(Object.assign({}, urow, { ASSIGN_TYPE: 'Stock' }), 'usAAPL', '.O', REF_TODAY), null);
+  eq('美股 · 只收 Cash', D.toPlan(Object.assign({}, urow, { ASSIGN_TYPE: '' }), 'usAAPL', '.O', REF_TODAY), null);
+  close('美股 · pretaxBonusPer10 = 每股 × 10', up.pretaxBonusPer10, 2.7);
+  eq('美股 · 报告期 = 除息日年-12-31', up.reportDate, '2026-12-31');
+  eq('美股 · 真实派息日 = BONUS_PAY_DATE', up.payoutDate, '2026-08-15');
+  eq('美股 · 派息日进真实白名单', C2.payoutInfo(up).exact, true);
+  eq('美股 · 到账日取真实派息日而非除息日', C2.payoutInfo(up).date, '2026-08-15');
+  eq('美股 · 已实施（按除息日推断）', up.isImplemented, true);
+  eq('美股 · 未来方案 isImplemented = false',
+    D.toPlan(Object.assign({}, urow, { EX_DIVIDEND_DATE: '2026-12-01 00:00:00' }), 'usAAPL', '.O', REF_TODAY).isImplemented, false);
+  eq('美股 · 来源 / 币种', up.source + '/' + up.currency, 'us/USD');
+  eq('美股 · 税前 afterTaxPer10 = null', up.afterTaxPer10, null);
+  eq('美股 · 后缀探测顺序 .O→.N→.A', JSON.stringify(D.SUFFIXES), JSON.stringify(['.O', '.N', '.A']));
+  eq('美股 · 财年曲线禁用（无年报预案公告日）', MK2.supportsYieldCurve('usAAPL'), false);
+  eq('美股 · 自动同步开启', MK2.supportsDividend('usAAPL'), true);
+  const bu = D.buildUrl('AAPL.O');
+  eq('美股 · 请求 URL 用 USF10 报表 + 200 条 + 按除息日倒序',
+    bu.indexOf('RPT_USF10_INFO_DIVIDEND') >= 0 && bu.indexOf('pageSize=200') >= 0 &&
+    bu.indexOf('sortColumns=EX_DIVIDEND_DATE') >= 0, true);
+  const fxSt = { settings: { fx: { USD: 7.1 } } };
+  eq('美股 · 2.70 USD × 7.1 = ¥19.17', D.moneyText(fxSt, 'usAAPL', 2.7), '¥19.17');
+  eq('美股 · 汇率缺失显示 USD 原币（不按 1 折算）', D.moneyText({ settings: { fx: {} } }, 'usAAPL', 2.7), '$2.70');
+  eq('非美股 · 不折算', D.moneyText(fxSt, 'sh600023', 2.7), '¥2.70');
+  eq('美股 · 口径说明含「未计入境外预扣税」', D.rateNote(fxSt, 'usAAPL').indexOf('未计入境外预扣税') >= 0, true);
+
+  /* 股数四位小数 + 美股官方域名兜底（本次新增，防止回归） */
+  eq('★ 股数 · 浮点尾数 1.9440000000000002 → 1.944', XJ.util.qtyText(1.9440000000000002), '1.944');
+  eq('股数 · 1.94444 → 1.9444（最多四位）', XJ.util.qtyText(1.94444), '1.9444');
+  eq('股数 · 整数带千分位', XJ.util.qtyText(1000), '1,000');
+  eq('★ 美股官方域名 · BRK（东财 F10 查不到）', MK2.usOfficialDomain('usBRK'), 'www.berkshirehathaway.com');
+  eq('美股官方域名 · 非美股返回 null', MK2.usOfficialDomain('sh600023'), null);
 }
 
 /* ---- 6.14 截图识别：模型输出解析（纯函数，可离线复算） ---- */
@@ -2418,7 +2516,7 @@ section('【28】公司图标解析顺序与缓存失效');
   const MK = XJ.market, F = XJ.fetcher;
 
   /* 判定规则版本：升级后旧缓存必须失效，否则用户当天看不到修复效果 */
-  eq('LOGO_ALGO 已升到 2', F.LOGO_ALGO, 2);
+  eq('LOGO_ALGO 已升到 3（美股官方 ICO 不再被 unknown 误杀）', F.LOGO_ALGO, 3);
 
   /* ★ 回归：同花顺给雅戈尔的是黑白字标（maxSat=0），
        如果对同花顺结果也做色彩判定，真标识会被误杀 —— 所以同花顺结果不走 logoVerdict */
@@ -3101,6 +3199,117 @@ section('【31】股息率曲线：财年分子 · 预案公告日生效 · 含�
   eq('散点忽略 null / 脏日期',
     JSON.stringify(XJ.calc.exDividendDates([mkEx(null), mkEx('x'), mkEx('2025-07-09')])), JSON.stringify(['2025-07-09']));
 
+  /* ---- 股息率分位（0–100，中位秩）---- */
+  const daySeq = (start, n) => {
+    const t0 = Date.UTC(+start.slice(0, 4), +start.slice(5, 7) - 1, +start.slice(8, 10));
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(new Date(t0 + i * 86400000).toISOString().slice(0, 10));
+    return out;
+  };
+  /* 单一财年：每股 2.0，2025-01-02 起生效 → 股息率 = 2 ÷ 价 × 100 */
+  const pctPlans = [mk('2024-12-31', 20, '2025-01-02')];
+  const d200 = daySeq('2025-01-02', 200);
+  const ramp = d200.map((d, i) => [d, 10 + i * 0.1]);      // 价 10 → 29.9 递增（股息率递减）
+  const P = (price, o) => XJ.calc.yieldPercentile(pctPlans, ramp,
+    Object.assign({ years: 3, today: '2026-09-10', price }, o || {}));
+
+  eq('★ 分位可用（200 个样本）', P(19.95).days, 200);
+  eq('★ 当前价低于窗口最低价 → 100（股息率是历史最高）', Math.round(P(5).pct), 100);
+  eq('★ 当前价高于窗口最高价 → 0（股息率是历史最低）', Math.round(P(100).pct), 0);
+  close('★ 当前价落在中位 → 50', P(19.95).pct, 50, 1e-9);
+  eq('窗口首尾日期', [P(19.95).from, P(19.95).to].join('~'), '2023-09-10~2025-07-20');
+  eq('区间极值来自窗口内真实点', Math.round(P(19.95).min * 100) / 100, 6.69);
+  eq('区间极值日期', [P(19.95).maxDate, P(19.95).minDate].join('~'), '2025-01-02~2025-07-20');
+
+  /* —— 独立复算：最朴素的循环重推中位秩 —— */
+  const pctRef = (function () {
+    const price = 19.95, cur = 2 / price * 100;
+    let below = 0, eq = 0, n = 0;
+    for (const [d, c] of ramp) { if (d > '2026-09-10') break; if (d < '2023-09-10') continue; n++; const y = 2 / c * 100; if (y < cur) below++; else if (y === cur) eq++; }
+    return { pct: (below + eq / 2) / n * 100, n };
+  })();
+  close('★ 独立复算：分位逐位一致', P(19.95).pct, pctRef.pct, 1e-12);
+  eq('★ 独立复算：样本数一致', P(19.95).days, pctRef.n);
+
+  /* —— 窗口过滤：窗口外的极端点不得影响分位 —— */
+  /* 补一个更早的财年（FY2021 每股 1.0，2022-09-01 生效），让「窗口外」也有真实股息率点 */
+  const plansEarly = [mk('2021-12-31', 10, '2022-09-01')].concat(pctPlans);
+  const before = daySeq('2022-09-05', 20).map((d) => [d, 1]);       // 价 1 → 股息率 100%
+  const withJunk = before.concat(ramp);
+  const P2 = (price, yrs) => XJ.calc.yieldPercentile(plansEarly, withJunk,
+    { years: yrs, today: '2026-09-10', price });
+  close('★ 窗口外的极端点被排除（分位不受影响）', P2(19.95, 3).pct, P(19.95).pct, 1e-12);
+  eq('★ 样本数也不含窗口外的点', P2(19.95, 3).days, 200);
+  eq('窗口放宽到 10 年后样本数含极端点', P2(19.95, 10).days, 220);
+  close('窗口放宽到 10 年后极端点才进来', P2(19.95, 10).pct < P(19.95).pct ? 1 : 0, 1, 1e-12);
+
+  /* —— 近 1 年 / 近 2 年（2026-11-04 用户追加）：窗口按自然年回推，样本随窗口变短而变少 —— */
+  eq('★ 分位窗口清单 = [1,2,3,5,10]',
+    JSON.stringify(XJ.calc.YIELD_PCT_WINDOWS), JSON.stringify([1, 2, 3, 5, 10]));
+  eq('★ 默认窗口 = 3 年（不因新增 1/2 年而改）', XJ.calc.YIELD_PCT_DEFAULT, 3);
+  eq('shiftYearsBack：近 1 年', XJ.calc.shiftYearsBack('2026-09-10', 1), '2025-09-10');
+  eq('shiftYearsBack：近 2 年', XJ.calc.shiftYearsBack('2026-09-10', 2), '2024-09-10');
+  /* 1096 天的连续样本，正好铺满 3 年窗口 */
+  const span3 = daySeq('2023-09-10', 1096).map((d, i) => [d, 10 + i * 0.03]);
+  /* 用覆盖 3 年的财年表（FY2021 生效于 2022-09-01），否则窗口前段没有股息率样本 */
+  const Q3 = (yrs) => XJ.calc.yieldPercentile(plansEarly, span3, { years: yrs, today: '2026-09-10', price: 25 });
+  eq('★ 近 1 年窗口起点 = 2025-09-10', Q3(1).from, '2025-09-10');
+  eq('★ 近 1 年样本 = 365 个交易日', Q3(1).days, 365);
+  eq('★ 近 2 年样本 = 730 个交易日', Q3(2).days, 730);
+  eq('★ 近 3 年样本 = 1096 个交易日', Q3(3).days, 1096);
+  eq('★ 短窗口分位在 0–100 且与长窗口不同（分布本身变了）',
+    Q3(1).pct >= 0 && Q3(1).pct <= 100 && Math.abs(Q3(1).pct - Q3(3).pct) > 1e-9, true);
+  eq('★ 非法窗口回落默认 3 年（不是最早的 1 年）',
+    XJ.calc.yieldPercentile(plansEarly, span3, { years: 7, today: '2026-09-10', price: 25 }).days, 1096);
+
+  /* —— 样本不足 —— */
+  const few = daySeq('2025-01-02', 30).map((d) => [d, 20]);
+  const pf = XJ.calc.yieldPercentile(pctPlans, few, { years: 3, today: '2026-09-10', price: 20 });
+  eq('★ 样本 < 120 → insufficient', pf.insufficient, true);
+  eq('★ 仍报出实际样本数', pf.days, 30);
+  eq('无样本 → insufficient（days=0）',
+    XJ.calc.yieldPercentile(pctPlans, [], { years: 3, today: '2026-09-10', price: 20 }).insufficient, true);
+  eq('无方案 → null', XJ.calc.yieldPercentile([], ramp, { years: 3, today: '2026-09-10', price: 20 }), null);
+  eq('尚未到任何财年生效日 → null',
+    XJ.calc.yieldPercentile(pctPlans, ramp, { years: 3, today: '2024-12-31', price: 20 }), null);
+
+  /* —— 财年换档：cur 必须取当前财年分子 —— */
+  const plansSwitch = [
+    mk('2024-12-31', 20, '2025-01-02'),   // FY2024 每股 2.0
+    mk('2025-12-31', 22, '2026-01-02'),   // FY2025 每股 2.2
+  ];
+  const closeAll = daySeq('2025-01-02', 600).map((d) => [d, 40]);
+  const sw = XJ.calc.yieldPercentile(plansSwitch, closeAll, { years: 3, today: '2026-09-10', price: 40 });
+  close('★ 换档后 cur = FY2025 分子 ÷ 价（2.2 ÷ 40）', sw.cur, 5.5, 1e-12);
+  eq('★ year 报当前财年', sw.year, 2025);
+  close('★ 换档前 cur = FY2024 分子 ÷ 价（2.0 ÷ 40）',
+    XJ.calc.yieldPercentile(plansSwitch, closeAll, { years: 3, today: '2025-12-31', price: 40 }).cur, 5, 1e-12);
+
+  /* —— 并列值：中位秩折半 —— */
+  const tie = daySeq('2025-01-02', 200).map((d, i) => [d, i < 100 ? 10 : 20]);
+  const pt = XJ.calc.yieldPercentile(pctPlans, tie, { years: 3, today: '2026-09-10', price: 20 });
+  close('★ 100 天并列在 cur 上 → 分位 = 100×0.5 ÷ 200', pt.pct, 25, 1e-12);
+
+  /* —— 单调性：价格越高，分位越低 —— */
+  const seqPct = [5, 10, 15, 20, 25, 30, 100].map((p) => P(p).pct);
+  eq('★ 分位随价格单调不增', seqPct.every((v, i) => i === 0 || v <= seqPct[i - 1]), true);
+
+  /* —— 无实时价 → 用窗口内最后收盘，并标记 onClose —— */
+  const noPrice = XJ.calc.yieldPercentile(pctPlans, ramp, { years: 3, today: '2026-09-10', price: null });
+  eq('★ 无实时价时退回收盘价', noPrice.onClose, true);
+  close('★ 退回收盘价：2 ÷ 29.9', noPrice.cur, 2 / 29.9 * 100, 1e-12);
+
+  /* —— 日期回推 —— */
+  eq('shiftYearsBack：近 3 年', XJ.calc.shiftYearsBack('2026-09-10', 3), '2023-09-10');
+  eq('shiftYearsBack：脏输入 → null', XJ.calc.shiftYearsBack('x', 3), null);
+
+  /* ---- yieldNow（自选行「息 x.xx%」）---- */
+  close('yieldNow：当前财年分子 ÷ 现价', XJ.calc.yieldNow(plansSwitch, 40, '2026-09-10'), 5.5, 1e-12);
+  eq('yieldNow：无价 → null', XJ.calc.yieldNow(plansSwitch, null, '2026-09-10'), null);
+  eq('yieldNow：无方案 → null', XJ.calc.yieldNow([], 40, '2026-09-10'), null);
+  eq('yieldNow：生效日前 → null', XJ.calc.yieldNow(plansSwitch, 40, '2024-12-31'), null);
+  eq('yieldNow：0 元 → null', XJ.calc.yieldNow(plansSwitch, 0, '2026-09-10'), null);
+
   /* ---- 模型层：yieldHistory / benchHistory / showYieldBench 四同步点 ---- */
   const yst = XJ.model.defaultState();
   eq('defaultState 含 yieldHistory 容器', typeof yst.yieldHistory === 'object' && yst.yieldHistory !== null, true);
@@ -3194,7 +3403,7 @@ section('【31】股息率曲线：财年分子 · 预案公告日生效 · 含�
   eq('港股 支持', XJ.market.supportsYieldCurve('hk00700'), true);
   eq('ETF 支持', XJ.market.supportsYieldCurve('sh510880'), true);
   eq('★ 场外基金 不支持（分红不定期、没有财年派现概念）', XJ.market.supportsYieldCurve('of110022'), false);
-  eq('★ 美股 不支持（无分红数据源）', XJ.market.supportsYieldCurve('usAAPL'), false);
+  eq('★ 美股 不支持（按季度/月派息，无年报预案公告日这个财年切换锚点）', XJ.market.supportsYieldCurve('usAAPL'), false);
 }
 
 /* ---- 6.32 当日净资产的口径一致性（含无分时标的 / 多币种）---- */
@@ -3885,6 +4094,199 @@ section('【37】FIRE：三档分母 · fireNumber 双口径 · 时间反解 · 
     JSON.stringify(M.fromImport(mi1)), JSON.stringify(mi1));
 }
 
+/* -------------------------------------------------------------------------
+ * 【40】五 Tab 迁移（2026-11-04 删「新闻」）· 分位设置项
+ *
+ * 删除「新闻」Tab 是破坏性变更：老存档的 settings.tabOrder 是 6 项、含 'news'，
+ * 直接丢进 normalizeTabOrder 会整条回落 null（用户拖出来的顺序白丢）。
+ * 这里钉死「先清洗再校验」的迁移口径，防止将来又退回「长度不符就归零」。
+ * ------------------------------------------------------------------------- */
+{
+  section('【40】五 Tab 迁移与分位设置项');
+  const M3 = XJ.model;
+  eq('40.1 ★ TAB_IDS 已收敛为 5 项', M3.TAB_IDS.length, 5);
+  eq('40.2 ★ TAB_IDS 不再含 news', M3.TAB_IDS.indexOf('news'), -1);
+
+  const raw6 = M3.defaultState();
+  raw6.settings = Object.assign({}, raw6.settings, {
+    tabOrder: ['mine', 'news', 'find', 'calendar', 'watchlist', 'overview'],
+  });
+  const mig6 = M3.ensureBootstrapped(raw6);
+  eq('40.3 ★ 旧 6 项 tabOrder 过滤 news 后保留相对顺序',
+    JSON.stringify(mig6.settings.tabOrder),
+    JSON.stringify(['mine', 'find', 'calendar', 'watchlist', 'overview']));
+  eq('40.4 迁移后能通过 normalizeTabOrder 校验',
+    JSON.stringify(M3.normalizeTabOrder(mig6.settings.tabOrder)),
+    JSON.stringify(['mine', 'find', 'calendar', 'watchlist', 'overview']));
+  eq('40.5 ★ 迁移幂等（再跑一遍不变）',
+    JSON.stringify(M3.ensureBootstrapped(JSON.parse(JSON.stringify(mig6))).settings.tabOrder),
+    JSON.stringify(['mine', 'find', 'calendar', 'watchlist', 'overview']));
+
+  const rawBad = M3.defaultState();
+  rawBad.settings = Object.assign({}, rawBad.settings, { tabOrder: ['overview', 'mine'] });
+  eq('40.6 凑不齐 5 个 → 归 null（回落默认顺序）',
+    M3.ensureBootstrapped(rawBad).settings.tabOrder, null);
+
+  const rawDup = M3.defaultState();
+  rawDup.settings = Object.assign({}, rawDup.settings, {
+    tabOrder: ['overview', 'overview', 'mine', 'find', 'calendar', 'watchlist'],
+  });
+  eq('40.7 重复项去重后仍可保留',
+    JSON.stringify(M3.ensureBootstrapped(rawDup).settings.tabOrder),
+    JSON.stringify(['overview', 'mine', 'find', 'calendar', 'watchlist']));
+
+  /* 已下线的 newsCache：老存档里可能还在，兜底时清掉（toExport 本来就不带它） */
+  const rawNews = M3.defaultState();
+  rawNews.newsCache = { v: 3, hits: [{ id: 'x' }] };
+  const migNews = M3.ensureBootstrapped(rawNews);
+  eq('40.8 ★ 老存档的 newsCache 被清掉', 'newsCache' in migNews, false);
+  eq('40.9 ★ toExport 不带 newsCache', 'newsCache' in M3.toExport(rawNews), false);
+
+  /* 分位窗口设置项：默认 3 年，且不进跨设备同步白名单（纯本机偏好） */
+  eq('40.10 分位窗口默认 3 年', M3.defaultState().settings.yieldPctWin, 3);
+  eq('40.11 ★ 分位窗口可选项 = [1,2,3,5,10]',
+    JSON.stringify(XJ.calc.YIELD_PCT_WINDOWS), JSON.stringify([1, 2, 3, 5, 10]));
+  eq('40.12 ★ yieldPctWin 不在 SETTINGS_SYNC 白名单（仅本机）',
+    XJ.syncCore.SETTINGS_SYNC.indexOf('yieldPctWin'), -1);
+  eq('40.13 ★ 默认窗口常量 = 3（新增 1/2 年不能把默认带偏）', XJ.calc.YIELD_PCT_DEFAULT, 3);
+}
+
+/* -------------------------------------------------------------------------
+ * 【41】股票池 515450：静态快照、官方图标、同源口径、两字段三态排序
+ * ------------------------------------------------------------------------- */
+{
+  section('【41】股票池 515450 快照与排序');
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/pool-515450.js'), 'utf8'), sandbox,
+    { filename: 'src/pool-515450.js' });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/wl-sort.js'), 'utf8'), sandbox,
+    { filename: 'src/wl-sort.js' });
+  const PL = XJ.pool515450, WS = XJ.wlSort;
+  eq('41.1 ★ 成分股严格 50 只', PL.items().length, 50);
+  eq('41.2 基金代码 515450', PL.FUND, '515450');
+  eq('41.3 数据日期 = 2026-06-30 半年报全量披露', PL.AS_OF, '2026-06-30');
+  eq('41.4 ★ 50/50 官方 logo 内嵌（不回退中文文字头像）',
+    PL.items().filter((x) => /^data:image\/png;base64,/.test(x.logo)).length, 50);
+  eq('41.5 ★ 每只都有财年派现方案', PL.items().filter((x) => x.plans && x.plans.length).length, 50);
+  eq('41.6 ★ 每只都有 ≥120 个交易日的收盘价',
+    PL.items().filter((x) => PL.closesOf(x).length >= 120).length, 50);
+  eq('41.7 交易日历覆盖约 10 年', PL.DAYS.length > 2000, true);
+  const first = PL.items()[0], cs = PL.closesOf(first);
+  const lastPx = cs[cs.length - 1][1];
+  eq('41.8 收盘价解码为正数', lastPx > 0, true);
+  eq('41.9 ★ 息率用项目 yieldNow 同源算出', XJ.calc.yieldNow(first.plans, lastPx, '2026-11-07') > 0, true);
+  const pr = XJ.calc.yieldPercentile(first.plans, cs,
+    { years: 3, today: '2026-11-07', price: lastPx });
+  eq('41.10 ★ 分位用项目 yieldPercentile 同源算出',
+    !!(pr && !pr.insufficient && pr.pct >= 0 && pr.pct <= 100), true);
+  eq('41.11 分位窗口默认 3 年', XJ.calc.YIELD_PCT_DEFAULT, 3);
+  /* 排序：三态循环 + 升降序 + 缺值恒置底，状态按 groupId 'pool' 独立保管 */
+  WS._reset();
+  const fake = [
+    { symbol: 'a', __m: { yld: 1, pct: 10 } },
+    { symbol: 'b', __m: { yld: 3, pct: 30 } },
+    { symbol: 'c', __m: { yld: 2, pct: 20 } },
+    { symbol: 'd', __m: { yld: null, pct: null } },
+  ];
+  eq('41.12 默认无排序保持基序', WS.sortItems(fake, 'pool', {}).map((x) => x.symbol).join(''), 'abcd');
+  WS.cycle('pool', 'yld');
+  eq('41.13 首次点股息率 → 降序', WS.sortItems(fake, 'pool', {}).map((x) => x.symbol).join(''), 'bcad');
+  WS.cycle('pool', 'yld');
+  eq('41.14 再点 → 升序（缺值恒置底）', WS.sortItems(fake, 'pool', {}).map((x) => x.symbol).join(''), 'acbd');
+  WS.cycle('pool', 'yld');
+  eq('41.15 三态回到无排序', WS.stateOf('pool').dir, 'none');
+  WS.cycle('pool', 'pct');
+  eq('41.16 ★ 百分位独立可排序（降序）', WS.sortItems(fake, 'pool', {}).map((x) => x.symbol).join(''), 'bcad');
+  eq('41.17 ★ 股票池排序态与自选分组互不影响', WS.stateOf('all').dir, 'none');
+}
+
+/* -------------------------------------------------------------------------
+ * 【42】股东持股情况 515450：真实快照、行业占比复算、四列独立排序、双轴图
+ * ------------------------------------------------------------------------- */
+{
+  section('【42】股东持股情况 515450 快照、图表与四列排序');
+  for (const f of ['src/holder-515450.js', 'src/holder-sort.js', 'src/holder-chart.js']) {
+    vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), sandbox, { filename: f });
+  }
+  const HD = XJ.holder515450, HS2 = XJ.holderSort, HC2 = XJ.holderChart;
+  const ps = HD.periods(), last = HD.latest(), prev = ps[ps.length - 2].end;
+
+  eq('42.1 ★ 连续正式报告期共 8 期', ps.length, 8);
+  eq('42.2 首期 = 2024年报', ps[0].end, '2024-12-31');
+  eq('42.3 最新期 = 2026三季报', last, '2026-09-30');
+  eq('42.4 ★ 最新期严格 19 家', HD.rows(last).length, 19);
+  eq('42.5 ★ 临时公告日与断档的 2020三季报已剔除',
+    ps.every((p) => /^\d{4}(年报|中报|一季报|三季报)$/.test(p.label) && p.end >= '2024-12-31'), true);
+  eq('42.6 ★ 28/28 官方 logo 内嵌（无中文首字母回退）',
+    Object.keys(HD.LOGOS).filter((c) => /^data:image\/png;base64,/.test(HD.LOGOS[c])).length,
+    Object.keys(HD.LOGOS).length);
+  eq('42.7 行业分类覆盖全部股票', Object.keys(HD.INDUSTRY).length, Object.keys(HD.LOGOS).length);
+  eq('42.8 雅戈尔的 f127 行业 = 服装家纺', HD.industryOf('600177'), '服装家纺');
+  eq('42.9 ★ 五格统计与截图一致（19/6/10/--/3）',
+    JSON.stringify(HD.statsOf(last)), '{"total":19,"fresh":6,"up":10,"flat":0,"down":3}');
+
+  const mix = HD.industryMix(last, prev, 5);
+  eq('42.10 ★ 行业占比复现截图（铁路公路 16.04%）', mix[0].name, '铁路公路');
+  eq('42.11 铁路公路占比 = 16.04', mix[0].pct.toFixed(2), '16.04');
+  eq('42.12 其他 = 100 - 前5大之和', (mix.reduce((n, x) => n + x.pct, 0)).toFixed(2), '100.00');
+  eq('42.13 ★ 行业环比百分点差守恒（合计 0）',
+    Math.abs(mix.reduce((n, x) => n + x.delta, 0)) < 0.01, true);
+  eq('42.14 环形图扇区数 = 前5 + 其他', mix.length, 6);
+
+  const yge = HD.rows(last).filter((r) => r.c === '600177')[0];
+  eq('42.15 ★ 雅戈尔持有市值 = 6.347亿', (yge.cap / 1e8).toFixed(3), '6.347');
+  eq('42.16 持股比例 = 1.68%', yge.ratio.toFixed(2), '1.68');
+  eq('42.17 环比增减 = -12.24%', yge.chg.toFixed(2), '-12.24');
+  eq('42.18 持股排名 = 第 6 名 / 减仓', yge.rank + '|' + yge.st, '6|减仓');
+  const y2025 = HD.seriesOf('600177').filter((x) => x.end === '2025-12-31')[0];
+  eq('42.19 ★ 展开图 2025年报 = 6598万股 / 1.43%',
+    Math.round(y2025.sh / 1e4) + '|' + y2025.ratio.toFixed(2), '6598|1.43');
+  eq('42.20 未进入股东榜的期次留空不补零', HD.seriesOf('600177')[0].sh, null);
+
+  /* 四列三态排序：独立 LS key / 四个字段 / 缺值恒置底 / 与 wl-sort 隔离 */
+  HS2._reset();
+  const fake = [
+    { r: { c: 'a' }, __m: { cap: 1, ratio: 10, chg: null, rank: 3 } },
+    { r: { c: 'b' }, __m: { cap: 3, ratio: 30, chg: 5, rank: 1 } },
+    { r: { c: 'c' }, __m: { cap: 2, ratio: 20, chg: -1, rank: 2 } },
+    { r: { c: 'd' }, __m: { cap: null, ratio: null, chg: null, rank: null } },
+  ];
+  const order = () => HS2.sortItems(fake, 'holder').map((x) => x.r.c).join('');
+  eq('42.21 ★ 排序字段恰好 4 个', HS2.FIELDS.length, 4);
+  eq('42.22 ★ 独立 localStorage 键（不污染自选 / 股票池）', HS2.LS_KEY !== XJ.wlSort.LS_KEY, true);
+  eq('42.23 默认无排序保持基序', order(), 'abcd');
+  HS2.cycle('holder', 'cap');
+  eq('42.24 首次点持有市值 → 降序', order(), 'bcad');
+  HS2.cycle('holder', 'cap');
+  eq('42.25 再点 → 升序（缺值恒置底）', order(), 'acbd');
+  HS2.cycle('holder', 'cap');
+  eq('42.26 三态回到无排序', HS2.stateOf('holder').dir, 'none');
+  HS2.cycle('holder', 'ratio');
+  eq('42.27 持股比例独立降序', order(), 'bcad');
+  HS2.cycle('holder', 'chg');
+  eq('42.28 环比增减独立降序（新进缺值置底）', order(), 'bcad');
+  HS2.cycle('holder', 'rank');
+  eq('42.29 持股排名独立降序', order(), 'acbd');
+  eq('42.30 ★ 自选排序态未被本页改动', XJ.wlSort.stateOf('all').dir, 'none');
+  HS2.cycle('holder', 'rank'); HS2.cycle('holder', 'rank');
+
+  /* 图表模块：环形图与双轴柱线图都产出内联 SVG */
+  const donutHtml = HC2.donut(mix);
+  eq('42.31 环形图输出 6 个扇区', (donutHtml.match(/<circle/g) || []).length, 6);
+  eq('42.32 环形图带图例', donutHtml.indexOf('holder-legend') >= 0, true);
+  const series = HD.seriesOf('600177');
+  const barsHtml = HC2.barsLine(series, { chartKey: 'holderBars' });
+  eq('42.33 柱线图输出蓝色柱', (barsHtml.match(/fill="#3B82F6"/g) || []).length,
+    series.filter((x) => x.sh !== null).length);
+  eq('42.34 柱线图带拖动读数组', barsHtml.indexOf('hb-marker') >= 0, true);
+  eq('42.35 空序列返回空串', HC2.barsLine([], {}), '');
+
+  /* 数据边界：快照页不写 state / 不同步 / 不拉实时行情 */
+  const viewSrc = fs.readFileSync(path.join(ROOT, 'src/views/holder.js'), 'utf8');
+  eq('42.36 ★ 视图不调用 commitNow（快照不落盘）', viewSrc.indexOf('commitNow(') < 0, true);
+  eq('42.37 ★ 视图不引用 quoteCache', viewSrc.indexOf('quoteCache') < 0, true);
+  eq('42.38 报告期状态走 S.ui', viewSrc.indexOf('S.ui.holderPeriod') >= 0, true);
+}
+
 fs.writeFileSync(
   path.join(ROOT, 'fixtures.json'),
   JSON.stringify({ refToday: REF_TODAY, state: XJ.model.toExport(state, 'verify fixtures') }, null, 2),
@@ -3901,3 +4303,4 @@ if (fail) {
   console.log('全部通过 ✅');
 }
 console.log('='.repeat(56));
+
