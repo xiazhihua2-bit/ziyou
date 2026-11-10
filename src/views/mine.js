@@ -2,6 +2,26 @@
 XJ.views.mine = (function () {
   var U = XJ.util, UI = XJ.ui;
 
+  /* 实时汇率（本机 settings.fx，刻意不进跨设备同步）：显示当前数值与更新时间，
+     让「用实时汇率显示数据」这件事在界面上可被验证。 */
+  function fxLine() {
+    var fx = (XJ.store.state && XJ.store.state.settings && XJ.store.state.settings.fx) || {};
+    var usd = U.num(fx.USD), hkd = U.num(fx.HKD);
+    if (!usd && !hkd) return '尚未取到（腾讯 whUSDCNY / whHKDCNY 公开接口），美股数据暂按原币显示';
+    var parts = [];
+    if (usd) parts.push('USD/CNY ' + U.money(usd, 4));
+    if (hkd) parts.push('HKD/CNY ' + U.money(hkd, 4));
+    var at = String(fx.updatedAt || '');
+    if (at) {
+      var d = new Date(at);
+      if (!isNaN(d.getTime())) {
+        parts.push('更新于 ' + U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes()) + ':' + U.pad2(d.getSeconds()));
+      }
+    }
+    return parts.join(' · ') + '（每 30 秒刷新，回到前台立即刷新）' +
+      (XJ.store.ui.fxError ? ' · 本次刷新失败，仍用上一次的汇率' : '');
+  }
+
   function renderAccounts() {
     var st = XJ.store;
     var list = st.accounts();
@@ -67,7 +87,7 @@ XJ.views.mine = (function () {
           '</div>' +
           '<div class="row-s">' + U.esc(XJ.market.displayCode(t.symbol)) + ' · ' + U.esc(t.date) + ' · ' +
           U.esc(st.accountName(t.accountId)) +
-          (isAdj ? '' : ' · ' + U.thousands(t.quantity) + '股 @ ' + U.money(t.price, 3)) + '</div>' +
+          (isAdj ? '' : ' · ' + U.qtyText(t.quantity) + '股 @ ' + U.money(t.price, 3)) + '</div>' +
           '</div>' +
           '<div class="row-right"><div class="row-v' + (isAdj ? ' ' + U.dirClass(amt) : '') + '" data-anim="A">' + U.signMoney(amt) + '</div>' +
           (!isAdj && U.n0(t.fee) ? '<div class="row-v2" data-anim="A">费 ' + U.money(t.fee) + '</div>' : '') +
@@ -307,6 +327,7 @@ XJ.views.mine = (function () {
       '只在取行情与分红时访问公开接口。<br><br>' +
       '<b>只做记录</b>：本应用不提供股票买卖、不推荐标的、不提供任何投资建议或收益承诺。<br><br>' +
       '<b>数据来源</b>：行情与汇率来自腾讯财经公开接口，分红方案来自东方财富（A股 / 港股 / 美股）与天天基金公开接口，均为公开信息的整理，可能存在延迟或偏差，请以券商与交易所披露为准。<br><br>' +
+      '<b>实时汇率</b>：' + U.esc(fxLine()) + '<br><br>' +
       '<b>已知局限</b>：<br>' +
       '· A 股分红数据源没有独立的「派息日」字段，口径上「派息日 = 除权除息日」，界面标注为「预计派息日」；基金、港股、美股为数据源给出的真实派息日<br>' +
       '· 美股分红自动同步自东方财富美股 F10 公开报表；实施状态按【除息日推断】，并非官方进度；币种 USD、金额税前，未计入境外预扣税（美股通常 10%）<br>' +
