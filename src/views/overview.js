@@ -475,7 +475,7 @@ XJ.views.overview = (function () {
       '</div>' +
       intra +
       '<div class="hc-grid">' +
-      '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.thousands(h.qty) + '股</div></div>' +
+      '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.qtyText(h.qty) + '股</div></div>' +
       '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
       '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
       '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + pctBadge + '</div></div>' +
