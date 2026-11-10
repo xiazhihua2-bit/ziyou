@@ -286,7 +286,8 @@ const PROBE = `
   }
 
   try {
-    XJ.store.setUI({ tab: 'overview', subPage: 'analysis', floatOpen: false });
+    /* anNwCollapsed = false：资产走势卡现在【默认折叠】，这里显式展开后再测量图表 */
+    XJ.store.setUI({ tab: 'overview', subPage: 'analysis', floatOpen: false, anNwCollapsed: false });
     seedHistoryData();
     /* 灌 90 天快照：给深色卡的「较上次记录」用（资产走势卡本身不依赖快照，历史行情就能画） */
     (function seedSnapshots() {
@@ -1392,7 +1393,8 @@ const PROBE = `
       if (benchBtn2) { benchBtn2.click(); await sleep(160); }
     }
 
-    /* 场外基金 / 美股：不应出现曲线，只给一行说明 */
+    /* 场外基金 / 美股：不应出现曲线，只给一行说明
+       （美股支持分红自动同步，但按季度/月派息、没有年报预案公告日这个财年切换锚点） */
     XJ.store.setUI({ subPage: 'symbol', subArg: 'of110022', floatOpen: false, yjBeg: null, yjEnd: null });
     await sleep(110);
     out.subviews.yjFundNoChart = document.querySelectorAll('.yj-chart svg').length;
