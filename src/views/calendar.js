@@ -53,7 +53,7 @@ XJ.views.calendar = (function () {
           '<span class="pi-amt" data-anim="A">' + U.moneySign(it.amount) + '</span>' +
           '</span>' +
           '<span class="pi-row">' +
-          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.thousands(it.qty) + '股</span>' +
+          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.qtyText(it.qty) + '股</span>' +
           '<span class="pi-when">' + (it.exDate
             ? '除权日 ' + U.esc(String(it.exDate).slice(5))
             : '<i class="pi-tbd">除权日待定</i>') +
@@ -80,10 +80,10 @@ XJ.views.calendar = (function () {
       ? ''
       : '<div class="row-v c-div">' + amtTxt + '</div>';
     var sub = (e.type === 'payout')
-      ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股 · ' +
+      ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股 · ' +
       (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + amtTxt +
       (XJ.usdiv.isUs(e.symbol) ? '（税前 USD）' : '')
-      : '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.thousands(e.qty) + ' 股';
+      : '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股';
     return '<button class="list-row" data-act="openSymbol" data-symbol="' + U.esc(e.symbol) + '">' +
       UI.avatar(e.name, e.symbol, 38, C.logoFor(e.symbol)) +
       '<div class="row-main">' +
@@ -264,7 +264,7 @@ XJ.views.calendar = (function () {
           '<div class="row-main">' +
           '<div class="row-t"><span class="nm">' + U.esc(XJ.store.symbolName(r.symbol)) + '</span></div>' +
           '<div class="row-s">' + U.esc(XJ.market.displayCode(r.symbol)) + ' · ' +
-          U.esc(r.exDividendDate) + ' 到账 · ' + U.thousands(r.qtyAtRecord) + ' 股 × ' +
+          U.esc(r.exDividendDate) + ' 到账 · ' + U.qtyText(r.qtyAtRecord) + ' 股 × ' +
           U.money(r.perShareAmount, 4) + '</div>' +
           '</div>' +
           '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</div></div>' +
