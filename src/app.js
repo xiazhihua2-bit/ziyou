@@ -4515,6 +4515,39 @@
       /* 派息日弹窗：这里试一次（分红方案本地就有缓存，离线也能弹），
          行情刷新完成后再试一次兜底（首装 / 缓存过期时靠那次）。两次都幂等，不会重复弹。 */
       setTimeout(maybeShowPayoutPopup, 600);
+      /* ---------------- 实时汇率（独立通道） ----------------
+       * 腾讯 whUSDCNY / whHKDCNY 是带秒级时间戳的实时汇率。行情、分红、资产走势都按它折人民币，
+       * 不能只寄生在 60s 的行情同步里：独立 30s tick + 回前台立即补一次。
+       * 历史曲线走 calc.marketValueSeries 的「按日汇率」，所以实时刷新只影响今天，不会漂移。 */
+      var fxBusy = false;
+      function refreshFx(force) {
+        if (fxBusy || !S.state) return Promise.resolve(false);
+        var cur = S.state.settings.fx || {};
+        var at = cur.updatedAt ? Date.parse(cur.updatedAt) : 0;
+        /* 与 60s 主链路错开：刚更新过就跳过，避免同一拍重复请求；回前台可强制刷新 */
+        if (!force && at && (Date.now() - at) < 25000) return Promise.resolve(false);
+        fxBusy = true;
+        return XJ.fetcher.fetchFX().then(function (fx) {
+          fxBusy = false;
+          if (!fx || !Object.keys(fx).length) { S.ui.fxError = true; return false; }
+          var changed = (U.num(fx.USD) !== U.num(cur.USD)) || (U.num(fx.HKD) !== U.num(cur.HKD));
+          S.state.settings.fx = Object.assign({}, fx, { updatedAt: U.nowStamp() });
+          S.ui.fxError = false;
+          if (changed) {
+            /* 当日快照按新汇率重写；历史快照不动 */
+            C.writeSnapshot(S.state, S.ui.accountId, S.state.settings.fx);
+            S.commitNow(null);
+          } else if (XJ.storage && XJ.storage.save) {
+            XJ.storage.save(S.state);   // 只更新 updatedAt，不打断用户滚动
+          }
+          return true;
+        }).catch(function () {
+          fxBusy = false;
+          S.ui.fxError = true;
+          return false;
+        });
+      }
+
       refreshAll({ silent: true }).then(function () { maybeShowPayoutPopup(); });
       setInterval(function () {
         if (document.hidden) return;
@@ -4525,6 +4558,13 @@
           XJ.views.pool.tickQuotes(true);
         }
       }, Math.max(60000, U.n0(S.state.settings.quoteRefreshMs) || 60000));
+      /* 汇率独立刷新：页面隐藏时暂停，回到前台立刻补一次 */
+      setInterval(function () { if (!document.hidden) refreshFx(false); }, 30000);
+      if (typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', function () {
+          if (!document.hidden) refreshFx(true);
+        });
+      }
       setInterval(reminderTick, 60000);
       reminderTick();
     }).catch(function (e) {
