@@ -343,6 +343,77 @@ async function main() {
   close('AAPL 收盘价 = 349.82', quotes.usAAPL && quotes.usAAPL.price, 349.82);
   delete sandbox.document;
 
+  /* ============ ⑨ 实时汇率 / 按日汇率曲线 / 图标域名 / 股数格式 ============ */
+  section('【9】实时汇率 · A股+美股三条曲线 · 图标域名 · 股数四位小数');
+  eq('股数 1.944 → 1.944', U.qtyText(1.944), '1.944');
+  eq('★ 浮点尾数 1.9440000000000002 → 1.944', U.qtyText(1.9440000000000002), '1.944');
+  eq('1.94444 → 1.9444（最多四位）', U.qtyText(1.94444), '1.9444');
+  eq('整数 1000 → 1,000', U.qtyText(1000), '1,000');
+  eq('U.thousands 兜底浮点尾数', U.thousands(1.9440000000000002), '1.944');
+  eq('★ BRK 官方域名兜底（东财查不到）', MK.usOfficialDomain('usBRK'), 'www.berkshirehathaway.com');
+  eq('QQQ 官方域名兜底', MK.usOfficialDomain('usQQQ'), 'www.invesco.com');
+  eq('SCHD 官方域名兜底', MK.usOfficialDomain('usSCHD'), 'www.schwab.com');
+  eq('非美股不查域名表', MK.usOfficialDomain('sh600023'), null);
+  eq('图标算法版本已升级（旧 bad 缓存失效）', XJ.fetcher.LOGO_ALGO, 3);
+  const doms = await XJ.fetcher.fetchCompanyDomains(['usBRK', 'usQQQ']);
+  eq('BRK 域名不用请求东财就能拿到', doms.usBRK, 'www.berkshirehathaway.com');
+  eq('QQQ 域名不用请求东财就能拿到', doms.usQQQ, 'www.invesco.com');
+
+  /* --- A股(CNY) + 美股(USD) 组合：按日汇率曲线 --- */
+  const cs = XJ.model.defaultState();
+  cs.accounts = [{ accountId: 'acc_1', name: '测试账户', type: 'BROKER', sortOrder: 1, createdAt: '2026-01-01T00:00:00Z' }];
+  cs.symbols = {
+    sh600023: { symbol: 'sh600023', code: '600023', market: 'sh', name: '浙能电力', type: 'STOCK', costMethod: 'weighted' },
+    usAAPL: { symbol: 'usAAPL', code: 'AAPL', market: 'us', name: '苹果', type: 'STOCK', costMethod: 'weighted' },
+  };
+  cs.transactions = [
+    { txId: 'c1', accountId: 'acc_1', symbol: 'sh600023', action: 'BUY', date: '2026-01-05', quantity: 1000, price: 4, fee: 0, createdAt: '2026-01-05T01:00:00Z' },
+    { txId: 'c2', accountId: 'acc_1', symbol: 'usAAPL', action: 'BUY', date: '2026-01-05', quantity: 10, price: 200, fee: 0, createdAt: '2026-01-05T01:00:00Z' },
+  ];
+  cs.received = [];
+  cs.quoteCache = {
+    sh600023: { symbol: 'sh600023', name: '浙能电力', price: 5, prevClose: 5, changePct: 0 },
+    usAAPL: { symbol: 'usAAPL', name: '苹果', price: 210, prevClose: 210, changePct: 0 },
+  };
+  XJ.model.ensureBootstrapped(cs);
+  const days = ['2026-01-05', '2026-01-06', '2026-01-07', '2026-01-08'];
+  const priceMap = {
+    sh600023: days.map((d) => [d, 5]),
+    usAAPL: days.map((d) => [d, 210]),
+  };
+  /* 独立复算：A股 1000×5 = 5000 CNY；美股 10×210 = 2100 USD
+     mv   = 5000 + 2100×rate      → 7.0:19700  7.1:19910  7.5:20750
+     net  = 1000×4 + 10×200×rate = 4000 + 2000×rate */
+  function snapOf(rate) {
+    return { mv: 5000 + 2100 * rate, cost: 4000 + 2000 * rate, pred: 0, recv: 0,
+      net: 4000 + 2000 * rate, fx: { HKD: 0.9, USD: rate } };
+  }
+  cs.snapshots = { '2026-01-06': snapOf(7.0), '2026-01-07': snapOf(7.1) };
+  cs.settings.fx = { HKD: 0.9, USD: 7.0, updatedAt: '2026-01-08T00:00:00.000Z' };
+
+  const sA = C.marketValueSeries(cs, 'acc_1', priceMap, { fx: { HKD: 0.9, USD: 7.0 } }).series;
+  const sB = C.marketValueSeries(cs, 'acc_1', priceMap, { fx: { HKD: 0.9, USD: 7.5 } }).series;
+  const at = (arr, d) => arr.filter((p) => p.date === d)[0];
+  eq('曲线覆盖 4 个交易日', sA.length, 4);
+  close('★ 无快照历史日（沿用首条快照汇率 7.0）mv = 19700', at(sA, '2026-01-05').mv, 19700, 1e-9);
+  close('★ 实时汇率改 7.5，历史日仍 19700（不漂移）', at(sB, '2026-01-05').mv, 19700, 1e-9);
+  close('★ 快照日 01-06 用当日汇率 7.0 → 19700', at(sA, '2026-01-06').mv, 19700, 1e-9);
+  close('★ 快照日 01-07 用当日汇率 7.1 → 19910', at(sA, '2026-01-07').mv, 19910, 1e-9);
+  close('★ 今天 01-08 用实时汇率 7.0 → 19700', at(sA, '2026-01-08').mv, 19700, 1e-9);
+  close('★ 实时汇率改 7.5 → 今天 mv = 20750（实时生效）', at(sB, '2026-01-08').mv, 20750, 1e-9);
+  sA.forEach(function (p) {
+    close('恒等式 nw = mv + recv − net @' + p.date, p.nw, p.mv + p.recv - p.net, 1e-9);
+  });
+  eq('★ 01-06 flow = 0（无交易，汇率变化不算现金流）', at(sA, '2026-01-06').flow, 0);
+  eq('★ 01-07 flow = 0', at(sA, '2026-01-07').flow, 0);
+  eq('★ TWR 历史段不受实时汇率污染',
+    JSON.stringify(C.twrIndex(sA).slice(0, 3).map((p) => p.idx)),
+    JSON.stringify(C.twrIndex(sB).slice(0, 3).map((p) => p.idx)));
+  const bs = C.buildSnapshot(cs, 'acc_1', { HKD: 0.9, USD: 7.1 });
+  close('★ 快照 net = 4000 + 2000×7.1 = 18200', bs && bs.net, 18200, 1e-9);
+  close('★ 快照 mv = 5000 + 2100×7.1 = 19910', bs && bs.mv, 19910, 1e-9);
+  eq('★ 快照记录写入当日汇率（供历史曲线还原）', JSON.stringify(bs && bs.fx), JSON.stringify({ HKD: 0.9, USD: 7.1 }));
+
   /* ---------------- 汇总 ---------------- */
   console.log('\n============================================');
   console.log('test-usdiv: ' + pass + ' passed, ' + fail + ' failed');
