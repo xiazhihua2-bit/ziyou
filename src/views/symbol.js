@@ -376,7 +376,7 @@ XJ.views.symbol = (function () {
         '<div class="muted" style="font-size:12px">预测年分红</div>' +
         '<div style="font-size:32px;font-weight:750;letter-spacing:-1.2px;color:var(--dividend);margin-top:3px">' +
         U.moneySign(h.predictedDividendCny) + '</div>' +
-        '<div class="tiny" style="margin-top:6px">每股 ' + U.money(h.annualPerShare, 4) + ' × ' + U.thousands(h.qty) + '股</div>' +
+        '<div class="tiny" style="margin-top:6px">每股 ' + U.money(h.annualPerShare, 4) + ' × ' + U.qtyText(h.qty) + '股</div>' +
         '<div class="tiny" style="margin-top:2px">' + U.esc(C.planBasisLabel(h)) + '</div>' +
         '</div>' +
         '<button class="ghost-btn" data-act="openBasisEditor" data-symbol="' + U.esc(symbol) + '">觉得不准？</button>' +
@@ -406,7 +406,7 @@ XJ.views.symbol = (function () {
       html += '<div class="hc-grid">' +
         '<div class="hc-cell" data-anim="B"><div class="k">当前市值</div><div class="v">' + U.moneySign(h.marketValueCny) + '</div></div>' +
         '<div class="hc-cell" data-anim="B"><div class="k">收盘价 × 股数</div><div class="v">' +
-        (price === null ? '—' : U.money(price) + ' × ' + U.thousands(h.qty)) + '</div></div>' +
+        (price === null ? '—' : U.money(price) + ' × ' + U.qtyText(h.qty)) + '</div></div>' +
         '</div>';
     } else {
       html += '<div class="tiny" style="margin-top:10px">当前账户下没有该标的的持仓。</div>';
@@ -438,7 +438,7 @@ XJ.views.symbol = (function () {
         '<span class="hint">点带笔的数值可修改</span></div>' +
         '<button class="kv-edit" data-act="editQty" data-symbol="' + U.esc(symbol) + '">' +
         '<span class="k">持仓数量</span>' +
-        '<span class="v">' + U.thousands(h.qty) + ' 股<span class="pen">' + UI.icon('edit', 13, 1.9) + '</span></span></button>' +
+        '<span class="v">' + U.qtyText(h.qty) + ' 股<span class="pen">' + UI.icon('edit', 13, 1.9) + '</span></span></button>' +
         '<button class="kv-edit" data-act="editCost" data-symbol="' + U.esc(symbol) + '">' +
         '<span class="k">当前成本' + C.qmark('成本口径：' + C.costMethodLabel(h.costMethod)) + '</span>' +
         '<span class="v">' + U.money(h.avgCost, 4) +
@@ -521,7 +521,7 @@ XJ.views.symbol = (function () {
         html += '<tr class="tx-row" data-act="editTx" data-id="' + U.esc(t.txId) + '" title="点击编辑这笔记录">' +
           '<td>' + U.esc(t.date) + '</td>' +
           '<td>' + dirPill + '</td>' +
-          '<td>' + (isAdj ? '<span class="muted">—</span>' : U.thousands(t.quantity)) + '</td>' +
+          '<td>' + (isAdj ? '<span class="muted">—</span>' : U.qtyText(t.quantity)) + '</td>' +
           '<td>' + (isAdj ? '<span class="muted">—</span>' : U.money(t.price, 4)) + '</td>' +
           '<td class="' + (isAdj ? U.dirClass(amt) : '') + '">' + txSignMoney(symbol, amt) + '</td>' +
           '<td class="tx-edit">' + UI.icon('edit', 13) + '</td>' +
@@ -602,7 +602,7 @@ XJ.views.symbol = (function () {
         html += '<tr><td>' + U.esc(r.exDividendDate) + '<div class="tiny">' +
           (r.source === 'AUTO' ? '自动' : '手动') + '</div></td>' +
           '<td>' + (r.perShareAmount > 0 ? U.money(r.perShareAmount, 4) : '<span class="muted">—</span>') + '</td>' +
-          '<td>' + (r.qtyAtRecord > 0 ? U.thousands(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
+          '<td>' + (r.qtyAtRecord > 0 ? U.qtyText(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
           '<td class="c-div">' + divMoney(st, symbol, r.amount) +
           (r.source === 'MANUAL'
             ? '<div><button class="tiny" style="color:var(--up);margin-top:2px" data-act="deleteReceive" data-id="' +
