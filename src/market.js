@@ -133,6 +133,26 @@ XJ.market = (function () {
     return code ? 'https://basic.10jqka.com.cn/' + code + '/company.html' : null;
   }
 
+  /* ---------------- 美股官方域名（图标兜底） ----------------
+   * 东财 RPT_USF10_INFO_ORGPROFILE 实测（2026-11-10）对多数个股有 ORG_WEB
+   * （AAPL→www.apple.com、KO→www.coca-colacompany.com、MSFT→www.microsoft.com …），
+   * 但对伯克希尔（BRK / BRK.B / BRK.B.N）与 ETF（QQQ / SCHD / SPY / VOO …）返回空数据。
+   * 这些标的用公开的公司官网 / ETF 发行商域名兜底，全部实测 icon.horse 能取到官方图标。
+   * 只登记已核实的公开域名，不猜测。 */
+  var US_OFFICIAL_DOMAINS = {
+    BRK: 'www.berkshirehathaway.com',
+    AAPL: 'www.apple.com', MSFT: 'www.microsoft.com', NVDA: 'www.nvidia.com',
+    KO: 'www.coca-colacompany.com', O: 'www.realtyincome.com', TSM: 'www.tsmc.com',
+    QQQ: 'www.invesco.com', DIA: 'www.invesco.com',
+    SCHD: 'www.schwab.com', VOO: 'www.vanguard.com', VTI: 'www.vanguard.com',
+    IVV: 'www.ishares.com',
+  };
+
+  function usOfficialDomain(symbol) {
+    if (assetType(symbol) !== 'us') return null;
+    return US_OFFICIAL_DOMAINS[String(codeOf(symbol)).toUpperCase()] || null;
+  }
+
   /**
    * 该标的的公司图标是否需要（重新）解析。纯函数，便于验收。
    *   · 判定规则升级过（rec.logoAlgo 低于当前 algo）→ 需要，旧结论视为过期
@@ -590,6 +610,7 @@ XJ.market = (function () {
     secucodeOf: secucodeOf, logoUrl: logoUrl, logoVerdict: logoVerdict,
     rootDomain: rootDomain, cleanDomain: cleanDomain,
     logoCandidates: logoCandidates, thsF10Url: thsF10Url,
+    US_OFFICIAL_DOMAINS: US_OFFICIAL_DOMAINS, usOfficialDomain: usOfficialDomain,
     parseThsLogo: parseThsLogo, THS_LOGO_RE: THS_LOGO_RE,
     logoStale: logoStale,
     prefixForAStock: prefixForAStock, pad5: pad5,
