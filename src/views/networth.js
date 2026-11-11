@@ -1,7 +1,9 @@
 /* ==================== 视图组件：资产走势（首页独立卡） ====================
  * 三条曲线一键切换：
  *   持仓市值 —— Σ(持股数 × 当日真实收盘价/净值 × 汇率)
- *   累计收益 —— 持仓总市值 + 累计已收分红 − 累计净投入
+ *   累计收益 —— 所选【区间内】的盈亏 = nw(区间末) − nw(区间首)，曲线从区间起点归零；
+ *               副信息另给出「建仓以来累计总收益」= 持仓总市值 + 累计已收分红 − 累计净投入；
+ *               区间收益率 = 区间盈亏 ÷ 期初总资产（期初持仓市值 + 期初已收分红）。
  *               （**不等于**账户总资产：本项目没有现金概念，故不提供「总资产」曲线）
  *   收益率   —— 两种口径可切：
  *                 时间加权（TWR）剔除加仓/减仓的净流入，可与指数公平对比
@@ -108,6 +110,8 @@ XJ.views.networth = (function () {
       twr: XJ.calc.downsample(XJ.calc.twrIndex(res.series), gran),
       costRet: XJ.calc.downsample(costRet, gran),
     };
+    /* 区间收益：与曲线用同一份（降采样后的）序列，保证「大数字 == 曲线末点」 */
+    value.rangeRet = XJ.calc.rangeReturn(value.series);
     cache[key] = value;
     cacheOrder.push(key);
     while (cacheOrder.length > 4) delete cache[cacheOrder.shift()];
@@ -153,9 +157,11 @@ XJ.views.networth = (function () {
       var lastC = series.length ? series[series.length - 1] : null;
       var mini = '';
       if (lastC) {
+        /* 折叠态同样显示「区间收益」，不与展开后的大数字打架 */
+        var miniNum = (metric === 'nw' && b.rangeRet) ? b.rangeRet.gain : lastC[metric];
         mini = (isPct && b.twr.length)
           ? '<span class="nw-mini-v" data-anim="B">' + U.signPct(b.twr[b.twr.length - 1].idx * 100 - 100) + '</span>'
-          : '<span class="nw-mini-v" data-anim="B">' + U.moneySign(lastC[metric]) + '</span>';
+          : '<span class="nw-mini-v" data-anim="B">' + U.moneySign(miniNum) + '</span>';
       }
       html += '<div class="nw-mini">' + mini +
         '<span class="nw-mini-l">' + U.esc(metricLabel) +
@@ -214,6 +220,15 @@ XJ.views.networth = (function () {
          当日没有「共同起点」一说（横轴是时刻不是日期），故不计算 common。 */
       chartSeries = buildIntraday(st, metric, retMode);
       intradayMissing = buildIntraday.missing || [];
+      /* 当日也按「区间收益」口径：分时曲线相对首个时刻归零，画「今天盘中赚了多少」，
+         而不是「建仓以来累计总收益」的绝对水位。较昨收（含隔夜跳空）的参考盈亏
+         仍由下方 todayPnl 单独给出，两者口径不同、各自标注清楚。 */
+      if (metric === 'nw' && chartSeries.length && chartSeries[0].points.length >= 2) {
+        var i0 = U.n0(chartSeries[0].points[0].pct);
+        chartSeries[0].points = chartSeries[0].points.map(function (p) {
+          return { date: p.date, pct: Math.round((U.n0(p.pct) - i0) * 100) / 100 };
+        });
+      }
     } else if (isPct && retMode === 'cost') {
       /* 成本收益率：直接画【水平值】= 累计收益 ÷ 累计净投入。
          刻意**不叠加指数** —— 指数没有「本金」概念，两者零点不同（组合从 0% 起步、
@@ -262,9 +277,17 @@ XJ.views.networth = (function () {
       });
     } else {
       var color = metric === 'nw' ? MK.METRIC_COLORS.nw : MK.METRIC_COLORS.mv;
-      chartSeries = [{ key: metric, name: metricLabel, color: color, points: series.map(function (p) {
-        return { date: p.date, pct: p[metric] };
-      }) }];
+      if (metric === 'nw' && b.rangeRet) {
+        /* 区间收益：曲线相对区间起点归零，从 0 起画「这个区间赚了多少」 */
+        chartSeries = [{
+          key: metric, name: metricLabel, color: color,
+          points: b.rangeRet.points.map(function (p) { return { date: p.date, pct: p.gain }; }),
+        }];
+      } else {
+        chartSeries = [{ key: metric, name: metricLabel, color: color, points: series.map(function (p) {
+          return { date: p.date, pct: p[metric] };
+        }) }];
+      }
     }
 
     /* ---- 指数图例（多选） ----
@@ -407,14 +430,26 @@ XJ.views.networth = (function () {
         }).join('') + '</div>';
       }
     } else {
+      var isRangeGain = (metric === 'nw' && !!b.rangeRet);
       var curV = (isToday && chartSeries.length)
         ? chartSeries[0].points[chartSeries[0].points.length - 1].pct
-        : (series.length ? series[series.length - 1][metric] : null);
-      html += '<div class="nw-amount" data-anim="S">' + (curV === null ? '—' : U.moneySign(curV)) + '</div>';
-      html += '<div class="tiny nw-sub">' + U.esc(metricLabel) +
-        (isToday && chartSeries.length
-          ? ' · 当日' + dayHint + '盘中 · 截至 ' + U.esc(chartSeries[0].points[chartSeries[0].points.length - 1].date)
-          : (series.length ? ' · 截至 ' + U.esc(series[series.length - 1].date) : '')) + '</div>';
+        : (isRangeGain ? b.rangeRet.gain
+          : (series.length ? series[series.length - 1][metric] : null));
+      html += '<div class="nw-amount' + (curV !== null && curV < 0 ? ' down' : '') + '" data-anim="S">' +
+        (curV === null ? '—' : U.moneySign(curV)) + '</div>';
+      /* 副标题：区间收益要写明「哪个区间、哪天到哪天」，并给出建仓以来累计总收益 */
+      var sub = U.esc(metricLabel);
+      if (isToday && chartSeries.length) {
+        sub += ' · 当日' + dayHint + '盘中 · 截至 ' +
+          U.esc(chartSeries[0].points[chartSeries[0].points.length - 1].date);
+      } else if (series.length) {
+        sub += ' · ' + U.esc(rangeLabel) + ' ' + U.esc(series[0].date) + ' ~ ' +
+          U.esc(series[series.length - 1].date);
+      }
+      html += '<div class="tiny nw-sub">' + sub + '</div>';
+      if (isRangeGain && !isToday) {
+        html += '<div class="tiny nw-sub">建仓以来累计总收益 ' + U.moneySign(b.rangeRet.cumGain) + '</div>';
+      }
       if (isToday && chartSeries.length) {
         /* 当日参考盈亏 = 相对【昨收】的浮动。
            早先这里用「曲线首末点相减」，等于把隔夜跳空整段算漏了（9:30 开盘就跳空的话它记不到）。 */
@@ -424,12 +459,17 @@ XJ.views.networth = (function () {
             (tpM.amount >= 0 ? '▲' : '▼') + ' 当日参考盈亏 ' + U.signMoney(tpM.amount, 0) +
             '</span> <span class="tiny">较昨收，跨币种已折算</span></div>';
         } else {
-          var firstP = chartSeries[0].points[0].pct;
-          var lastP = chartSeries[0].points[chartSeries[0].points.length - 1].pct;
-          var dToday = lastP - firstP;
+          var dToday = U.n0(chartSeries[0].points[chartSeries[0].points.length - 1].pct);
           html += '<div style="margin-top:7px"><span class="nw-delta ' + (dToday >= 0 ? 'up' : 'down') + '" data-anim="A">' +
             (dToday >= 0 ? '▲' : '▼') + ' 今日 ' + U.signMoney(dToday, 0) + '</span></div>';
         }
+      } else if (isRangeGain && b.rangeRet.pct !== null && series.length >= 2) {
+        /* ★ 区间收益率：分母是【期初总资产】（期初持仓市值 + 期初已收分红），
+           不是「期初累计收益」—— 后者会得出 +73% / -4% 这种假数字。 */
+        var upR = b.rangeRet.gain >= 0;
+        html += '<div style="margin-top:7px"><span class="nw-delta ' + (upR ? 'up' : 'down') + '" data-anim="A">' +
+          (upR ? '▲' : '▼') + ' 区间收益率 ' + U.signPct(b.rangeRet.pct, 1) +
+          '</span> <span class="tiny">按期初总资产 ' + U.moneySign(b.rangeRet.base, 0) + '</span></div>';
       } else if (series.length >= 2) {
         delta = XJ.calc.seriesDelta(series, metric);
         if (delta) {
@@ -469,7 +509,8 @@ XJ.views.networth = (function () {
           : '涨跌幅以【昨收】为基准（与同花顺/券商一致），指数同样按昨收归一化；' +
             '尚未开盘的标的在分子里贡献 0、在分母里照常占权重，所以不会把涨幅放大');
       } else if (metric === 'nw') {
-        notes.push('累计收益 = 分时持仓总市值 + 累计已收分红 − 累计净投入（没有分时的标的按其最新市值、并按币种折算计入）');
+        notes.push('当日收益 = 分时组合市值相对首个时刻的变化（曲线从 0 起）；' +
+          '下方「当日参考盈亏」另按昨收计算、含隔夜跳空；没有分时的标的按最新市值、按币种折算作常量计入');
       } else {
         notes.push('持仓市值按分时价格折算人民币；跨市场标的按设置里的汇率换算');
       }
@@ -485,10 +526,16 @@ XJ.views.networth = (function () {
         notes.push('蜡烛为「' + candleName + '」的收益率 K 线（组合没有 K 线，仍以折线显示）');
       }
     } else if (metric === 'nw') {
-      notes.push('累计收益 = 持仓总市值 + 累计已收分红 − 累计净投入（分红再投会重复计入）。' +
-        '它**不等于**账户总资产 —— 本项目没有现金概念，故不提供「总资产」曲线');
+      notes.push('区间收益 = 区间末累计总收益 − 区间首累计总收益（曲线从 0 起）；' +
+        '累计总收益 = 持仓总市值 + 累计已收分红 − 累计净投入（分红再投会重复计入）');
+      notes.push('区间收益率 = 区间盈亏 ÷ 期初总资产（期初持仓市值 + 期初已收分红）；' +
+        '未剔除区间内加减仓与分红再投，精确口径请看「收益率」指标（TWR）');
     } else {
-      notes.push('按「交易流水还原持股数 × 当日真实收盘价」折算人民币；同日有每日快照时以快照为准');
+      notes.push('按「交易流水还原持股数 × 当日真实收盘价」折算人民币');
+    }
+    if (!isToday) {
+      notes.push('全部日期统一重建，快照只提供当日汇率、不再覆盖曲线数值；' +
+        '无日线的标的按现价补常量，清仓标的保留历史盈亏');
     }
     /* 汇率口径：历史日按当日快照汇率（不随实时汇率漂移），今天用实时汇率 */
     var liveFx = (st.state && st.state.settings && st.state.settings.fx) || {};
@@ -498,11 +545,12 @@ XJ.views.networth = (function () {
     }
     if (st.ui.fxError) notes.push('本次汇率刷新失败，仍在用上一次取到的汇率');
     if (!isToday && b.res.missing.length) {
-      notes.push('有 ' + b.res.missing.length + ' 只标的没有历史行情（场外基金净值或长期停牌），未计入曲线');
+      notes.push('有 ' + b.res.missing.length + ' 只标的没有历史行情（场外基金净值或长期停牌），' +
+        '按现价作常量计入市值，避免曲线在这些日子整块缺失');
     }
     if (isToday && intradayMissing && intradayMissing.length) {
       notes.push('有 ' + intradayMissing.length + ' 只标的没有当日分时（场外基金 / 美股 / 长期停牌），' +
-        '不参与逐分钟曲线' + (metric === 'nw' ? '（累计收益里按其最新市值、并按币种折算作为常量计入）' : '，未计入曲线'));
+        '不参与逐分钟曲线' + (metric === 'nw' ? '（当日收益里按其最新市值、按币种折算作常量计入，日内不波动）' : '，未计入曲线'));
     }
     html += '<div class="note-line" style="margin-top:8px">' + UI.icon('info', 13) +
       '<span>' + U.esc(notes.join('；')) + '</span></div>';
@@ -584,7 +632,7 @@ XJ.views.networth = (function () {
    * 三种指标各取所需：
    *   收益率   → **相对昨收**的百分比（与指数同坐标系，可叠加对比）
    *   持仓市值 → 组合市值的绝对值（元）
-   *   累计收益 → 持仓总市值 + 累计已收分红 − 累计净投入（元），随市值实时波动
+   *   累计收益 → 当日盘中盈亏（分时组合市值相对首个时刻的变化，曲线从 0 起）
    * @param metric 'ret' | 'mv' | 'nw'
    */
   function buildIntraday(st, metric, retMode) {
@@ -634,7 +682,7 @@ XJ.views.networth = (function () {
     if (mvPts.length >= 2) {
       var color = metric === 'nw' ? MK.METRIC_COLORS.nw
         : metric === 'ret' ? MK.METRIC_COLORS.ret : MK.METRIC_COLORS.mv;
-      var name = metric === 'nw' ? '累计收益' : metric === 'ret' ? '组合' : '持仓市值';
+      var name = metric === 'nw' ? '当日收益' : metric === 'ret' ? '组合' : '持仓市值';
 
       if (metric === 'ret') {
         /* 收益率 = 当刻盈亏 ÷ 分母。两个口径共用同一个分子（相对昨收的当日参考盈亏）：
