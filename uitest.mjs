@@ -2230,10 +2230,11 @@ try {
         r.subviews.nwNwText !== r.subviews.nwMvText &&
         /累计收益/.test(r.subviews.nwNwLegend || '') &&
         /^¥/.test((r.subviews.nwNwText || '').trim()) &&
-        /累计收益 = 持仓总市值/.test(r.subviews.nwNoteNw || '')) {
+        /区间收益 = 区间末累计总收益/.test(r.subviews.nwNoteNw || '') &&
+        /区间收益率/.test(r.subviews.nwDeltaNw || '')) {
         console.log('      ✓ 一键切换：市值 ' + r.subviews.nwMvText.trim() +
-          ' → 累计收益 ' + r.subviews.nwNwText.trim() + '（图例与口径说明同步切换）');
-        console.log('        累计收益较区间起点：' + (r.subviews.nwDeltaNw || '').trim());
+          ' → 区间收益 ' + r.subviews.nwNwText.trim() + '（图例与口径说明同步切换）');
+        console.log('        区间收益率徽章：' + (r.subviews.nwDeltaNw || '').trim());
       } else {
         bad('市值/累计收益切换异常: ' + JSON.stringify({
           chips: r.subviews.nwMetricChips, after: r.subviews.nwActiveMetricAfter,
