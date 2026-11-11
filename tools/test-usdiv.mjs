@@ -391,8 +391,9 @@ async function main() {
   cs.snapshots = { '2026-01-06': snapOf(7.0), '2026-01-07': snapOf(7.1) };
   cs.settings.fx = { HKD: 0.9, USD: 7.0, updatedAt: '2026-01-08T00:00:00.000Z' };
 
-  const sA = C.marketValueSeries(cs, 'acc_1', priceMap, { fx: { HKD: 0.9, USD: 7.0 } }).series;
-  const sB = C.marketValueSeries(cs, 'acc_1', priceMap, { fx: { HKD: 0.9, USD: 7.5 } }).series;
+  /* 夹具把「今天」固定为 01-08（可注入，便于独立复算） */
+  const sA = C.marketValueSeries(cs, 'acc_1', priceMap, { fx: { HKD: 0.9, USD: 7.0 }, today: '2026-01-08' }).series;
+  const sB = C.marketValueSeries(cs, 'acc_1', priceMap, { fx: { HKD: 0.9, USD: 7.5 }, today: '2026-01-08' }).series;
   const at = (arr, d) => arr.filter((p) => p.date === d)[0];
   eq('曲线覆盖 4 个交易日', sA.length, 4);
   close('★ 无快照历史日（沿用首条快照汇率 7.0）mv = 19700', at(sA, '2026-01-05').mv, 19700, 1e-9);
@@ -413,6 +414,116 @@ async function main() {
   close('★ 快照 net = 4000 + 2000×7.1 = 18200', bs && bs.net, 18200, 1e-9);
   close('★ 快照 mv = 5000 + 2100×7.1 = 19910', bs && bs.mv, 19910, 1e-9);
   eq('★ 快照记录写入当日汇率（供历史曲线还原）', JSON.stringify(bs && bs.fx), JSON.stringify({ HKD: 0.9, USD: 7.1 }));
+
+  /* ============ 【10】区间收益 + 统一重建曲线（2026-11-11 定稿） ============
+     固定夹具：A股 1000 股 @5（净投入 5000）+ 美股 10 股 @200（净投入 2000 USD），
+     USD=7.1 → 总净投入 19200 CNY；A股价恒 5.1，美股价按日期给。
+       mv(d) = 1000×5.1 + 10×usPx×7.1 = 5100 + 71×usPx
+       nw(d) = mv(d) − 19200
+     日期 / 美股价 / 可手工复算的 nw：
+       02-02 / 150 → 15750 → −3450      08-12 / 180 → 17880 → −1320
+       11-02 / 200 → 19300 →   100      11-03 / 200 → 19300 →   100
+       11-04 / 210 → 20010 →   810      11-05 / 210 → 20010 →   810
+  */
+  section('【10】区间收益 · 统一重建（A股 + 美股可独立复算）');
+  function mkMix(o) {
+    const s = XJ.model.defaultState();
+    s.accounts = [{ accountId: 'acc_1', name: '混合账户', type: 'BROKER', sortOrder: 1, createdAt: '2025-01-01T00:00:00Z' }];
+    s.symbols = {
+      sh600023: { symbol: 'sh600023', code: '600023', market: 'sh', name: 'A股', type: 'STOCK', costMethod: 'weighted' },
+      usAAPL: { symbol: 'usAAPL', code: 'AAPL', market: 'us', name: '苹果', type: 'STOCK', costMethod: 'weighted' },
+    };
+    s.transactions = [
+      { txId: 'a1', accountId: 'acc_1', symbol: 'sh600023', action: 'BUY', date: '2025-01-06', quantity: 1000, price: 5, fee: 0, createdAt: '2025-01-06T01:00:00Z' },
+      { txId: 'a2', accountId: 'acc_1', symbol: 'usAAPL', action: 'BUY', date: '2025-01-06', quantity: 10, price: 200, fee: 0, createdAt: '2025-01-06T01:00:00Z' },
+    ];
+    s.received = []; s.plans = {};
+    XJ.model.ensureBootstrapped(s);
+    s.settings.fx = { HKD: 0.92, USD: 7.1 };
+    s.snapshots = (o && o.snapshots) || {};
+    s.quoteCache = (o && o.quoteCache) || {};
+    return s;
+  }
+  const MIX_DAYS = ['2026-02-02', '2026-08-12', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05'];
+  const MIX_US = [150, 180, 200, 200, 210, 210];
+  const mixPm = {
+    sh600023: MIX_DAYS.map((d) => [d, 5.1]),
+    usAAPL: MIX_DAYS.map((d, i) => [d, MIX_US[i]]),
+  };
+  const mixFx = { HKD: 0.92, USD: 7.1 };
+  const mix = mkMix();
+  const atMix = (arr, d) => arr.filter((p) => p.date === d)[0];
+  const allMix = C.marketValueSeries(mix, 'acc_1', mixPm, { fx: mixFx }).series;
+  eq('夹具 · 6 个日期点', allMix.length, 6);
+  close('夹具 · 02-02 nw = 15750 − 19200', atMix(allMix, '2026-02-02').nw, -3450, 1e-9);
+  close('夹具 · 11-02 nw = 19300 − 19200', atMix(allMix, '2026-11-02').nw, 100, 1e-9);
+  close('夹具 · 11-04 nw = 20010 − 19200', atMix(allMix, '2026-11-04').nw, 810, 1e-9);
+
+  /* ① 不同区间给出不同数字 —— 这正是「本月收益 / 三个月收益」要的东西 */
+  const gains = {};
+  ['1m', '3m', 'ytd', 'all'].forEach(function (r) {
+    const cr = C.chartRange(r, '2026-11-09', '', '');
+    const sr = C.downsample(C.marketValueSeries(mix, 'acc_1', mixPm, {
+      beg: cr.beg, end: cr.end, fx: mixFx,
+    }).series, 'day');
+    gains[r] = C.rangeReturn(sr);
+  });
+  eq('★ 本月区间收益 = 810 − 100', gains['1m'].gain, 710);
+  eq('★ 近三月区间收益 = 810 − (−1320)', gains['3m'].gain, 2130);
+  eq('★ 今年区间收益 = 810 − (−3450)', gains['ytd'].gain, 4260);
+  eq('全部区间收益 = 今年（首点相同）', gains['all'].gain, 4260);
+  eq('★ 本月 / 近三月 / 今年三个数字互不相同',
+    gains['1m'].gain !== gains['3m'].gain && gains['3m'].gain !== gains['ytd'].gain &&
+    gains['1m'].gain !== gains['ytd'].gain, true);
+  eq('本月期初总资产 = 19300（mv 19300 + recv 0）', gains['1m'].base, 19300);
+  close('★ 本月区间收益率 = 710 ÷ 19300', gains['1m'].pct, 710 / 19300 * 100, 1e-9);
+  eq('建仓以来累计总收益 = 810（副信息）', gains['1m'].cumGain, 810);
+  eq('所有区间曲线首点归零',
+    ['1m', '3m', 'ytd', 'all'].every((k) => gains[k].points[0].gain === 0), true);
+  eq('所有区间曲线末点 == 大数字',
+    ['1m', '3m', 'ytd', 'all'].every((k) => gains[k].points[gains[k].points.length - 1].gain === gains[k].gain), true);
+
+  /* ② 反证旧口径：seriesDelta(nw) 拿「期初累计收益」当分母会给出假数字 */
+  const mid = C.marketValueSeries(mix, 'acc_1', mixPm, {
+    beg: '2026-11-03', end: '2026-11-04', fx: mixFx,
+  }).series;
+  close('反证 · 旧口径 710 ÷ 100 = +710%', C.seriesDelta(mid, 'nw').pct, 710, 1e-9);
+  close('新口径 · 710 ÷ 19300 ≈ +3.68%', C.rangeReturn(mid).pct, 710 / 19300 * 100, 1e-9);
+  eq('★ 旧口径比真实收益率放大 100 倍以上',
+    C.seriesDelta(mid, 'nw').pct / C.rangeReturn(mid).pct > 100, true);
+
+  /* ③ 清仓标的：已实现盈亏与已收分红必须留在累计收益里，不能凭空消失 */
+  const sold = mkMix();
+  sold.transactions.push({ txId: 'a3', accountId: 'acc_1', symbol: 'usAAPL', action: 'SELL',
+    date: '2026-11-04', quantity: 10, price: 260, fee: 0, createdAt: '2026-11-04T01:00:00Z' });
+  sold.received.push({ recId: 'r1', accountId: 'acc_1', symbol: 'usAAPL', exDividendDate: '2026-08-15',
+    amount: 2.7, perShareAmount: 0.27, qtyAtRecord: 10, source: 'us', createdAt: '2026-08-15T01:00:00Z' });
+  const so = C.marketValueSeries(sold, 'acc_1', mixPm, { beg: '2026-11-01', end: '2026-11-09', fx: mixFx }).series;
+  close('清仓前 · 累计已收分红 2.7 × 7.1 = 19.17', atMix(so, '2026-11-03').recv, 19.17, 1e-9);
+  close('清仓后 · 已收分红仍保留（旧口径会归零）', atMix(so, '2026-11-04').recv, 19.17, 1e-9);
+  close('清仓后 · 市值只剩 A股 1000×5.1', atMix(so, '2026-11-04').mv, 5100, 1e-9);
+  close('清仓后 · 净投入 = 5000 + (2000−2600)×7.1 = 740', atMix(so, '2026-11-04').net, 740, 1e-9);
+  close('★ 清仓后累计收益 = 5100 + 19.17 − 740（已实现 4260 + 分红 19.17 + A股浮盈 100）',
+    atMix(so, '2026-11-04').nw, 4379.17, 1e-9);
+
+  /* ④ 完全没有日线的标的：按现价补常量，曲线不再整块消失 / 锯齿 */
+  const noUs = mkMix({ quoteCache: { usAAPL: { symbol: 'usAAPL', price: 210, prevClose: 210 } } });
+  const pm2 = { sh600023: mixPm.sh600023 };
+  const nu = C.marketValueSeries(noUs, 'acc_1', pm2, { fx: mixFx });
+  eq('缺日线 · usAAPL 如实进 missing', nu.missing.join(','), 'usAAPL');
+  close('缺日线 · 按现价 210 补市值 = 5100 + 10×210×7.1', nu.series[0].mv, 20010, 1e-9);
+  const jumps = nu.series.slice(1).map((p, i) => Math.abs(p.nw - nu.series[i].nw));
+  eq('★ 缺日线标的补常量后曲线零跳变', Math.max.apply(null, jumps), 0);
+
+  /* ⑤ 快照不再覆盖数值：有/无快照的 nw 序列逐日一致 */
+  const withSnap = mkMix({ snapshots: {
+    '2026-11-04': { mv: 99999, cost: 1, pred: 0, recv: 0, net: 1, fx: { HKD: 0.92, USD: 7.1 } },
+  } });
+  const ws = C.marketValueSeries(withSnap, 'acc_1', mixPm, { beg: '2026-11-01', end: '2026-11-09', fx: mixFx }).series;
+  const plain = C.marketValueSeries(mkMix(), 'acc_1', mixPm, { beg: '2026-11-01', end: '2026-11-09', fx: mixFx }).series;
+  eq('★ 有/无快照的 nw 序列完全一致', ws.map((p) => p.nw).join(','), plain.map((p) => p.nw).join(','));
+  close('快照日 mv 不被 99999 覆盖（仍按日线 20010）', atMix(ws, '2026-11-04').mv, 20010, 1e-9);
+  eq('快照日仍标 source=snapshot（仅表示当日有快照）', atMix(ws, '2026-11-04').source, 'snapshot');
 
   /* ---------------- 汇总 ---------------- */
   console.log('\n============================================');
