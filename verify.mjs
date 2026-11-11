@@ -1995,15 +1995,18 @@ section('【23】持仓总市值历史（重建 + 快照覆盖）');
   eq('缺行情 · 港股进 missing', resOnly.missing.join(','), 'hk00700');
   eq('缺行情 · 市值只算浙能', resOnly.series[0].mv, 10000);
 
-  /* 快照优先：同日有快照就用快照金额与来源 */
+  /* ★ 统一重建（2026-11-11 定稿）：快照不再覆盖曲线数值，只用于按日汇率与补日期。
+     快照 mv 是「全量持仓 × 实时价」，与日线重建的「收盘价」口径不同，且只在打开
+     App 那天写，稀疏覆盖会让曲线出现台阶 —— 所以同日照样按日线算 54900。 */
   const st2 = JSON.parse(JSON.stringify(st));
-  st2.snapshots = { '2026-06-03': { mv: 12345.67, cost: 1000, pred: 0, recv: 0 } };
+  st2.snapshots = { '2026-06-03': { mv: 12345.67, cost: 1000, pred: 0, recv: 0, fx: { HKD: 0.9, USD: 7.1 } } };
   const res3 = C.marketValueSeries(st2, 'acc_1', priceMap, {});
   const d3 = res3.series.filter(function (p) { return p.date === '2026-06-03'; })[0];
-  eq('快照优先 · 同日取快照金额', d3.mv, 12345.67);
-  eq('快照优先 · source 标为 snapshot', d3.source, 'snapshot');
+  eq('统一重建 · 快照日不覆盖市值（仍按日线 18000 + 36900）', d3.mv, 54900);
+  eq('统一重建 · 快照日仍标 source=snapshot（仅表示当日有快照）', d3.source, 'snapshot');
   const d4 = res3.series.filter(function (p) { return p.date === '2026-06-04'; })[0];
-  eq('快照优先 · 其它日期仍用重建', d4.source, 'kline');
+  eq('统一重建 · 其它日期 source=kline', d4.source, 'kline');
+  eq('统一重建 · 快照日与相邻日无台阶（差值 < 5000）', Math.abs(d4.mv - d3.mv) < 5000, true);
 
   /* 区间过滤 */
   const res4 = C.marketValueSeries(st, 'acc_1', priceMap, { beg: '2026-06-03', end: '2026-06-04' });
@@ -2245,14 +2248,16 @@ section('【25】公司图标解析链 · 中文简称 · 净资产');
   /* 6/4：市值 19500 → 19500 + 100 − 16000 = 3600 */
   eq('净资产 · 6/4 净值 = 19500 + 100 − 16000', res.series[3].nw, 3600);
 
-  /* 快照只覆盖市值，净资产仍用重算出的净投入与累计分红 */
+  /* 统一重建：快照不覆盖任何字段，nw 序列与「完全没有快照」时逐日一致 */
   const st2 = JSON.parse(JSON.stringify(st));
   st2.snapshots = { '2026-06-03': { mv: 12345.67, cost: 1, pred: 0, recv: 0 } };
   const res2 = C.marketValueSeries(st2, 'acc_1', pm, {});
   const d3 = res2.series.filter((p) => p.date === '2026-06-03')[0];
-  eq('净资产 · 快照覆盖市值', d3.mv, 12345.67);
-  eq('净资产 · 快照日净值 = 12345.67 + 100 − 16000', d3.nw, -3554.33);
+  eq('净资产 · 快照日市值仍按日线重建 = 1500×12', d3.mv, 18000);
+  eq('净资产 · 快照日净值 = 18000 + 100 − 16000', d3.nw, 2100);
   eq('净资产 · 快照日净投入仍为 16000', d3.net, 16000);
+  eq('净资产 · 有/无快照的 nw 序列完全一致',
+    res2.series.map((p) => p.nw).join(','), res.series.map((p) => p.nw).join(','));
 
   /* 区间首尾对比支持按指标取值 */
   const sdv = C.seriesDelta(res.series, 'mv');
@@ -2261,6 +2266,23 @@ section('【25】公司图标解析链 · 中文简称 · 净资产');
   eq('seriesDelta(nw) · 起 0 → 末 3600', sdn.diff, 3600);
   eq('seriesDelta(nw) · 起点为 0 时涨幅不显示', sdn.pct, null);
   eq('seriesDelta(mv) · 默认键为 mv', C.seriesDelta(res.series).diff, sdv.diff);
+
+  /* ★ 区间收益（2026-11-11 定稿）：大数字 = nw(末) − nw(首)，
+     收益率分母 = 期初总资产（期初 mv + 期初 recv），不是「期初累计收益」 */
+  const rr = C.rangeReturn(res.series);
+  eq('区间收益 · 全区间 gain = 3600 − 0', rr.gain, 3600);
+  eq('区间收益 · 期初总资产 = 10000 + 0', rr.base, 10000);
+  close('区间收益 · 收益率 = 3600 ÷ 10000', rr.pct, 36, 1e-9);
+  eq('区间收益 · 建仓以来累计总收益 = 3600', rr.cumGain, 3600);
+  eq('区间收益 · 曲线首点归零', rr.points[0].gain, 0);
+  eq('区间收益 · 曲线末点 == 大数字', rr.points[rr.points.length - 1].gain, rr.gain);
+  const rrMid = C.rangeReturn(res.series.slice(2));
+  eq('区间收益 · 6/3~6/4 子区间 gain = 3600 − 2100', rrMid.gain, 1500);
+  eq('区间收益 · 子区间期初总资产 = 18000 + 100', rrMid.base, 18100);
+  close('区间收益 · 子区间收益率 = 1500 ÷ 18100', rrMid.pct, 1500 / 18100 * 100, 1e-9);
+  close('反证 · 旧口径 seriesDelta(nw) 会给出 71.4% 的假数字',
+    C.seriesDelta(res.series.slice(2), 'nw').pct, 1500 / 2100 * 100, 1e-9);
+  eq('区间收益 · 空序列给 null', C.rangeReturn([]), null);
 
   /* 净值曲线与市值曲线必须是两条不同的线 */
   eq('市值与净资产不同（含股息口径生效）',
