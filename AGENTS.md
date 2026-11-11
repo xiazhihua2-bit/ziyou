@@ -165,7 +165,7 @@ $blob = Invoke-RestMethod -Uri "https://api.github.com/repos/xiazhihua2-bit/ziyo
 ## 10. 提交前自检清单
 
 - [ ] `node build.mjs` 通过，记下新的 `sw.js` 版本号
-- [ ] `node verify.mjs` 全绿（当前基线 1529 项） + `node tools/test-usdiv.mjs`（美股分红 / 行情别名 / 按日汇率曲线 117 项）
+- [ ] `node verify.mjs` 全绿（当前基线 1542 项） + `node tools/test-usdiv.mjs`（美股分红 / 行情别名 / 按日汇率曲线 / 区间收益 145 项）
 - [ ] 相关浏览器探针全绿（`tools/shoot-*.mjs`，含 `shoot-pool.mjs`、`shoot-holder.mjs`）
 - [ ] `tools/deploy-pages.mjs` 的 `FILES` / `PRUNE` 已同步本次增删的文件
 - [ ] 没有把 `.token`、OCR Key、`.workbuddy/` 里的内容写进任何要提交的文件
