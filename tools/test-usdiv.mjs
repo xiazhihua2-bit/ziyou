@@ -354,7 +354,7 @@ async function main() {
   eq('QQQ 官方域名兜底', MK.usOfficialDomain('usQQQ'), 'www.invesco.com');
   eq('SCHD 官方域名兜底', MK.usOfficialDomain('usSCHD'), 'www.schwab.com');
   eq('非美股不查域名表', MK.usOfficialDomain('sh600023'), null);
-  eq('图标算法版本已升级（旧 bad 缓存失效）', XJ.fetcher.LOGO_ALGO, 3);
+  eq('图标算法版本已升级（旧 bad 缓存失效）', XJ.fetcher.LOGO_ALGO, 4);
   const doms = await XJ.fetcher.fetchCompanyDomains(['usBRK', 'usQQQ']);
   eq('BRK 域名不用请求东财就能拿到', doms.usBRK, 'www.berkshirehathaway.com');
   eq('QQQ 域名不用请求东财就能拿到', doms.usQQQ, 'www.invesco.com');
