@@ -1316,6 +1316,8 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hc-spark svg{ display:block; width:100%; height:34px; }
 /* 限宽后曲线左侧留白，把价格块推到卡片右缘，避免中间出现一段突兀的空白 */
 .hc-intra .hc-px{ margin-left:auto; }
+.hc-quote-label{ color:var(--text-2); font-size:11.5px; align-self:center; min-width:0; }
+.hc-px .hc-quote-missing{ background:var(--fill); color:var(--text-2); font-size:11px; }
 .hc-px{
   flex:0 0 auto; text-align:right; display:flex; flex-direction:column;
   align-items:flex-end; gap:1px; line-height:1.2;
