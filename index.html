@@ -1334,6 +1334,8 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hc-spark svg{ display:block; width:100%; height:34px; }
 /* 限宽后曲线左侧留白，把价格块推到卡片右缘，避免中间出现一段突兀的空白 */
 .hc-intra .hc-px{ margin-left:auto; }
+.hc-quote-label{ color:var(--text-2); font-size:11.5px; align-self:center; min-width:0; }
+.hc-px .hc-quote-missing{ background:var(--fill); color:var(--text-2); font-size:11px; }
 .hc-px{
   flex:0 0 auto; text-align:right; display:flex; flex-direction:column;
   align-items:flex-end; gap:1px; line-height:1.2;
@@ -2981,6 +2983,12 @@ XJ.market = (function () {
     return s.slice(0, 14);
   }
 
+  function quoteChangePct(price, prevClose, reported) {
+    var pct = U.num(reported);
+    if (pct !== null) return pct;
+    return price > 0 && prevClose > 0 ? (price - prevClose) / prevClose * 100 : null;
+  }
+
   /** 解析腾讯行情原始串（按 ~ 分割后的数组） */
   function parseQuoteFields(symbol, raw) {
     if (!raw || typeof raw !== 'string') return null;
@@ -2988,7 +2996,8 @@ XJ.market = (function () {
     if (f.length < 40) return null;
     var mk = marketOf(symbol);
 
-    var price = U.num(f[3]);
+    var quotedPrice = U.num(f[3]);
+    var price = quotedPrice;
     var prevClose = U.num(f[4]);
     if (!price || price <= 0) price = prevClose;          // 停牌兜底
     if (!price || price <= 0) return null;
@@ -3007,10 +3016,11 @@ XJ.market = (function () {
          否则行情同步会把搜索时的中文名覆盖成英文 */
       name: (mk === 'jp' && XJ.universe && XJ.universe.jpName(codeOf(symbol))) || cleanName(f[1]),
       price: price,
+      hasTradePrice: quotedPrice > 0,
       prevClose: prevClose,
       open: U.num(f[5]),
       change: U.num(f[31]),
-      changePct: U.num(f[32]),
+      changePct: quoteChangePct(quotedPrice, prevClose, f[32]),
       high: U.num(f[33]),
       low: U.num(f[34]),
       volume: U.num(f[36]),
@@ -3094,7 +3104,7 @@ XJ.market = (function () {
     displayCode: displayCode,
     sessionOpen: sessionOpen, hasMinute: hasMinute, hasDailyHistory: hasDailyHistory,
     orgInfoQuery: orgInfoQuery,
-    isQuoteable: isQuoteable, dividendSource: dividendSource,
+    isQuoteable: isQuoteable, dividendSource: dividendSource, quoteChangePct: quoteChangePct,
     supportsDividend: supportsDividend, supportsYieldCurve: supportsYieldCurve,
     dividendSourceLabel: dividendSourceLabel,
     secucodeOf: secucodeOf, logoUrl: logoUrl, logoVerdict: logoVerdict,
@@ -7174,19 +7184,69 @@ XJ.fetcher = (function () {
     });
   }
 
+  var fundNavQueue = Promise.resolve();
   function fetchFundNav(sym) {
-    return new Promise(function (resolve) {
+    var job = fundNavQueue.then(function () { return new Promise(function (resolve) {
       var prev = window.Data_netWorthTrend;
       var had = Object.prototype.hasOwnProperty.call(window, 'Data_netWorthTrend');
-      loadScript(FUND_NAV_URL + XJ.market.codeOf(sym) + '.js', 'utf-8', PLAN_TIMEOUT, function () {
-        var trend = window.Data_netWorthTrend;
+      window.Data_netWorthTrend = undefined;
+      loadScript(FUND_NAV_URL + XJ.market.codeOf(sym) + '.js', 'utf-8', PLAN_TIMEOUT, function (ok) {
+        var trend = ok ? window.Data_netWorthTrend : null;
         var pts = parseFundNav(trend);
         /* 还原全局，避免污染其它基金的读取 */
         if (had) window.Data_netWorthTrend = prev;
         else { try { delete window.Data_netWorthTrend; } catch (e) { window.Data_netWorthTrend = undefined; } }
         resolve(pts);
       });
-    });
+    }); });
+    fundNavQueue = job.catch(function () { return []; });
+    return job;
+  }
+
+  function closingQuoteOf(symbol, points) {
+    var last = points && points[points.length - 1];
+    if (!last || !(last[1] > 0)) return null;
+    var prev = null;
+    for (var i = points.length - 2; i >= 0; i--) {
+      if (points[i][0] < last[0] && points[i][1] > 0) { prev = points[i][1]; break; }
+    }
+    return { symbol: symbol, price: last[1], prevClose: prev,
+      changePct: XJ.market.quoteChangePct(last[1], prev), quoteTime: last[0].replace(/-/g, ''),
+      source: XJ.market.assetType(symbol) === 'of' ? 'nav' : 'close' };
+  }
+
+  function fetchClosingQuotes(symbols, codes) {
+    codes = codes || {};
+    var out = {}, next = 0;
+    function request(code) {
+      var key = 'xjclose_' + (++cbSeq) + '_' + Date.now().toString(36);
+      return new Promise(function (resolve) {
+        loadScript(IDX_KLINE_URL + code + ',day,,,8&_var=' + key, null, QUOTE_TIMEOUT, function (ok) {
+          var points = ok ? parseKline(window[key], code) : [];
+          delete window[key];
+          resolve(points);
+        });
+      });
+    }
+    function worker() {
+      if (next >= symbols.length) return Promise.resolve();
+      var symbol = symbols[next++];
+      var market = XJ.market.marketOf(symbol);
+      var job;
+      if (market === 'of') job = fetchFundNav(symbol);
+      else if (market === 'us') {
+        var base = XJ.market.usQuoteCode(symbol);
+        var candidates = codes[symbol] ? [market + codes[symbol]] : [base + '.OQ', base + '.N', base + '.A'];
+        job = candidates.reduce(function (chain, code) {
+          return chain.then(function (points) { return points.length >= 2 ? points : request(code); });
+        }, Promise.resolve([]));
+      } else job = XJ.market.hasDailyHistory(symbol) ? request(symbol) : Promise.resolve([]);
+      return job.then(function (points) {
+        var quote = closingQuoteOf(symbol, points);
+        if (quote) out[symbol] = quote;
+      }).catch(function () { /* unrelated symbols still proceed */ }).then(worker);
+    }
+    return Promise.all(Array.from({ length: Math.min(symbols.length, 4) }, worker)).then(function () { return out; });
   }
 
   /**
@@ -7380,7 +7440,27 @@ XJ.fetcher = (function () {
    * 每次调整判定规则都要 +1：缓存里低于当前版本的结论会被视为过期并重新解析，
    * 否则用户当天看到的旧结论（尤其是 'bad'）会一直保留到第二天。
    */
-  var LOGO_ALGO = 3;
+  var LOGO_ALGO = 4;
+
+  function bundledLogo(symbol) {
+    if (XJ.market.assetType(symbol) !== 'stock') return '';
+    var pool = XJ.pool515450 && XJ.pool515450.ITEMS;
+    var item = pool && pool.find(function (row) { return row.s === symbol; });
+    return (item && item.logo) || (XJ.holder515450 && XJ.holder515450.logoOf(XJ.market.codeOf(symbol))) || '';
+  }
+
+  function imageLoads(url) {
+    if (!url || typeof Image !== 'function') return Promise.resolve(false);
+    return new Promise(function (resolve) {
+      var img = new Image();
+      var timer = setTimeout(function () { finish(false); }, 4500);
+      function finish(ok) { clearTimeout(timer); img.onload = img.onerror = null; resolve(ok); }
+      img.referrerPolicy = 'no-referrer';
+      img.onload = function () { finish(img.naturalWidth > 0); };
+      img.onerror = function () { finish(false); };
+      img.src = url;
+    });
+  }
 
   /**
    * 解析单只标的的公司标识，返回 { symbol, url, source } 或 null（→ 用文字头像）。
@@ -7393,6 +7473,8 @@ XJ.fetcher = (function () {
    *      因此必须用 checkLogo 的 canvas 采样判定（整张图无彩色即视为占位图）。
    */
   function resolveLogo(symbol, domain) {
+    var embedded = bundledLogo(symbol);
+    if (embedded) return Promise.resolve({ symbol: symbol, url: embedded, source: 'snapshot', algo: LOGO_ALGO });
     var domainStep = function () {
       var cands = XJ.market.logoCandidates(symbol, domain);
       var idx = 0;
@@ -7403,8 +7485,10 @@ XJ.fetcher = (function () {
           /* checkLogo 的 'unknown'（超时 / ICO 解码失败 / 无 fetch）按「可显示」处理：
              <img> 本身不需要 CORS 也不依赖 createImageBitmap，且 UI.avatar 有 onerror 回退。
              早先只认 'ok' 会把真实的官方 ICO 图标误杀成中文头像。 */
-          if (v !== 'bad') return { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO };
-          return next();
+          if (v === 'bad') return next();
+          return (v === 'ok' ? Promise.resolve(true) : imageLoads(url)).then(function (ok) {
+            return ok ? { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO } : next();
+          });
         });
       }
       return next();
@@ -7412,7 +7496,9 @@ XJ.fetcher = (function () {
     var thsStep = function () {
       if (!XJ.market.thsF10Url(symbol)) return Promise.resolve(null);
       return fetchThsLogo(symbol).then(function (u) {
-        return u ? { symbol: symbol, url: u, source: 'ths', algo: LOGO_ALGO } : null;
+        return imageLoads(u).then(function (ok) {
+          return ok ? { symbol: symbol, url: u, source: 'ths', algo: LOGO_ALGO } : null;
+        });
       });
     };
 
@@ -7905,6 +7991,9 @@ XJ.fetcher = (function () {
     resolveLogo: resolveLogo,
     resolveLogos: resolveLogos,
     LOGO_ALGO: LOGO_ALGO,
+    bundledLogo: bundledLogo,
+    closingQuoteOf: closingQuoteOf,
+    fetchClosingQuotes: fetchClosingQuotes,
     fetchThsLogo: fetchThsLogo,
     parseHkRow: parseHkRow,
     parseHkPerShare: parseHkPerShare,
@@ -9883,8 +9972,9 @@ XJ.calc = (function () {
         sellAmount: pos.sellAmount,
         price: price,
         prevClose: q ? U.num(q.prevClose) : null,
-        changePct: q ? U.num(q.changePct) : null,
+        changePct: q ? (q.hasTradePrice === false ? U.num(q.changePct) : XJ.market.quoteChangePct(price, U.num(q.prevClose), q.changePct)) : null,
         quoteTime: q ? q.quoteTime : null,
+        quoteSource: q ? q.source : null,
         marketValue: marketValue,
         unrealized: unrealized,
         unrealizedPct: unrealizedPct,
@@ -12913,6 +13003,7 @@ XJ.store = (function () {
     mergeQuotes: function (quotes) {
       var st = this.state;
       var n = 0;
+      var realtime = 0;
       Object.keys(quotes || {}).forEach(function (sym) {
         var q = quotes[sym];
         if (!q) return;
@@ -12946,8 +13037,9 @@ XJ.store = (function () {
         st.quoteCache[sym] = q;
         st.symbols[sym] = rec;
         n++;
+        if (q.source !== 'close' && q.source !== 'nav') realtime++;
       });
-      if (n) st.settings.lastQuoteAt = XJ.util.nowStamp();
+      if (realtime) st.settings.lastQuoteAt = XJ.util.nowStamp();
       return n;
     },
 
@@ -14673,9 +14765,9 @@ XJ.views.common = (function () {
    * 返回 null 时视图回退到「中文简称」文字头像。
    */
   function logoOf(h) {
-    if (!h || !h.logoUrl) return null;
+    if (!h) return null;
     try { if (XJ.store.state.settings.showLogo === false) return null; } catch (e) { /* 忽略 */ }
-    return h.logoUrl;
+    return XJ.fetcher.bundledLogo(h.symbol) || h.logoUrl || null;
   }
 
   /** 只有 symbol 时的公司图标（分红日历 / 年度总览等列表用） */
@@ -14992,7 +15084,7 @@ XJ.views.overview = (function () {
     var prev = h.prevClose;
     var chgAmt = (h.price !== null && h.price !== undefined && prev) ? h.price - prev : null;
     /* 当日参考盈亏（人民币口径）：持股数 ×（现价 − 昨收）× 该标的币种汇率 */
-    var dayPnl = (chgAmt !== null && h.qty > 0) ? chgAmt * h.qty * (U.n0(h.fxRate) || 1) : null;
+    var dayPnl = (U.num(chg) !== null && chgAmt !== null && h.qty > 0 && h.fxRate > 0) ? chgAmt * h.qty * h.fxRate : null;
 
     /* 股息率分位徽标：与个股详情页同一函数、同一窗口；现价一变就跟着重算。
        口径提示写进 title —— 它和左边那个「股价息」的分子不是同一个（那边只算已实施、按财年基准平均）。 */
@@ -15015,17 +15107,22 @@ XJ.views.overview = (function () {
          【次位】实时价格 —— 小号灰色，退为次要信息
        价差（±金额）已移除；这一行【始终显示】—— 无分时数据时只是没有曲线，
        停牌 / 无缓存 / 非交易时段也能看到涨跌主信息。 */
+    var quoteDay = String(h.quoteTime || '').replace(/\D/g, '').slice(0, 8);
+    var date = quoteDay.length === 8 ? quoteDay.slice(4, 6) + '/' + quoteDay.slice(6, 8) : '';
+    var source = h.quoteSource === 'nav' ? '公布净值' : (h.quoteSource === 'close' ? '日线报价' : '行情');
+    var quoteLabel = h.price === null ? '等待报价' : source + (date ? ' · ' + date : '');
     var intra = '<div class="hc-intra">' +
-      (showMin ? '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' : '') +
+      (showMin ? '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' :
+        '<span class="hc-quote-label">' + U.esc(quoteLabel) + '</span>') +
       '<div class="hc-px">' +
-      (chg === null || chg === undefined ? '' : '<span class="chg chg-lg ' + dir +
+      (chg === null || chg === undefined ? '<span class="chg chg-lg flat hc-quote-missing">暂无涨跌</span>' : '<span class="chg chg-lg ' + dir +
         '" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':pxchg">' + U.signPct(chg) + '</span>') +
       '<b data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':px">' +
-      (h.price === null || h.price === undefined ? '—' : U.money(h.price, 2)) + '</b>' +
-      (showMin && !minToday ? '<i class="hc-at">' + U.esc(U.mdShort(min.date)) + '</i>' : '') +
+      (h.price === null || h.price === undefined ? '—' : U.money(h.price, h.quoteSource === 'nav' ? 4 : 2)) + '</b>' +
+      (showMin && (!minToday || h.quoteSource === 'close') ? '<i class="hc-at">' + U.esc(h.quoteSource === 'close' ? quoteLabel : U.mdShort(min.date)) + '</i>' : '') +
       '</div>' +
       /* 当日参考盈亏（金额）：持股数 ×（现价 − 昨收）× 汇率 —— 报价一变就跟着变 */
-      (dayPnl === null ? '' : '<div class="hc-daypnl ' + U.dirClass(dayPnl) + '">当日 ' +
+      (dayPnl === null ? '' : '<div class="hc-daypnl ' + U.dirClass(dayPnl) + '">' + (h.quoteSource === 'nav' ? '净值变动 ' : '较昨收 ') +
         U.signMoney(dayPnl, 0) + '</div>') +
       '</div>';
 
@@ -19842,6 +19939,37 @@ XJ.views.symbol = (function () {
 
   /* ---------------- 行情与分红数据刷新（与跨设备同步无关） ---------------- */
   var syncing = false;
+  var closingQuotesPending = Object.create(null);
+
+  function refreshHoldingCloses(symbols, live) {
+    var state = S.state;
+    var codes = {}, wanted = [];
+    symbols.forEach(function (symbol) {
+      if (closingQuotesPending[symbol] || (live[symbol] && U.num(live[symbol].changePct) !== null)) return;
+      var record = state.symbols[symbol];
+      if (record && record.quoteCode) codes[symbol] = record.quoteCode;
+      closingQuotesPending[symbol] = true;
+      wanted.push(symbol);
+    });
+    if (!wanted.length) return;
+    XJ.fetcher.fetchClosingQuotes(wanted, codes)
+      .then(function (fallback) {
+        if (S.state !== state) return;
+        var quotes = {};
+        wanted.forEach(function (symbol) {
+          var quote = fallback[symbol];
+          var current = state.quoteCache[symbol];
+          var day = current && String(current.quoteTime || '').replace(/\D/g, '').slice(0, 8);
+          if (!quote || (day && day > quote.quoteTime)) return;
+          if (current && day === quote.quoteTime && U.num(current.changePct) !== null) return;
+          if (current && !day && U.num(current.changePct) !== null) return;
+          quotes[symbol] = quote;
+        });
+        if (S.mergeQuotes(quotes)) S.commitNow(null);
+      }).catch(function () { /* keep the last usable quote */ }).finally(function () {
+        wanted.forEach(function (symbol) { delete closingQuotesPending[symbol]; });
+      });
+  }
 
   function mergeRates(rates) {
     var previous = S.state.settings.fx || {};
@@ -19878,6 +20006,8 @@ XJ.views.symbol = (function () {
     render();
 
     var quoteCount = 0;
+    var listedCount = syms.filter(XJ.market.isQuoteable).length;
+    ensureLogosFor(syms, null, !opts.silent);
     return Promise.all([
       XJ.fetcher.fetchQuotes(syms),
       XJ.fetcher.fetchFX().catch(function () { return {}; }),
@@ -19887,7 +20017,8 @@ XJ.views.symbol = (function () {
 
       quoteCount = syms.filter(function (symbol) { return !!quotes[symbol]; }).length;
       S.mergeQuotes(quotes);
-      if (!quoteCount) S.ui.offline = true;
+      refreshHoldingCloses(syms, quotes);
+      if (listedCount && !quoteCount) S.ui.offline = true;
 
       /* 当日分时：任何时段都请求（收盘后接口照样返回当天完整数据，落盘保存）。
          放在行情合并之后，因为美股分时需要行情里带交易所后缀的代码。
@@ -19935,16 +20066,16 @@ XJ.views.symbol = (function () {
         syncing = false;
         S.commitNow(null);
         if (!opts.silent) {
-          var msg = '行情 ' + quoteCount + '/' + syms.length + ' · 分红方案 ' + planCount + ' 条';
+          var msg = '实时行情 ' + quoteCount + '/' + listedCount + ' · 分红方案 ' + planCount + ' 条';
+          if (listedCount < syms.length) msg += ' · 场外基金另取公布净值';
           if (emptyPlans.length) msg += ' · ' + emptyPlans.length + ' 只无分红记录';
-          if (quoteCount < syms.length || failedPlans.length) msg += ' · 部分未更新，可再次刷新';
+          if (quoteCount < listedCount || failedPlans.length) msg += ' · 部分未更新，可再次刷新';
           if (recAdded) msg += ' · 自动登记 ' + recAdded + ' 笔';
           if (healed) msg += '，补全 ' + healed + ' 个名称';
           if (unsupported.length) msg += '；' + unsupported.length + ' 只标的（日股等）暂无分红数据源，可手工补录';
           UI.toast(msg);
         }
         /* 收尾工作放后台：官方图标解析、历史行情、对比指数（都可能慢，不该卡住主流程） */
-        resolveLogosNow(false);
         ensureHistory(false);
         ensureKline(false);
         ensureYieldHistory(false);
@@ -20083,7 +20214,7 @@ XJ.views.symbol = (function () {
    * 去重：已有 ok 结论 / 今天已试过 / 在途请求，一律跳过（logoStale 同口径）。
    */
   var logoPending = {};
-  function ensureLogosFor(syms, onDone) {
+  function ensureLogosFor(syms, onDone, force) {
     /* 只在真拿到新图标时回调：空结果也回调会让调用方（搜索列表）反复重渲染再入本函数 */
     function finish(got) { if (got && onDone) { try { onDone(got); } catch (e) { /* 渲染层异常不拦取数 */ } } return got; }
     if (!S.state) return Promise.resolve(finish(0));
@@ -20100,7 +20231,7 @@ XJ.views.symbol = (function () {
            结尾的 commitNow 会把记录一并落盘 */
         rec = S.state.symbols[sym] = M.symbolRecord(sym, {});
       }
-      if (!XJ.market.logoStale(rec, today, algo)) return;
+      if (!force && !XJ.market.logoStale(rec, today, algo)) return;
       logoPending[sym] = 1;
       need.push({ symbol: sym, domain: rec.domain || null });
     });
@@ -20108,7 +20239,7 @@ XJ.views.symbol = (function () {
 
     return Promise.resolve().then(function () {
       /* 自选股没走过持仓的域名抓取：先补官网域名（A/港/美有 F10 源），再验真候选 */
-      var miss = need.filter(function (it) { return !it.domain; }).map(function (it) { return it.symbol; });
+      var miss = need.filter(function (it) { return !it.domain && !XJ.fetcher.bundledLogo(it.symbol); }).map(function (it) { return it.symbol; });
       if (!miss.length) return null;
       return XJ.fetcher.fetchCompanyDomains(miss).then(function (m) {
         need.forEach(function (it) {
@@ -22613,6 +22744,7 @@ XJ.views.symbol = (function () {
 
     XJ.fetcher.fetchQuotes([sym]).then(function (q) {
       if (S.mergeQuotes(q)) S.commitNow(null);
+      refreshHoldingCloses([sym], q || {});
       return ensureSymbolAssets(sym);
     });
     pullPlansFor(sym);
