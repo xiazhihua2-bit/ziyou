@@ -106,7 +106,7 @@ XJ.model = (function () {
 
   /* ---- 首页年度分红卡可选指标（用户可自选 1~6 个） ---- */
   var HERO_METRICS = [
-    { key: 'receivedThisYear', label: '今年已收',    hint: '本年度已到账的分红合计' },
+    { key: 'receivedThisYear', label: '今年登记',    hint: '本年度已登记的分红，包含尚未核对实收的自动估算' },
     { key: 'totalCost',        label: '总成本',      hint: '按所选成本口径计算的投入合计' },
     { key: 'totalMarketValue', label: '总市值',      hint: '最近交易日收盘价 × 持股数，多币种按当日汇率折算为人民币' },
     { key: 'costYield',        label: '成本息率',    hint: '预测年度分红 ÷ 持仓总成本，反映实际投入资金的回报率' },
@@ -719,6 +719,7 @@ XJ.model = (function () {
       quoteCache: state.quoteCache,
       watchlist: state.watchlist,
       priceHistory: state.priceHistory,
+      snapshots: state.snapshots,
       indexHistory: state.indexHistory,
       klineCache: state.klineCache,
       /* 股息率曲线的收盘价与余额宝基准：都是要跑网络才拿得到的历史数据，
@@ -752,6 +753,7 @@ XJ.model = (function () {
     if (raw.quoteCache && typeof raw.quoteCache === 'object') out.quoteCache = raw.quoteCache;
     if (raw.watchlist && typeof raw.watchlist === 'object') out.watchlist = raw.watchlist;
     if (raw.priceHistory && typeof raw.priceHistory === 'object') out.priceHistory = raw.priceHistory;
+    if (raw.snapshots && typeof raw.snapshots === 'object') out.snapshots = raw.snapshots;
     if (raw.indexHistory && typeof raw.indexHistory === 'object') out.indexHistory = raw.indexHistory;
     if (raw.klineCache && typeof raw.klineCache === 'object') out.klineCache = raw.klineCache;
     if (raw.yieldHistory && typeof raw.yieldHistory === 'object') out.yieldHistory = raw.yieldHistory;
