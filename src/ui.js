@@ -126,6 +126,8 @@ XJ.ui = (function () {
       开 A→关 A→开 B 的流程里 B 会被挂起的清场定时器一起删掉（实测 uitest 全线挂）。
       immediate=true 或 reduced-motion：不播动画。 */
   var sheetHist = null;
+  var dismissSheet = null;
+  var returnFocus = null;
 
   function closeSheet(immediate, silentHist) {
     var root = document.getElementById('modal-root');
@@ -135,8 +137,13 @@ XJ.ui = (function () {
     var hid = sheetHist && sheetHist.id;
     var animate = !immediate && !(XJ.anim && XJ.anim.reduced());
     var ghost = animate ? mask.cloneNode(true) : null;
+    var dismiss = dismissSheet;
+    dismissSheet = null;
     root.innerHTML = '';
     sheetHist = null;
+    var trigger = returnFocus;
+    returnFocus = null;
+    if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
     if (ghost) {
       ghost.classList.add('closing');
       var host = document.createElement('div');
@@ -149,24 +156,41 @@ XJ.ui = (function () {
     /* 入栈的内容型 sheet 被 UI 关闭时通知 app 弹掉对应历史条目（栈与画面同步）；
        silentHist = 调用方自己在同步栈（openSheet 顶替旧层 / popstate 还原），不要再 back() */
     if (hid && !silentHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(hid);
+    if (dismiss) dismiss();
   }
 
   function openSheet(opts) {
     opts = opts || {};
     var prevHist = sheetHist && sheetHist.id;
+    var trigger = returnFocus || document.activeElement;
     closeSheet(false, true);
+    returnFocus = trigger;
     var root = document.getElementById('modal-root');
     var mask = document.createElement('div');
     mask.className = 'mask';
     var inner = '<div class="sheet-grip"></div>' +
       (opts.title ? '<h3' + (opts.center ? ' class="center"' : '') + '>' + U.esc(opts.title) + '</h3>' : '') +
       (opts.html || '');
-    mask.innerHTML = '<div class="sheet">' + inner + '</div>';
+    mask.innerHTML = '<div class="sheet" role="dialog" aria-modal="true" aria-label="' +
+      U.esc(opts.title || '操作面板') + '" tabindex="-1">' + inner + '</div>';
     mask.addEventListener('click', function (e) { if (e.target === mask) closeSheet(); });
     root.appendChild(mask);
     sheetHist = opts.hist ? { id: opts.hist, arg: opts.histArg === undefined ? null : opts.histArg } : null;
     var sheet = mask.querySelector('.sheet');
+    dismissSheet = opts.onDismiss || null;
+    mask.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { ev.preventDefault(); closeSheet(); }
+      if (ev.key !== 'Tab') return;
+      var focusable = Array.from(sheet.querySelectorAll('button, input, select, textarea, a[href], [tabindex]'))
+        .filter(function (el) { return !el.disabled && el.tabIndex >= 0 && el.getClientRects().length; });
+      var index = focusable.indexOf(document.activeElement);
+      if (!focusable.length || index < 0 || (ev.shiftKey ? index === 0 : index === focusable.length - 1)) {
+        ev.preventDefault();
+        (focusable[ev.shiftKey ? focusable.length - 1 : 0] || sheet).focus();
+      }
+    });
     if (opts.onMount) opts.onMount(sheet);
+    if (!sheet.contains(document.activeElement)) sheet.focus({ preventScroll: true });
     /* 入栈 sheet 被无栈 sheet 顶替（如分组选择里点「新建分组」开表单）：
        旧 sheet 不会再回来，静默弹掉它的历史条目，保持栈与画面同步 */
     if (prevHist && !sheetHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(prevHist);
@@ -182,13 +206,14 @@ XJ.ui = (function () {
     return new Promise(function (resolve) {
       openSheet({
         title: opts.title || '确认操作',
+        onDismiss: function () { resolve(false); },
         html:
           '<p class="muted" style="font-size:13.5px;line-height:1.7;margin:0 0 16px">' + (opts.html || U.esc(opts.message || '')) + '</p>' +
           '<button class="btn-block ' + (opts.danger ? 'danger' : '') + '" data-act="__confirm_ok">' + U.esc(opts.confirmText || '确定') + '</button>' +
           '<button class="btn-block ghost" data-act="__confirm_cancel">取消</button>',
         onMount: function () {
-          on('__confirm_ok', function () { closeSheet(); resolve(true); });
-          on('__confirm_cancel', function () { closeSheet(); resolve(false); });
+          on('__confirm_ok', function () { resolve(true); closeSheet(); });
+          on('__confirm_cancel', function () { closeSheet(); });
         },
       });
     });
