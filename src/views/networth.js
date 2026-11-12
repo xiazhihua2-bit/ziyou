@@ -122,6 +122,10 @@ XJ.views.networth = (function () {
   function render(ns) {
     ns = ns || '';
     var st = XJ.store;
+    var holdings = XJ.calc.holdings(st.state, st.acc());
+    if (holdings.some(function (h) { return h.fxRate === null; })) {
+      return '<div class="card nw-card"><h2>资产走势</h2><p class="muted">部分持仓缺少汇率，暂无法计算完整的组合走势。</p></div>';
+    }
     var metricV = getUI(ns, 'metric');
     var metric = (metricV === 'nw' || metricV === 'ret') ? metricV : 'mv';
     var mode = getUI(ns, 'mode') === 'candle' ? 'candle' : 'line';
@@ -548,6 +552,7 @@ XJ.views.networth = (function () {
       notes.push('有 ' + b.res.missing.length + ' 只标的没有历史行情（场外基金净值或长期停牌），' +
         '按现价作常量计入市值，避免曲线在这些日子整块缺失');
     }
+    if (!isToday && b.res.missingFx) notes.push('部分历史日期缺少汇率，曲线只包含可折算的金额');
     if (isToday && intradayMissing && intradayMissing.length) {
       notes.push('有 ' + intradayMissing.length + ' 只标的没有当日分时（场外基金 / 美股 / 长期停牌），' +
         '不参与逐分钟曲线' + (metric === 'nw' ? '（当日收益里按其最新市值、按币种折算作常量计入，日内不波动）' : '，未计入曲线'));
@@ -561,10 +566,7 @@ XJ.views.networth = (function () {
 
   /** 当日分时的汇率取值（HKD / USD 换人民币，未配置时按 1） */
   function fxRate(st, cur) {
-    var fx = st.state.settings.fx || {};
-    if (cur === 'HKD') return U.num(fx.HKD) || 1;
-    if (cur === 'USD') return U.num(fx.USD) || 1;
-    return 1;
+    return XJ.calc.fxRate(cur, st.state.settings.fx);
   }
 
   /**
