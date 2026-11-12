@@ -48,7 +48,7 @@ XJ.fetcher = (function () {
         if (!ok) return resolve(out);
         curs.forEach(function (cur) {
           var v = XJ.market.parseFx(window['v_' + XJ.market.FX_SYMBOL[cur]]);
-          if (v) out[cur] = v;
+          if (v) out[cur] = cur === 'JPY' ? 1 / v : v;
         });
         resolve(out);
       });
@@ -220,7 +220,14 @@ XJ.fetcher = (function () {
   }
 
   /** 拉取单个标的的全部分红方案（JSONP） */
-  function fetchPlans(symbol) {
+  function dividendRows(response) {
+    if (!response) return null;
+    if (response.result && Array.isArray(response.result.data)) return response.result.data;
+    if (response.success === true || /没有相关数据|暂无数据/.test(response.message || '')) return [];
+    return null;
+  }
+
+  function fetchPlans(symbol, distinguishFailure) {
     var code = XJ.model.codeOf(symbol);
     var cbName = 'xjcb_' + (++cbSeq) + '_' + Date.now().toString(36);
     var url = PLAN_URL +
@@ -250,9 +257,10 @@ XJ.fetcher = (function () {
         // onload 但回调没触发的情况由 timeout 兜底
       });
     }).then(function (res) {
-      if (!res || !res.result || !Array.isArray(res.result.data)) return [];
+      var rows = dividendRows(res);
+      if (!rows) return distinguishFailure ? null : [];
       var parsed = [];
-      res.result.data.forEach(function (row) {
+      rows.forEach(function (row) {
         var p = parsePlanRow(row, symbol);
         if (p) parsed.push(p);
       });
@@ -271,7 +279,7 @@ XJ.fetcher = (function () {
     function step() {
       if (i >= symbols.length) return Promise.resolve(result);
       var sym = symbols[i++];
-      return fetchPlans(sym).then(function (plans) {
+      return fetchPlans(sym, true).then(function (plans) {
         result[sym] = plans;
         if (onProgress) onProgress(i, symbols.length, sym);
         if (i >= symbols.length) return result;
@@ -322,7 +330,7 @@ XJ.fetcher = (function () {
   }
 
   /** 抓某一年的全市场基金分红（分页），返回已解析行数组 */
-  function fetchFundDivYear(year, onProgress) {
+  function fetchFundDivYear(year, onProgress, onFailure) {
     var all = [];
     var page = 1;
     var totalPages = 1;
@@ -331,7 +339,7 @@ XJ.fetcher = (function () {
       if (page > totalPages || page > FUND_MAX_PAGES) return Promise.resolve(all);
       var cur = page;
       return fetchFundDivPage(year, cur).then(function (res) {
-        if (!res || !res.data) { totalPages = 0; return all; }
+        if (!res || !res.data) { if (onFailure) onFailure(); return all; }
         res.data.forEach(function (r) {
           var row = parseFundDivRow(r);
           if (row) all.push(row);
@@ -347,7 +355,7 @@ XJ.fetcher = (function () {
   }
 
   /** 只为指定基金代码抓分红（跨多个年份） */
-  function fetchFundDividends(codes, years, onProgress) {
+  function fetchFundDividends(codes, years, onProgress, onFailure) {
     var wanted = {};
     (codes || []).forEach(function (c) { wanted[String(c)] = true; });
     if (!Object.keys(wanted).length) return Promise.resolve({});
@@ -356,7 +364,7 @@ XJ.fetcher = (function () {
     var chain = Promise.resolve();
     (years || []).forEach(function (y) {
       chain = chain.then(function () {
-        return fetchFundDivYear(y, onProgress).then(function (rows) {
+        return fetchFundDivYear(y, onProgress, onFailure).then(function (rows) {
           rows.forEach(function (r) {
             if (!wanted[r.fundCode]) return;
             (out[r.fundCode] || (out[r.fundCode] = [])).push(r);
@@ -547,7 +555,7 @@ XJ.fetcher = (function () {
     };
   }
 
-  function fetchHkPlans(symbol) {
+  function fetchHkPlans(symbol, distinguishFailure) {
     var code = XJ.model.codeOf(symbol);
     var cbName = 'xjhk_' + (++cbSeq) + '_' + Date.now().toString(36);
     var url = HK_PLAN_URL +
@@ -572,9 +580,10 @@ XJ.fetcher = (function () {
         if (!ok) { lastError = new Error('港股分红接口请求失败'); finish(null); }
       });
     }).then(function (res) {
-      if (!res || !res.result || !Array.isArray(res.result.data)) return [];
+      var rows = dividendRows(res);
+      if (!rows) return distinguishFailure ? null : [];
       var out = [], seen = {};
-      res.result.data.forEach(function (row) {
+      rows.forEach(function (row) {
         var p = parseHkRow(row, symbol);
         if (p && !seen[p.planId]) { seen[p.planId] = true; out.push(p); }
       });
@@ -587,7 +596,7 @@ XJ.fetcher = (function () {
     function step() {
       if (i >= symbols.length) return Promise.resolve(result);
       var sym = symbols[i++];
-      return fetchHkPlans(sym).then(function (plans) {
+      return fetchHkPlans(sym, true).then(function (plans) {
         result[sym] = plans;
         if (onProgress) onProgress(i, symbols.length, sym);
         if (i >= symbols.length) return result;
@@ -1482,6 +1491,8 @@ XJ.fetcher = (function () {
     });
 
     var out = {};
+    var failed = [];
+    var fundFailed = false;
     var chain = Promise.resolve();
 
     if (groups.cn.length) {
@@ -1506,8 +1517,9 @@ XJ.fetcher = (function () {
         var y = new Date().getFullYear();
         return fetchFundDividends(codes, [y, y - 1, y - 2], function (page, pages, year) {
           if (onProgress) onProgress('fund', page, pages, null, '基金分红 ' + year + ' 年');
-        });
+        }, function () { fundFailed = true; });
       }).then(function (byCode) {
+        if (fundFailed) failed.push.apply(failed, groups.fund);
         groups.fund.forEach(function (sym) {
           var rows = byCode[XJ.model.codeOf(sym)] || [];
           out[sym] = rows.map(function (r) { return fundRowToPlan(r, sym); });
@@ -1520,14 +1532,22 @@ XJ.fetcher = (function () {
         /* 整批失败也只吞掉美股这一组：返回空方案，不 reject、不拖垮 cn/hk/fund */
         return XJ.usdiv.fetchAll(groups.us, function (i, t, sym) {
           if (onProgress) onProgress('us', i, t, sym, '美股分红方案');
-        }).catch(function () { return { plans: {}, noData: groups.us.slice() }; });
+        }).catch(function () { return { plans: {}, failed: groups.us.slice() }; });
       }).then(function (m) {
+        failed.push.apply(failed, m.failed || []);
         Object.keys(m.plans || {}).forEach(function (k) { out[k] = m.plans[k]; });
       });
     }
 
     return chain.then(function () {
-      return { plans: out, unsupported: groups.none.slice(), groups: groups };
+      Object.keys(out).forEach(function (symbol) {
+        if (out[symbol] !== null) return;
+        failed.push(symbol);
+        delete out[symbol];
+      });
+      return { plans: out, failed: failed, noData: Object.keys(out).filter(function (symbol) {
+        return !out[symbol].length && failed.indexOf(symbol) < 0;
+      }), unsupported: groups.none.slice(), groups: groups };
     });
   }
 
