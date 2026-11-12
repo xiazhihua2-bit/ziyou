@@ -175,6 +175,37 @@
 
   /* ---------------- 行情与分红数据刷新（与跨设备同步无关） ---------------- */
   var syncing = false;
+  var closingQuotesPending = Object.create(null);
+
+  function refreshHoldingCloses(symbols, live) {
+    var state = S.state;
+    var codes = {}, wanted = [];
+    symbols.forEach(function (symbol) {
+      if (closingQuotesPending[symbol] || (live[symbol] && U.num(live[symbol].changePct) !== null)) return;
+      var record = state.symbols[symbol];
+      if (record && record.quoteCode) codes[symbol] = record.quoteCode;
+      closingQuotesPending[symbol] = true;
+      wanted.push(symbol);
+    });
+    if (!wanted.length) return;
+    XJ.fetcher.fetchClosingQuotes(wanted, codes)
+      .then(function (fallback) {
+        if (S.state !== state) return;
+        var quotes = {};
+        wanted.forEach(function (symbol) {
+          var quote = fallback[symbol];
+          var current = state.quoteCache[symbol];
+          var day = current && String(current.quoteTime || '').replace(/\D/g, '').slice(0, 8);
+          if (!quote || (day && day > quote.quoteTime)) return;
+          if (current && day === quote.quoteTime && U.num(current.changePct) !== null) return;
+          if (current && !day && U.num(current.changePct) !== null) return;
+          quotes[symbol] = quote;
+        });
+        if (S.mergeQuotes(quotes)) S.commitNow(null);
+      }).catch(function () { /* keep the last usable quote */ }).finally(function () {
+        wanted.forEach(function (symbol) { delete closingQuotesPending[symbol]; });
+      });
+  }
 
   function mergeRates(rates) {
     var previous = S.state.settings.fx || {};
@@ -211,6 +242,8 @@
     render();
 
     var quoteCount = 0;
+    var listedCount = syms.filter(XJ.market.isQuoteable).length;
+    ensureLogosFor(syms, null, !opts.silent);
     return Promise.all([
       XJ.fetcher.fetchQuotes(syms),
       XJ.fetcher.fetchFX().catch(function () { return {}; }),
@@ -220,7 +253,8 @@
 
       quoteCount = syms.filter(function (symbol) { return !!quotes[symbol]; }).length;
       S.mergeQuotes(quotes);
-      if (!quoteCount) S.ui.offline = true;
+      refreshHoldingCloses(syms, quotes);
+      if (listedCount && !quoteCount) S.ui.offline = true;
 
       /* 当日分时：任何时段都请求（收盘后接口照样返回当天完整数据，落盘保存）。
          放在行情合并之后，因为美股分时需要行情里带交易所后缀的代码。
@@ -268,16 +302,16 @@
         syncing = false;
         S.commitNow(null);
         if (!opts.silent) {
-          var msg = '行情 ' + quoteCount + '/' + syms.length + ' · 分红方案 ' + planCount + ' 条';
+          var msg = '实时行情 ' + quoteCount + '/' + listedCount + ' · 分红方案 ' + planCount + ' 条';
+          if (listedCount < syms.length) msg += ' · 场外基金另取公布净值';
           if (emptyPlans.length) msg += ' · ' + emptyPlans.length + ' 只无分红记录';
-          if (quoteCount < syms.length || failedPlans.length) msg += ' · 部分未更新，可再次刷新';
+          if (quoteCount < listedCount || failedPlans.length) msg += ' · 部分未更新，可再次刷新';
           if (recAdded) msg += ' · 自动登记 ' + recAdded + ' 笔';
           if (healed) msg += '，补全 ' + healed + ' 个名称';
           if (unsupported.length) msg += '；' + unsupported.length + ' 只标的（日股等）暂无分红数据源，可手工补录';
           UI.toast(msg);
         }
         /* 收尾工作放后台：官方图标解析、历史行情、对比指数（都可能慢，不该卡住主流程） */
-        resolveLogosNow(false);
         ensureHistory(false);
         ensureKline(false);
         ensureYieldHistory(false);
@@ -416,7 +450,7 @@
    * 去重：已有 ok 结论 / 今天已试过 / 在途请求，一律跳过（logoStale 同口径）。
    */
   var logoPending = {};
-  function ensureLogosFor(syms, onDone) {
+  function ensureLogosFor(syms, onDone, force) {
     /* 只在真拿到新图标时回调：空结果也回调会让调用方（搜索列表）反复重渲染再入本函数 */
     function finish(got) { if (got && onDone) { try { onDone(got); } catch (e) { /* 渲染层异常不拦取数 */ } } return got; }
     if (!S.state) return Promise.resolve(finish(0));
@@ -433,7 +467,7 @@
            结尾的 commitNow 会把记录一并落盘 */
         rec = S.state.symbols[sym] = M.symbolRecord(sym, {});
       }
-      if (!XJ.market.logoStale(rec, today, algo)) return;
+      if (!force && !XJ.market.logoStale(rec, today, algo)) return;
       logoPending[sym] = 1;
       need.push({ symbol: sym, domain: rec.domain || null });
     });
@@ -441,7 +475,7 @@
 
     return Promise.resolve().then(function () {
       /* 自选股没走过持仓的域名抓取：先补官网域名（A/港/美有 F10 源），再验真候选 */
-      var miss = need.filter(function (it) { return !it.domain; }).map(function (it) { return it.symbol; });
+      var miss = need.filter(function (it) { return !it.domain && !XJ.fetcher.bundledLogo(it.symbol); }).map(function (it) { return it.symbol; });
       if (!miss.length) return null;
       return XJ.fetcher.fetchCompanyDomains(miss).then(function (m) {
         need.forEach(function (it) {
@@ -2946,6 +2980,7 @@
 
     XJ.fetcher.fetchQuotes([sym]).then(function (q) {
       if (S.mergeQuotes(q)) S.commitNow(null);
+      refreshHoldingCloses([sym], q || {});
       return ensureSymbolAssets(sym);
     });
     pullPlansFor(sym);
