@@ -2538,7 +2538,7 @@ section('【28】公司图标解析顺序与缓存失效');
   const MK = XJ.market, F = XJ.fetcher;
 
   /* 判定规则版本：升级后旧缓存必须失效，否则用户当天看不到修复效果 */
-  eq('LOGO_ALGO 已升到 3（美股官方 ICO 不再被 unknown 误杀）', F.LOGO_ALGO, 3);
+  eq('图标规则升级后重新检查旧缓存', F.LOGO_ALGO, 4);
 
   /* ★ 回归：同花顺给雅戈尔的是黑白字标（maxSat=0），
        如果对同花顺结果也做色彩判定，真标识会被误杀 —— 所以同花顺结果不走 logoVerdict */
