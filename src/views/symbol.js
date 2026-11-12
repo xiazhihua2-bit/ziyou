@@ -6,8 +6,7 @@ XJ.views.symbol = (function () {
      非美股沿用原「按 cnyRateOf 折人民币」口径；
      美股按 settings.fx.USD 实时汇率折 ¥，汇率缺失时显示 USD 原币（绝不按 1 折算）。 */
   function divMoney(st, symbol, amount, dec) {
-    if (XJ.market.assetType(symbol) === 'us') return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
-    return U.moneySign(amount * XJ.calc.cnyRateOf(st.state, symbol), dec);
+    return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
   }
 
   /* 交易明细是账户【原币流水】：美股一律用 $ 原币（买入金额、分红摊薄都按 USD 记账）。
@@ -589,7 +588,7 @@ XJ.views.symbol = (function () {
     html += '<div class="card flush" style="margin-bottom:12px">';
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0"><h2>分红记录</h2>' +
       '<div class="spacer"></div><span class="hint">累计 ' +
-      divMoney(st, symbol, U.sum(recs, function (r) { return r.amount; })) + '</span>' +
+      XJ.calc.dividendAmountText(XJ.calc.dividendAmounts(st.state, recs, true)) + '</span>' +
       '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div>' +
       (XJ.usdiv.isUs(symbol) ? '<div class="tiny" style="padding:0 16px 8px">' + U.esc(XJ.usdiv.rateNote(st.state, symbol)) + '</div>' : '') +
       '</div>';
@@ -599,11 +598,18 @@ XJ.views.symbol = (function () {
       html += '<div class="table-wrap"><table class="tbl"><thead><tr>' +
         '<th>到账日</th><th>每股(税前)</th><th>数量</th><th>金额</th></tr></thead><tbody>';
       recs.forEach(function (r) {
+        var plan = st.state.plans[r.planId];
+        var needsReview = XJ.calc.autoDividendNeedsReview(st.state, r);
+        var dates = plan ? [['登记', plan.equityRecordDate], ['除息', plan.exDividendDate], ['公告派息', plan.payoutDate]]
+          .filter(function (d) { return d[1]; }).map(function (d) { return U.esc(d[0] + ' ' + d[1]); }).join('<br>') : '';
         html += '<tr><td>' + U.esc(r.exDividendDate) + '<div class="tiny">' +
-          (r.source === 'AUTO' ? '自动' : '手动') + '</div></td>' +
+          (needsReview ? '待核对' : (r.source === 'AUTO' ? '自动估算 · 税前' : '手动登记')) +
+          (dates ? '<br>' + dates : '') + '</div></td>' +
           '<td>' + (r.perShareAmount > 0 ? U.money(r.perShareAmount, 4) : '<span class="muted">—</span>') + '</td>' +
           '<td>' + (r.qtyAtRecord > 0 ? U.qtyText(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
-          '<td class="c-div">' + divMoney(st, symbol, r.amount) +
+          '<td class="c-div">' + U.esc(XJ.market.currency(symbol)) + ' ' + U.money(r.amount) +
+          '<div class="tiny">' + XJ.usdiv.moneyText(st.state, symbol, r.amount, undefined, r.exDividendDate) + '</div>' +
+          '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '" data-id="' + U.esc(r.recId) + '">核对</button>' +
           (r.source === 'MANUAL'
             ? '<div><button class="tiny" style="color:var(--up);margin-top:2px" data-act="deleteReceive" data-id="' +
             U.esc(r.recId) + '">删除</button></div>'
