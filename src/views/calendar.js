@@ -32,10 +32,10 @@ XJ.views.calendar = (function () {
       '<span class="pend-ico">💌</span>' +
       '<span class="pend-hmain">' +
       '<span class="pend-title">你有 <b>' + pend.count + '</b> 只持仓已公布分红方案，等待除权日</span>' +
-      '<span class="pend-sub" data-anim="A">预计共可得 <b>' + U.moneySign(pend.total) + '</b>' +
+      '<span class="pend-sub" data-anim="A">预计共可得 <b>' + XJ.calc.dividendAmountText(pend.amounts) + '</b>' +
       /* 除权日还没公告的那部分金额是估算，这里如实说明，不混进确定值里 */
       (pend.undatedTotal > 0
-        ? '<i class="pend-subnote" data-anim="A">其中 ' + U.moneySign(pend.undatedTotal) + ' 除权日待定</i>'
+        ? '<i class="pend-subnote" data-anim="A">其中 ' + XJ.calc.dividendAmountText(pend.undatedAmounts) + ' 除权日待定</i>'
         : '') +
       '</span>' +
       '</span>' +
@@ -50,10 +50,10 @@ XJ.views.calendar = (function () {
           '<span class="pi-row">' +
           '<span class="pi-name">' + U.esc(it.name) +
           '<i class="pi-tag">' + U.esc(XJ.market.displayCode(it.symbol)) + '</i></span>' +
-          '<span class="pi-amt" data-anim="A">' + U.moneySign(it.amount) + '</span>' +
+          '<span class="pi-amt" data-anim="A">' + XJ.usdiv.moneyText(st.state, it.symbol, it.amount) + '</span>' +
           '</span>' +
           '<span class="pi-row">' +
-          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.qtyText(it.qty) + '股</span>' +
+          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' ' + U.esc(it.currency) + ' · 持有 ' + U.qtyText(it.qty) + '股</span>' +
           '<span class="pi-when">' + (it.exDate
             ? '除权日 ' + U.esc(String(it.exDate).slice(5))
             : '<i class="pi-tbd">除权日待定</i>') +
@@ -79,7 +79,7 @@ XJ.views.calendar = (function () {
     var right = e.amount === null || e.amount === undefined
       ? ''
       : '<div class="row-v c-div">' + amtTxt + '</div>';
-    var sub = (e.type === 'payout')
+    var sub = e.needsReview ? '分红资格待核对，可按券商记录补录' : (e.type === 'payout')
       ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股 · ' +
       (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + amtTxt +
       (XJ.usdiv.isUs(e.symbol) ? '（税前 USD）' : '')
@@ -120,10 +120,12 @@ XJ.views.calendar = (function () {
       if (selDate === ds && ds !== today) cls += ' sel';
       var dots = ['register', 'exdiv', 'payout'].filter(function (t) { return types[t]; })
         .map(function (t) { return '<span class="cal-dot ' + t + '"></span>'; }).join('');
-      cells += '<div class="' + cls + '"' + (evs.length ? ' data-act="selDate" data-date="' + ds + '"' : '') + '>' +
+      var tag = evs.length ? 'button' : 'div';
+      cells += '<' + tag + ' class="' + cls + '"' + (evs.length ? ' data-act="selDate" data-date="' + ds +
+        '" aria-label="' + ds + '，' + evs.length + ' 条分红事件" aria-pressed="' + (selDate === ds) + '"' : '') + '>' +
         '<span>' + d + '</span>' +
         (dots ? '<span class="cal-dots">' + dots + '</span>' : '<span class="cal-dots"></span>') +
-        '</div>';
+        '</' + tag + '>';
     }
     var total = startPad + daysInMonth;
     var tail = (7 - (total % 7)) % 7;
@@ -140,9 +142,9 @@ XJ.views.calendar = (function () {
     /* 待除权：已公布分红方案、等待除权日（息记同款卡片） */
     if (pend.count > 0) {
       html += pendingCard(st, pend);
-    } else if (mv.receivedTotal > 0) {
+    } else if (mv.receivedTotal > 0 || mv.receivedAmounts.missing) {
       html += '<div class="cal-banner" data-anim="A" style="background:var(--payout-banner-grad);border-color:var(--payout-banner-line);color:var(--payout-banner-fg)">' +
-        '本月已到账分红 <b style="color:var(--down)">' + U.moneySign(mv.receivedTotal) + '</b>，当前没有等待除权的方案。</div>';
+        '本月已登记分红 <b style="color:var(--down)">' + XJ.calc.dividendAmountText(mv.receivedAmounts) + '</b></div>';
     } else {
       html += '<div class="cal-banner" data-anim="A" style="background:var(--card-2);border-color:var(--line);color:var(--text-2)">' +
         '当前没有等待除权的分红方案。</div>';
@@ -225,7 +227,7 @@ XJ.views.calendar = (function () {
     html += '<div class="card" style="background:var(--slogan-grad);border:1px solid var(--warn-line)">' +
       '<div style="font-size:12px;color:var(--warn-fg)">年度已到账分红</div>' +
       '<div style="font-size:34px;font-weight:750;letter-spacing:-1.2px;color:var(--dividend);margin-top:4px">' +
-      U.moneySign(av.total) + '</div>' +
+      XJ.calc.dividendAmountText(av.amounts) + '</div>' +
       '<div class="tiny" style="margin-top:6px">共 ' + U.cn(av.count) + ' 笔，来自 ' + av.symbolCount + ' 只持仓</div>' +
       '</div>';
 
@@ -250,10 +252,10 @@ XJ.views.calendar = (function () {
 
     /* 月度明细 */
     var monthRecords = av.records.filter(function (r) { return U.monthOf(r.exDividendDate) === selMonth; });
-    var monthTotal = U.sum(monthRecords, function (r) { return r.amount; });
+    var monthAmounts = XJ.calc.dividendAmounts(st.state, monthRecords, true);
     html += '<div class="section-title" style="display:flex;align-items:center">' +
       '<span>' + selMonth + '月到账明细</span><span style="flex:1"></span>' +
-      '<span class="c-div" style="font-weight:700">' + U.moneySign(monthTotal) + '</span></div>';
+      '<span class="c-div" style="font-weight:700">' + XJ.calc.dividendAmountText(monthAmounts) + '</span></div>';
 
     if (!monthRecords.length) {
       html += '<div class="card"><div class="tiny" style="text-align:center;padding:14px 0">该月没有到账记录。</div></div>';
@@ -267,7 +269,7 @@ XJ.views.calendar = (function () {
           U.esc(r.exDividendDate) + ' 到账 · ' + U.qtyText(r.qtyAtRecord) + ' 股 × ' +
           U.money(r.perShareAmount, 4) + '</div>' +
           '</div>' +
-          '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</div></div>' +
+          '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount, undefined, r.exDividendDate) + '</div></div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
       }).join('') + '</div>';
