@@ -32,6 +32,7 @@ const FILES = [
   ['src/universe.js', 'src/universe.js'],
   ['src/model.js', 'src/model.js'],
   ['src/storage.js', 'src/storage.js'],
+  ['src/store.js', 'src/store.js'],
   ['src/ui.js', 'src/ui.js'],
   ['src/dnd.js', 'src/dnd.js'],
   ['src/style.css', 'src/style.css'],
