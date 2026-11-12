@@ -41,18 +41,16 @@
     if (!root) return;
     if (S.ui.tab !== 'overview' || S.ui.subPage) { root.innerHTML = ''; return; }
     var open = !!S.ui.floatOpen;
-    root.innerHTML =
-      (open ? '<div class="float-mask" data-act="closeFloat"></div>' : '') +
-      '<div class="float-wrap">' +
-      (open
-        ? '<div class="float-menu">' +
-        '<button class="float-item" data-act="floatOcr"><span class="ic">📷</span>截图识别</button>' +
-        '<button class="float-item" data-act="floatManual"><span class="ic">✏️</span>手动添加</button>' +
-        '</div>'
-        : '') +
-      '<button class="float-btn' + (open ? ' open' : '') + '" data-act="toggleFloat" aria-label="添加持仓">' +
-      UI.icon('plus', 25, 2) + '</button>' +
-      '</div>';
+    root.innerHTML = '';
+    if (!open) return;
+    var button = document.querySelector('[data-act="toggleFloat"]');
+    if (!button) return;
+    var box = button.getBoundingClientRect();
+    root.innerHTML = '<div class="float-mask" data-act="closeFloat"></div>' +
+      '<div class="float-wrap" style="top:' + (box.bottom + 8) + 'px;right:' + (window.innerWidth - box.right) + 'px">' +
+      '<div class="float-menu" id="holding-add-options">' +
+      '<button class="float-item" data-act="floatManual">' + UI.icon('plus', 17) + ' 手动添加</button>' +
+      '<button class="float-item" data-act="floatOcr">截图识别</button></div></div>';
   }
 
   var notifyTimer = null;
@@ -90,7 +88,7 @@
     var sub = meta[1];
     if (S.ui.tab === 'overview' && S.hasAnyData()) {
       var s = C.summary(S.state, S.acc());
-      sub = '总市值 ' + U.moneySign(s.totalMarketValue, 0) + ' · ' + S.accountName(S.acc());
+      sub = '总市值 ' + U.moneySign(s.totalMarketValue, 0) + (s.missingFx || s.missingQuote ? '（部分）' : '') + ' · ' + S.accountName(S.acc());
     }
 
     return '<div class="topbar-row">' +
@@ -101,9 +99,8 @@
       '<div class="spacer"></div>' +
       '<button class="icon-btn' + (S.ui.busy ? ' spinning' : '') + '" data-act="refresh" title="同步数据" aria-label="同步数据">' +
       UI.icon('refresh', 18) + '</button>' +
-      (S.ui.tab === 'overview' ? '' :
-        '<button class="icon-btn" data-act="openAddHolding" title="添加持仓" aria-label="添加持仓">' +
-        UI.icon('plus', 19) + '</button>') +
+      (S.ui.tab === 'overview' ?
+        '<button class="icon-btn" data-act="toggleFloat" aria-label="添加持仓" aria-expanded="' + !!S.ui.floatOpen + '">' + UI.icon('plus', 19) + '</button>' : '') +
       '</div>';
   }
 
@@ -111,7 +108,7 @@
     if (S.ui.subPage) return '';
     return tabOrderList().map(function (t) {
       var act = S.ui.tab === t.id;
-      return '<button class="tab' + (act ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '" aria-label="' + t.label + '">' +
+      return '<button class="tab' + (act ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '" aria-label="' + t.label + '"' + (act ? ' aria-current="page"' : '') + '>' +
         UI.icon(t.icon, 23) +
         '<span>' + t.label + '</span></button>';
     }).join('');
@@ -179,12 +176,32 @@
   /* ---------------- 行情与分红数据刷新（与跨设备同步无关） ---------------- */
   var syncing = false;
 
+  function mergeRates(rates) {
+    var previous = S.state.settings.fx || {};
+    var next = Object.assign({}, previous, { observedAt: Object.assign({}, previous.observedAt), observedOn: Object.assign({}, previous.observedOn) });
+    var at = U.nowStamp(), changed = false;
+    ['HKD', 'USD', 'JPY'].forEach(function (currency) {
+      if (!(U.num(rates[currency]) > 0)) return;
+      if (next[currency] !== rates[currency]) changed = true;
+      next[currency] = rates[currency];
+      next.observedAt[currency] = at;
+      next.observedOn[currency] = U.today();
+    });
+    if (!Object.keys(rates).length) return false;
+    next.updatedAt = at;
+    S.state.settings.fx = next;
+    return changed;
+  }
+
   function refreshAll(opts) {
     opts = opts || {};
-    if (syncing) return Promise.resolve();
-    var syms = S.activeSymbols();
+    if (syncing) {
+      if (!opts.silent) UI.toast('正在刷新，请稍候');
+      return Promise.resolve();
+    }
+    var syms = opts.symbols || S.activeSymbols();
     if (!syms.length) {
-      if (!opts.silent) UI.toast('还没有持仓，先添加一只吧');
+      if (!opts.silent) UI.toast('当前页面没有可刷新的标的');
       return Promise.resolve();
     }
     syncing = true;
@@ -193,18 +210,17 @@
     S.ui.offline = false;
     render();
 
+    var quoteCount = 0;
     return Promise.all([
       XJ.fetcher.fetchQuotes(syms),
       XJ.fetcher.fetchFX().catch(function () { return {}; }),
     ]).then(function (res) {
       var quotes = res[0] || {}, fx = res[1] || {};
-      if (Object.keys(fx).length) {
-        S.state.settings.fx = Object.assign({}, fx, { updatedAt: U.nowStamp() });
-      }
+      mergeRates(fx);
 
-      var n = S.mergeQuotes(quotes);
-      if (!n) S.ui.offline = true;
-      else S.state.settings.lastPlanAt = null;
+      quoteCount = syms.filter(function (symbol) { return !!quotes[symbol]; }).length;
+      S.mergeQuotes(quotes);
+      if (!quoteCount) S.ui.offline = true;
 
       /* 当日分时：任何时段都请求（收盘后接口照样返回当天完整数据，落盘保存）。
          放在行情合并之后，因为美股分时需要行情里带交易所后缀的代码。
@@ -228,6 +244,9 @@
         });
       });
       var unsupported = (res && res.unsupported) || [];
+      var failedPlans = (res && res.failed) || [];
+      var emptyPlans = (res && res.noData) || [];
+      var supportedCount = syms.length - unsupported.length;
       S.state.settings.unsupportedDividend = unsupported;
 
       /* 补公司官网域名 → 用于展示股票官方图标（拿不到的自动弹回字母头像） */
@@ -241,7 +260,7 @@
         return healSymbolNames();
       }).then(function (healed) {
         var recAdded = C.applyAutoReceived(S.state);
-        S.state.settings.lastPlanAt = U.nowStamp();
+        if (supportedCount > failedPlans.length) S.state.settings.lastPlanAt = U.nowStamp();
         /* 每日资产快照（人民币口径，同一天覆盖同一条） */
         C.writeSnapshot(S.state, S.ui.accountId, S.state.settings.fx);
         S.ui.busy = false;
@@ -249,7 +268,10 @@
         syncing = false;
         S.commitNow(null);
         if (!opts.silent) {
-          var msg = '已同步 ' + syms.length + ' 只标的' + (recAdded ? '，新增 ' + recAdded + ' 笔到账' : '');
+          var msg = '行情 ' + quoteCount + '/' + syms.length + ' · 分红方案 ' + planCount + ' 条';
+          if (emptyPlans.length) msg += ' · ' + emptyPlans.length + ' 只无分红记录';
+          if (quoteCount < syms.length || failedPlans.length) msg += ' · 部分未更新，可再次刷新';
+          if (recAdded) msg += ' · 自动登记 ' + recAdded + ' 笔';
           if (healed) msg += '，补全 ' + healed + ' 个名称';
           if (unsupported.length) msg += '；' + unsupported.length + ' 只标的（日股等）暂无分红数据源，可手工补录';
           UI.toast(msg);
@@ -267,10 +289,11 @@
     }).catch(function (e) {
       console.error('[sync]', e);
       S.ui.busy = false;
-      S.ui.status = '同步失败，可稍后重试';
+      S.ui.status = '刷新失败，可稍后重试';
       S.ui.offline = true;
       syncing = false;
       S.commitNow(null);
+      if (!opts.silent) UI.toast(S.ui.status);
     });
   }
 
@@ -800,8 +823,6 @@
   }
 
   function refreshOne(symbol) {
-    var src = XJ.market.dividendSource(symbol);
-    UI.toast('正在同步 ' + S.symbolName(symbol) + '…');
     /* 股息率曲线要的那份长历史收盘价，也一并强制重取（它是独立缓存，不在 fetchQuotes 里） */
     if (XJ.market.supportsYieldCurve(symbol)) {
       S.ui.yieldTriedAt = S.ui.yieldTriedAt || {};
@@ -817,21 +838,7 @@
         S.commitNow(null);
       }).catch(function () { /* 曲线取数失败不影响下面的行情与分红同步 */ });
     }
-    XJ.fetcher.fetchQuotes([symbol]).then(function (quotes) {
-      S.mergeQuotes(quotes);
-      return pullPlansFor(symbol);
-    }).then(function (plans) {
-      var added = C.applyAutoReceived(S.state);
-      S.commitNow(null);
-      if (!src) {
-        UI.toast('行情已更新；' + XJ.market.kind(symbol) + '暂无分红数据源，可在分红记录里手工补录');
-      } else {
-        UI.toast('同步完成' + (plans.length ? '，' + plans.length + ' 条分红方案' : '') +
-          (added ? '，新增 ' + added + ' 笔到账' : ''));
-      }
-    }).catch(function () {
-      UI.toast('同步失败，请稍后重试');
-    });
+    return refreshAll({ symbols: [symbol] });
   }
 
   /**
@@ -1724,21 +1731,24 @@
   /* ---- 补录分红记录 ---- */
   UI.on('openReceiveEditor', function (node) {
     var sym = node.getAttribute('data-symbol');
-    var accNow = S.acc() === C.ALL ? S.state.settings.defaultAccountId : S.acc();
+    var id = node.getAttribute('data-id');
+    var record = id && S.state.received.find(function (r) { return r.recId === id && r.symbol === sym; });
+    var accNow = record ? record.accountId : (S.acc() === C.ALL ? S.state.settings.defaultAccountId : S.acc());
     var h = C.holdings(S.state, S.acc()).filter(function (x) { return x.symbol === sym; })[0];
     var html =
-      UI.field('到账日期', UI.inputHtml('date', U.today(), { type: 'date' })) +
+      UI.field('到账日期', UI.inputHtml('date', record ? record.exDividendDate : U.today(), { type: 'date' })) +
       '<div class="field-row">' +
-      UI.field('每股分红（税前，元）',
-        '<input type="text" inputmode="decimal" data-k="perShare" data-input="rcPreview" placeholder="0.28">') +
+      UI.field('每股分红（' + XJ.market.currency(sym) + '）',
+        '<input type="text" inputmode="decimal" data-k="perShare" data-input="rcPreview" value="' + U.esc(record ? record.perShareAmount : '') + '">') +
       UI.field('登记数量（股）',
-        '<input type="text" inputmode="numeric" data-k="qty" data-input="rcPreview" value="' + (h ? h.qty : '') + '">') +
+        '<input type="text" inputmode="decimal" data-k="qty" data-input="rcPreview" value="' + U.esc(record ? record.qtyAtRecord : (h ? h.qty : '')) + '">') +
       '</div>' +
-      UI.field('所属账户', '<select data-k="accountId">' + accountOptions(accNow) + '</select>') +
+      UI.field('所属账户', '<select data-k="accountId"' + (record && record.planId ? ' disabled' : '') + '>' + accountOptions(accNow) + '</select>') +
+      UI.field('券商实收金额（' + XJ.market.currency(sym) + '，可选）', UI.inputHtml('amount', record ? record.amount : '', { inputmode: 'decimal' })) +
       '<div class="tiny" id="xj-rc-preview" style="margin-bottom:12px">金额 = 每股分红 × 登记数量</div>' +
-      '<button class="btn-block" data-act="saveReceive" data-symbol="' + U.esc(sym) + '">保存到账记录</button>' +
+      '<button class="btn-block" data-act="saveReceive" data-symbol="' + U.esc(sym) + '" data-id="' + U.esc(record ? record.recId : '') + '">保存到账记录</button>' +
       '<div class="tiny" style="margin-top:10px">手工补录的记录标记为「手动」，不会被自动同步覆盖。</div>';
-    UI.openSheet({ title: '补录分红 · ' + S.symbolName(sym), html: html });
+    UI.openSheet({ title: (record ? '核对分红 · ' : '补录分红 · ') + S.symbolName(sym), html: html });
   });
 
   UI.on('rcPreview', function (node) {
@@ -1748,45 +1758,52 @@
     var amt = U.n0(f.perShare) * U.n0(f.qty);
     var box = sheet.querySelector('#xj-rc-preview');
     if (box) box.innerHTML = '金额 = ' + U.money(f.perShare, 4) + ' × ' + U.thousands(f.qty) +
-      ' = <b class="c-div">' + U.moneySign(amt) + '</b>';
+      ' = <b class="c-div">' + U.money(amt) + '</b>';
   });
 
   UI.on('saveReceive', function (node) {
     var sym = node.getAttribute('data-symbol');
+    var id = node.getAttribute('data-id');
+    var record = id && S.state.received.find(function (r) { return r.recId === id && r.symbol === sym; });
     var f = UI.readFields(node.closest('.sheet'));
     var perShare = U.num(f.perShare);
     var qty = U.num(f.qty);
     if (!(perShare > 0)) return UI.toast('每股分红必须大于 0');
     if (!(qty > 0)) return UI.toast('登记数量必须大于 0');
-    var date = /^\d{4}-\d{2}-\d{2}$/.test(f.date || '') ? f.date : U.today();
-    var amount = Math.round(qty * perShare * 100) / 100;
-    var accId = f.accountId || S.state.settings.defaultAccountId;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date || '') || f.date > U.today()) return UI.toast('请选择有效且已经发生的到账日期');
+    var date = f.date;
+    var paid = U.num(f.amount);
+    if (f.amount && !(paid >= 0 && paid !== null)) return UI.toast('实收金额须为有效的非负数字');
+    var amount = Math.round((paid === null ? qty * perShare : paid) * 100) / 100;
+    var accId = (record && record.planId ? record.accountId : f.accountId) || S.state.settings.defaultAccountId;
 
     /* 去重：同一标的 + 同一账户 + 同一到账日 + 金额相符 → 已存在，拒绝重复记录 */
     var dup = S.state.received.some(function (r) {
-      return U.sameDividend(r, {
+      return r.recId !== id && U.sameDividend(r, {
         accountId: accId, symbol: sym, exDividendDate: date, amount: amount,
       });
     });
     if (dup) return UI.toast('该标的在这天已有一笔金额相同的分红记录；如需重复记录，请先删除原记录');
 
     S.commit(function (s) {
-      s.received.push({
-        recId: U.uid('rec'),
+      var next = {
+        recId: record ? record.recId : U.uid('rec'),
         accountId: accId,
         symbol: sym,
-        planId: null,
+        planId: record ? record.planId : null,
         exDividendDate: date,
         perShareAmount: perShare,
         qtyAtRecord: qty,
         amount: amount,
         source: 'MANUAL',
         year: U.yearOf(date),
-        createdAt: U.nowStamp(),
-      });
+        createdAt: record ? record.createdAt : U.nowStamp(),
+      };
+      if (record) s.received[s.received.indexOf(record)] = next;
+      else s.received.push(next);
     });
     UI.closeSheet();
-    UI.toast('已补录一笔分红');
+    UI.toast(record ? '已更新分红记录' : '已补录一笔分红');
   });
 
   UI.on('deleteReceive', function (node) {
@@ -1931,8 +1948,16 @@
   });
 
   UI.on('refresh', function () {
-    UI.toast('正在同步最新数据…');
-    refreshAll();
+    var symbols;
+    if (S.ui.subPage === 'symbol' && S.ui.subArg) return refreshOne(S.ui.subArg);
+    if (S.ui.tab === 'watchlist') symbols = XJ.views.watchlist.currentSymbols();
+    if (S.ui.tab === 'calendar') {
+      var cutoff = U.addDays(U.today(), -400);
+      symbols = Array.from(new Set(S.activeSymbols().concat(C.txOf(S.state, S.acc()).filter(function (tx) {
+        return tx.date >= cutoff;
+      }).map(function (tx) { return tx.symbol; }))));
+    }
+    refreshAll({ symbols: symbols });
   });
 
   UI.on('refreshOne', function (node) {
@@ -1969,17 +1994,17 @@
     var rows = p.items.map(function (e) {
       return '<div class="pp-row">' +
         '<span class="pp-nm">' + U.esc(e.name || XJ.model.codeOf(e.symbol)) + '</span>' +
-        '<span class="pp-amt">+' + U.moneySign(e.amount) + '</span>' +
+        '<span class="pp-amt">' + (e.amount === null ? '待核对' : '+' + XJ.usdiv.moneyText(S.state, e.symbol, e.amount)) + '</span>' +
         '</div>';
     }).join('');
-    return '<div class="pp-card" role="dialog" aria-label="今日分红到账">' +
+    return '<div class="pp-card" role="dialog" aria-label="今日派息提醒">' +
       '<div class="pp-art">' +
       '<span class="pp-e1">🤑</span>' +
       '<span class="pp-sp pp-s1">💛</span><span class="pp-sp pp-s2">✨</span>' +
       '<span class="pp-sp pp-s3">💛</span><span class="pp-sp pp-s4">✨</span>' +
       '</div>' +
-      '<div class="pp-title">今日分红到账</div>' +
-      '<div class="pp-total">+' + U.moneySign(p.total) + '</div>' +
+      '<div class="pp-title">今日派息提醒</div>' +
+      '<div class="pp-total">+' + C.dividendAmountText(p.amounts) + '</div>' +
       '<div class="pp-rows">' + rows + '</div>' +
       '<button class="pp-main" data-act="viewDivRecords">查看分红记录</button>' +
       '<button class="pp-ghost" data-act="closeSheet">我知道了</button>' +
@@ -2066,6 +2091,7 @@
 
   /* ---- 悬浮双入口 ---- */
   UI.on('toggleFloat', function () { S.setUI({ floatOpen: !S.ui.floatOpen }); });
+  UI.on('toggleOverviewForecast', function () { S.setUI({ overviewForecast: !S.ui.overviewForecast }); });
   UI.on('closeFloat', function () { S.setUI({ floatOpen: false }); });
   UI.on('floatManual', function () {
     S.setUI({ floatOpen: false });
@@ -3030,6 +3056,16 @@
     S.setUI({ foldMineTx: !(S.ui.foldMineTx !== false) });
   });
 
+  document.addEventListener('submit', function (event) {
+    if (event.target.id !== 'ledger-filters') return;
+    event.preventDefault();
+    var filters = Object.fromEntries(new FormData(event.target));
+    if (filters.beg && filters.end && filters.beg > filters.end) return UI.toast('结束日期应晚于或等于起始日期');
+    S.setUI({ ledgerFilters: filters, ledgerLimit: 30 });
+  });
+  UI.on('resetLedgerFilters', function () { S.setUI({ ledgerFilters: {}, ledgerLimit: 30 }); });
+  UI.on('loadMoreLedger', function () { S.setUI({ ledgerLimit: (S.ui.ledgerLimit || 30) + 30 }); });
+
   /* ---------------- 资产走势：指标 / 区间 / 粒度 / 模式 / 收起 ----------------
    * 这张卡挂了两处（首页 ns=''、账户分析 ns='an'），控件状态各自独立：
    * 按钮上带 data-ns，这里统一换算成对应实例的 ui 键再写入。 */
@@ -3935,6 +3971,34 @@
     UI.toast('已导出 JSON 备份');
   });
 
+  UI.on('openRecoveryCopy', function () {
+    var copy = XJ.storage.recoveryCopy();
+    if (!copy) return;
+    var info = XJ.transfer.summarize(copy);
+    UI.openSheet({ title: '本机备用账本', html:
+      '<p>' + info.accounts + ' 个账户 · ' + info.transactions + ' 笔交易 · ' + info.received + ' 笔分红</p>' +
+      '<button class="btn-block" data-act="mergeRecoveryCopy">合并缺少的记录</button>' +
+      '<button class="btn-block ghost" data-act="exportRecoveryCopy">导出备用账本</button>' });
+  });
+  UI.on('exportRecoveryCopy', function () {
+    var copy = XJ.storage.recoveryCopy();
+    if (!copy) return;
+    U.download('自由备用账本_' + U.today() + '.json', JSON.stringify(M.toExport(copy, '本机备用账本'), null, 2), 'application/json');
+  });
+  UI.on('mergeRecoveryCopy', function () {
+    var copy = XJ.storage.recoveryCopy();
+    if (!copy) return;
+    UI.confirm({ title: '合并备用账本', message: '将补入当前账本缺少的账户、交易与分红，原备用账本仍可导出。', confirmText: '合并' })
+      .then(function (ok) {
+        if (!ok) return;
+        var added = XJ.transfer.mergeInto(S.state, copy);
+        return XJ.storage.save(S.state).then(function (saved) {
+          S.notify();
+          if (saved) UI.toast('已合并 ' + (added.transactions + added.received + added.accounts) + ' 条记录');
+        });
+      });
+  });
+
   UI.on('importJson', function () {
     pickFile('.json,application/json').then(function (text) {
       if (!text) return;
@@ -3979,7 +4043,8 @@
       /* ★ 架构预留：将来接回同步层时，这里要恢复「keepSync」逻辑——
          同步连接信息（deviceId / token / gistId / 修订账本 / 墓碑）必须跨清空保留，
          否则下一次同步会把云端已有的一切当成「本机新增」整份推回去，或反过来当成删除。 */
-      XJ.storage.clear().then(function () {
+      XJ.storage.clear().then(function (cleared) {
+        if (!cleared) return;
         var fresh = M.ensureBootstrapped(M.defaultState());
         S.init(fresh);
         S.ui.accountId = C.ALL;
@@ -4530,8 +4595,7 @@
         return XJ.fetcher.fetchFX().then(function (fx) {
           fxBusy = false;
           if (!fx || !Object.keys(fx).length) { S.ui.fxError = true; return false; }
-          var changed = (U.num(fx.USD) !== U.num(cur.USD)) || (U.num(fx.HKD) !== U.num(cur.HKD));
-          S.state.settings.fx = Object.assign({}, fx, { updatedAt: U.nowStamp() });
+          var changed = mergeRates(fx);
           S.ui.fxError = false;
           if (changed) {
             /* 当日快照按新汇率重写；历史快照不动 */
