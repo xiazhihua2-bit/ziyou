@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOKEN = fs.readFileSync(path.join(ROOT, '.token'), 'utf8').trim();
+if (!TOKEN) throw new Error('缺少 GitHub 发布令牌');
 const OWNER = 'xiazhihua2-bit';
 const REPO = 'ziyou';
 const API = 'https://api.github.com';
@@ -21,9 +22,6 @@ const H = {
 
 /* [仓库路径, 本地文件] —— 仓库根 = dist/pwa 产物(Pages 构建)+ src 源码 */
 const FILES = [
-  ['index.html', 'dist/pwa/index.html'],
-  ['sw.js', 'dist/pwa/sw.js'],
-  ['manifest.webmanifest', 'dist/pwa/manifest.webmanifest'],
   ['src/util.js', 'src/util.js'],
   ['src/anim.js', 'src/anim.js'],
   ['src/app.js', 'src/app.js'],
@@ -33,6 +31,7 @@ const FILES = [
   ['src/usdiv.js', 'src/usdiv.js'],
   ['src/universe.js', 'src/universe.js'],
   ['src/model.js', 'src/model.js'],
+  ['src/storage.js', 'src/storage.js'],
   ['src/ui.js', 'src/ui.js'],
   ['src/dnd.js', 'src/dnd.js'],
   ['src/style.css', 'src/style.css'],
@@ -56,6 +55,7 @@ const FILES = [
   ['src/views/mine.js', 'src/views/mine.js'],
   ['src/views/symbol.js', 'src/views/symbol.js'],
   ['build.mjs', 'build.mjs'],
+  ['assets/sw.template.js', 'assets/sw.template.js'],
   ['AGENTS.md', 'AGENTS.md'],
   ['README.md', 'README.md'],
   ['verify.mjs', 'verify.mjs'],
@@ -63,6 +63,7 @@ const FILES = [
   ['tools/test-fire.mjs', 'tools/test-fire.mjs'],
   ['tools/test-wl-sort.mjs', 'tools/test-wl-sort.mjs'],
   ['tools/test-usdiv.mjs', 'tools/test-usdiv.mjs'],
+  ['tools/test-upgrade.mjs', 'tools/test-upgrade.mjs'],
   ['tools/build-pool-515450.mjs', 'tools/build-pool-515450.mjs'],
   ['tools/pool-515450-raw.json', 'tools/pool-515450-raw.json'],
   ['tools/shoot-pool.mjs', 'tools/shoot-pool.mjs'],
@@ -77,6 +78,9 @@ const FILES = [
   ['tools/shoot-theme.mjs', 'tools/shoot-theme.mjs'],
   ['tools/sync-e2e.mjs', 'tools/sync-e2e.mjs'],
   ['tools/deploy-pages.mjs', 'tools/deploy-pages.mjs'],
+  ['manifest.webmanifest', 'dist/pwa/manifest.webmanifest'],
+  ['index.html', 'dist/pwa/index.html'],
+  ['sw.js', 'dist/pwa/sw.js'],
 ];
 
 /* 已下线、需要从仓库里删掉的文件（幂等：不存在就跳过）。
@@ -97,12 +101,34 @@ async function api(method, url, body) {
   return { status: r.status, json };
 }
 
-let fail = 0;
-for (const [repoPath, localPath] of FILES) {
+const possibleOcrKey = /\b[a-f\d]{32}\.[A-Za-z\d]{12,}\b/i;
+const localOcrKey = (process.env.ZIYOU_OCR_KEY || '').trim();
+const publishFiles = FILES.map(([repoPath, localPath]) => {
   const content = fs.readFileSync(path.join(ROOT, localPath));
+  const source = content.toString('utf8');
+  if (possibleOcrKey.test(source) || (localOcrKey && source.includes(localOcrKey)) || content.includes(TOKEN)) {
+    throw new Error('发布检查失败，疑似密钥：' + repoPath);
+  }
+  return [repoPath, content];
+});
+if (process.argv.includes('--check')) {
+  console.log('[deploy] 已检查 ' + publishFiles.length + ' 个发布文件');
+  process.exit(0);
+}
+
+if (process.env.ZIYOU_EXPECT_MAIN) {
+  const baseline = await api('GET', '/repos/' + OWNER + '/' + REPO + '/git/ref/heads/main');
+  if (baseline.status !== 200 || baseline.json?.object?.sha !== process.env.ZIYOU_EXPECT_MAIN) {
+    throw new Error('远端 main 已变化，请更新回滚基线后发布');
+  }
+}
+
+let fail = 0;
+for (const [repoPath, content] of publishFiles) {
   const b64 = content.toString('base64');
   /* 现有 sha(不存在 = 新文件) */
   const cur = await api('GET', '/repos/' + OWNER + '/' + REPO + '/contents/' + encodeURIComponent(repoPath).replace(/%2F/g, '/') + '?ref=main');
+  if (cur.status !== 200 && cur.status !== 404) throw new Error('无法核对远端文件：' + repoPath + ' HTTP ' + cur.status);
   if (cur.status === 200 && cur.json && cur.json.content) {
     const remote = Buffer.from(cur.json.content, 'base64');
     if (remote.equals(content)) { console.log('  · ' + repoPath + ' 未变更'); continue; }
@@ -117,12 +143,12 @@ for (const [repoPath, localPath] of FILES) {
     }
   }
   const put = await api('PUT', '/repos/' + OWNER + '/' + REPO + '/contents/' + encodeURIComponent(repoPath).replace(/%2F/g, '/'), {
-    message: 'deploy: ' + repoPath + ' (anim + fire-offset + sync-fix)',
+    message: 'deploy: ' + repoPath + ' (ledger and interface update)',
     content: b64,
     sha: cur.status === 200 && cur.json ? cur.json.sha : undefined,
   });
   if (put.status === 200 || put.status === 201) console.log('  ✓ ' + repoPath);
-  else { fail++; console.log('  ✗ ' + repoPath + '  HTTP ' + put.status + ' ' + JSON.stringify(put.json || {}).slice(0, 160)); }
+  else throw new Error('上传失败：' + repoPath + ' HTTP ' + put.status);
 }
 
 /* 删掉已下线的文件（不看内容，存在即删） */
