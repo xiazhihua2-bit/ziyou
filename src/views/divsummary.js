@@ -32,16 +32,18 @@ XJ.views.divsummary = (function () {
 
   /* ---------------- 主卡 ---------------- */
   function hero(sum, fun) {
-    var n = XJ.calc.funEquivalent(sum.total, fun.monthly);
+    var n = sum.amounts.missing ? null : XJ.calc.funEquivalent(sum.total, fun.monthly);
     return '<div class="card ds-hero">' +
-      '<div class="ds-cap">分红总额</div>' +
-      '<div class="ds-total" data-anim="S">' + U.moneySign(sum.total) + '</div>' +
+      '<div class="ds-cap">登记分红总额</div>' +
+      '<div class="ds-total" data-anim="S">' + XJ.calc.dividendAmountText(sum.amounts) + '</div>' +
       '<div class="ds-rule"></div>' +
+      '<div class="ds-kv"><span>确认实收</span><span>' + XJ.calc.dividendAmountText(sum.confirmedAmounts) + '</span></div>' +
+      ((sum.autoAmounts.total || sum.autoAmounts.missing) ? '<div class="ds-kv"><span>自动估算 · 税前</span><span>' + XJ.calc.dividendAmountText(sum.autoAmounts) + '</span></div>' : '') +
       '<div class="ds-kv"><span>到账笔数</span><span>' + sum.count + ' 笔</span></div>' +
       '<div class="ds-kv"><span>涉及标的</span><span>' + sum.bySymbolList.length + ' 只</span></div>' +
-      (sum.pendingTotal > 0
+      (sum.pendingCount > 0
         ? '<div class="ds-kv ds-pend" data-anim="A"><span>另有预计到账</span><span>' +
-          U.moneySign(sum.pendingTotal) + '</span></div>'
+          XJ.calc.dividendAmountText(sum.pendingAmounts) + '</span></div>'
         : '') +
       (n !== null
         ? '<div class="ds-fun" data-anim="A">这些分红相当于 ' + U.thousands(n) + ' 个月' +
@@ -63,7 +65,7 @@ XJ.views.divsummary = (function () {
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
             ' × ' + U.qtyText(qty) + ' 股</span>' +
-            '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</span>' +
+            '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount, undefined, r.exDividendDate) + '</span>' +
             '</div>';
         }).join('');
         return '<div class="ds-sym' + (isOpen ? ' open' : '') + '">' +
@@ -72,7 +74,7 @@ XJ.views.divsummary = (function () {
           '<span class="ds-code">' + U.esc(XJ.model.codeOf(g.symbol)) + '</span>' +
           '<span class="ds-name">' + U.esc(st.symbolName(g.symbol)) + '</span>' +
           '<span class="ds-sp"></span>' +
-          '<span class="ds-amt" data-anim="A">' + XJ.usdiv.moneyText(st.state, g.symbol, g.amount) + '</span>' +
+          '<span class="ds-amt" data-anim="A">' + XJ.calc.dividendAmountText(XJ.calc.dividendAmounts(st.state, g.records, true)) + '</span>' +
           '<span class="chev">' + UI.icon('chevron', 15, 2) + '</span>' +
           '</button>' +
           (isOpen ? '<div class="ds-detail">' + rows + '</div>' : '') +
@@ -125,7 +127,7 @@ XJ.views.divsummary = (function () {
     html += chips(key);
     html += customRow(st);
 
-    if (!(sum.total > 0) && !(sum.pendingTotal > 0)) {
+    if (!sum.count && !sum.pendingCount) {
       html += UI.emptyState('🌾', '这个区间没有分红',
         '换一个时间档位看看，或者在「我的 · 分红流水」里补录一笔。');
       return html;
@@ -133,18 +135,17 @@ XJ.views.divsummary = (function () {
 
     html += hero(sum, fun);
 
-    if (sum.total > 0) {
+    if (sum.count) {
       html += symList(sum, st);
-      html += yearBars(sum);
+      if (!sum.amounts.missing) html += yearBars(sum);
     } else {
       html += '<div class="card"><div class="tiny" style="line-height:1.8">' +
-        '这个区间还没有分红到账，另有 <b class="c-div">' + U.moneySign(sum.pendingTotal) +
+        '这个区间还没有分红到账，另有 <b class="c-div">' + XJ.calc.dividendAmountText(sum.pendingAmounts) +
         '</b> 预计到账（' + sum.pendingCount + ' 笔）。到账后会自动登记在这里。</div></div>';
     }
 
     html += '<div class="tiny ds-note">' +
-      '口径：金额一律为<b>税前</b>；「分红总额」只统计<b>已到账</b>（与「我的 · 分红流水」逐笔一致），' +
-      '未到账的部分单列在「另有预计到账」里，不混进总额。' +
+      '自动登记使用公告税前金额。已核对的记录可填入券商实际到账额。未来派息单独汇总。' +
       'A 股派息日按除权除息日推算，实际到账可能晚 1-2 天。' +
       '</div>';
     return html;
