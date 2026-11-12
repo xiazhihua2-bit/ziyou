@@ -491,6 +491,12 @@ XJ.market = (function () {
     return s.slice(0, 14);
   }
 
+  function quoteChangePct(price, prevClose, reported) {
+    var pct = U.num(reported);
+    if (pct !== null) return pct;
+    return price > 0 && prevClose > 0 ? (price - prevClose) / prevClose * 100 : null;
+  }
+
   /** 解析腾讯行情原始串（按 ~ 分割后的数组） */
   function parseQuoteFields(symbol, raw) {
     if (!raw || typeof raw !== 'string') return null;
@@ -498,7 +504,8 @@ XJ.market = (function () {
     if (f.length < 40) return null;
     var mk = marketOf(symbol);
 
-    var price = U.num(f[3]);
+    var quotedPrice = U.num(f[3]);
+    var price = quotedPrice;
     var prevClose = U.num(f[4]);
     if (!price || price <= 0) price = prevClose;          // 停牌兜底
     if (!price || price <= 0) return null;
@@ -517,10 +524,11 @@ XJ.market = (function () {
          否则行情同步会把搜索时的中文名覆盖成英文 */
       name: (mk === 'jp' && XJ.universe && XJ.universe.jpName(codeOf(symbol))) || cleanName(f[1]),
       price: price,
+      hasTradePrice: quotedPrice > 0,
       prevClose: prevClose,
       open: U.num(f[5]),
       change: U.num(f[31]),
-      changePct: U.num(f[32]),
+      changePct: quoteChangePct(quotedPrice, prevClose, f[32]),
       high: U.num(f[33]),
       low: U.num(f[34]),
       volume: U.num(f[36]),
@@ -604,7 +612,7 @@ XJ.market = (function () {
     displayCode: displayCode,
     sessionOpen: sessionOpen, hasMinute: hasMinute, hasDailyHistory: hasDailyHistory,
     orgInfoQuery: orgInfoQuery,
-    isQuoteable: isQuoteable, dividendSource: dividendSource,
+    isQuoteable: isQuoteable, dividendSource: dividendSource, quoteChangePct: quoteChangePct,
     supportsDividend: supportsDividend, supportsYieldCurve: supportsYieldCurve,
     dividendSourceLabel: dividendSourceLabel,
     secucodeOf: secucodeOf, logoUrl: logoUrl, logoVerdict: logoVerdict,
