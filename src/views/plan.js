@@ -381,6 +381,7 @@ XJ.views.plan = (function () {
       return html;
     }
 
+    if (X.summary(st.state, st.acc()).missingFx) return html + '<div class="card">部分持仓缺少汇率。补齐汇率后可计算组合的财务自由进度。</div>' + expensesCardHtml(st) + entryCardHtml(st);
     var fire = st.state.settings.fire || {};
     var tier = tierKey(fire);
     var targets = X.fireTargets(st.state, st.acc(), 'market');
