@@ -854,19 +854,69 @@ XJ.fetcher = (function () {
     });
   }
 
+  var fundNavQueue = Promise.resolve();
   function fetchFundNav(sym) {
-    return new Promise(function (resolve) {
+    var job = fundNavQueue.then(function () { return new Promise(function (resolve) {
       var prev = window.Data_netWorthTrend;
       var had = Object.prototype.hasOwnProperty.call(window, 'Data_netWorthTrend');
-      loadScript(FUND_NAV_URL + XJ.market.codeOf(sym) + '.js', 'utf-8', PLAN_TIMEOUT, function () {
-        var trend = window.Data_netWorthTrend;
+      window.Data_netWorthTrend = undefined;
+      loadScript(FUND_NAV_URL + XJ.market.codeOf(sym) + '.js', 'utf-8', PLAN_TIMEOUT, function (ok) {
+        var trend = ok ? window.Data_netWorthTrend : null;
         var pts = parseFundNav(trend);
         /* 还原全局，避免污染其它基金的读取 */
         if (had) window.Data_netWorthTrend = prev;
         else { try { delete window.Data_netWorthTrend; } catch (e) { window.Data_netWorthTrend = undefined; } }
         resolve(pts);
       });
-    });
+    }); });
+    fundNavQueue = job.catch(function () { return []; });
+    return job;
+  }
+
+  function closingQuoteOf(symbol, points) {
+    var last = points && points[points.length - 1];
+    if (!last || !(last[1] > 0)) return null;
+    var prev = null;
+    for (var i = points.length - 2; i >= 0; i--) {
+      if (points[i][0] < last[0] && points[i][1] > 0) { prev = points[i][1]; break; }
+    }
+    return { symbol: symbol, price: last[1], prevClose: prev,
+      changePct: XJ.market.quoteChangePct(last[1], prev), quoteTime: last[0].replace(/-/g, ''),
+      source: XJ.market.assetType(symbol) === 'of' ? 'nav' : 'close' };
+  }
+
+  function fetchClosingQuotes(symbols, codes) {
+    codes = codes || {};
+    var out = {}, next = 0;
+    function request(code) {
+      var key = 'xjclose_' + (++cbSeq) + '_' + Date.now().toString(36);
+      return new Promise(function (resolve) {
+        loadScript(IDX_KLINE_URL + code + ',day,,,8&_var=' + key, null, QUOTE_TIMEOUT, function (ok) {
+          var points = ok ? parseKline(window[key], code) : [];
+          delete window[key];
+          resolve(points);
+        });
+      });
+    }
+    function worker() {
+      if (next >= symbols.length) return Promise.resolve();
+      var symbol = symbols[next++];
+      var market = XJ.market.marketOf(symbol);
+      var job;
+      if (market === 'of') job = fetchFundNav(symbol);
+      else if (market === 'us') {
+        var base = XJ.market.usQuoteCode(symbol);
+        var candidates = codes[symbol] ? [market + codes[symbol]] : [base + '.OQ', base + '.N', base + '.A'];
+        job = candidates.reduce(function (chain, code) {
+          return chain.then(function (points) { return points.length >= 2 ? points : request(code); });
+        }, Promise.resolve([]));
+      } else job = XJ.market.hasDailyHistory(symbol) ? request(symbol) : Promise.resolve([]);
+      return job.then(function (points) {
+        var quote = closingQuoteOf(symbol, points);
+        if (quote) out[symbol] = quote;
+      }).catch(function () { /* unrelated symbols still proceed */ }).then(worker);
+    }
+    return Promise.all(Array.from({ length: Math.min(symbols.length, 4) }, worker)).then(function () { return out; });
   }
 
   /**
@@ -1060,7 +1110,27 @@ XJ.fetcher = (function () {
    * 每次调整判定规则都要 +1：缓存里低于当前版本的结论会被视为过期并重新解析，
    * 否则用户当天看到的旧结论（尤其是 'bad'）会一直保留到第二天。
    */
-  var LOGO_ALGO = 3;
+  var LOGO_ALGO = 4;
+
+  function bundledLogo(symbol) {
+    if (XJ.market.assetType(symbol) !== 'stock') return '';
+    var pool = XJ.pool515450 && XJ.pool515450.ITEMS;
+    var item = pool && pool.find(function (row) { return row.s === symbol; });
+    return (item && item.logo) || (XJ.holder515450 && XJ.holder515450.logoOf(XJ.market.codeOf(symbol))) || '';
+  }
+
+  function imageLoads(url) {
+    if (!url || typeof Image !== 'function') return Promise.resolve(false);
+    return new Promise(function (resolve) {
+      var img = new Image();
+      var timer = setTimeout(function () { finish(false); }, 4500);
+      function finish(ok) { clearTimeout(timer); img.onload = img.onerror = null; resolve(ok); }
+      img.referrerPolicy = 'no-referrer';
+      img.onload = function () { finish(img.naturalWidth > 0); };
+      img.onerror = function () { finish(false); };
+      img.src = url;
+    });
+  }
 
   /**
    * 解析单只标的的公司标识，返回 { symbol, url, source } 或 null（→ 用文字头像）。
@@ -1073,6 +1143,8 @@ XJ.fetcher = (function () {
    *      因此必须用 checkLogo 的 canvas 采样判定（整张图无彩色即视为占位图）。
    */
   function resolveLogo(symbol, domain) {
+    var embedded = bundledLogo(symbol);
+    if (embedded) return Promise.resolve({ symbol: symbol, url: embedded, source: 'snapshot', algo: LOGO_ALGO });
     var domainStep = function () {
       var cands = XJ.market.logoCandidates(symbol, domain);
       var idx = 0;
@@ -1083,8 +1155,10 @@ XJ.fetcher = (function () {
           /* checkLogo 的 'unknown'（超时 / ICO 解码失败 / 无 fetch）按「可显示」处理：
              <img> 本身不需要 CORS 也不依赖 createImageBitmap，且 UI.avatar 有 onerror 回退。
              早先只认 'ok' 会把真实的官方 ICO 图标误杀成中文头像。 */
-          if (v !== 'bad') return { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO };
-          return next();
+          if (v === 'bad') return next();
+          return (v === 'ok' ? Promise.resolve(true) : imageLoads(url)).then(function (ok) {
+            return ok ? { symbol: symbol, url: url, source: 'domain', algo: LOGO_ALGO } : next();
+          });
         });
       }
       return next();
@@ -1092,7 +1166,9 @@ XJ.fetcher = (function () {
     var thsStep = function () {
       if (!XJ.market.thsF10Url(symbol)) return Promise.resolve(null);
       return fetchThsLogo(symbol).then(function (u) {
-        return u ? { symbol: symbol, url: u, source: 'ths', algo: LOGO_ALGO } : null;
+        return imageLoads(u).then(function (ok) {
+          return ok ? { symbol: symbol, url: u, source: 'ths', algo: LOGO_ALGO } : null;
+        });
       });
     };
 
@@ -1585,6 +1661,9 @@ XJ.fetcher = (function () {
     resolveLogo: resolveLogo,
     resolveLogos: resolveLogos,
     LOGO_ALGO: LOGO_ALGO,
+    bundledLogo: bundledLogo,
+    closingQuoteOf: closingQuoteOf,
+    fetchClosingQuotes: fetchClosingQuotes,
     fetchThsLogo: fetchThsLogo,
     parseHkRow: parseHkRow,
     parseHkPerShare: parseHkPerShare,
