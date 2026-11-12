@@ -582,7 +582,7 @@ XJ.market = (function () {
   }
 
   /* ---------------- 币种换算 ---------------- */
-  var FX_SYMBOL = { HKD: 'whHKDCNY', USD: 'whUSDCNY' };
+  var FX_SYMBOL = { HKD: 'whHKDCNY', USD: 'whUSDCNY', JPY: 'whCNYJPY' };
 
   function fxCode(c) { return FX_SYMBOL[c] || null; }
 
