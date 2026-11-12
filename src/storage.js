@@ -10,11 +10,14 @@ XJ.storage = (function () {
   var STORE = 'kv';
   var KEY = 'state';
   var LS_KEY = 'ziyou_state_v1';
+  var LS_PENDING_KEY = LS_KEY + '_pending';
 
   var mode = null;      // 'idb' | 'ls'
   var db = null;
   var saveTimer = null;
   var lastError = null;
+  var recovery = null;
+  var saveQueue = Promise.resolve();
 
   /* 落盘前的钩子槽。同步层（src/sync.js）会把它挂上，用来在「与 state 同一次写入」里
      把本轮变更算成增量 op —— 单文档整份写入天然原子，所以 op 与数据不可能写一半。
@@ -90,7 +93,7 @@ XJ.storage = (function () {
       try {
         var tx = db.transaction(STORE, 'readwrite');
         var r = tx.objectStore(STORE).put(val, KEY);
-        r.onsuccess = function () { resolve(true); };
+        tx.oncomplete = function () { resolve(true); };
         r.onerror = function () { reject(r.error); };
         tx.onabort = function () { reject(new Error('tx abort')); };
       } catch (e) { reject(e); }
@@ -129,7 +132,19 @@ XJ.storage = (function () {
 
   function load() {
     if (mode === 'idb') {
-      return idbGet().then(function (v) { return v || null; })
+      return idbGet().then(function (v) {
+        var backup = lsRead();
+        if (!backup) return v;
+        if (!v || fallbackWasLatest()) {
+          return idbPut(backup).then(function () {
+            removeFallback();
+            return backup;
+          }, function (e) { lastError = e; mode = 'ls'; return backup; });
+        }
+        if (JSON.stringify(v) !== JSON.stringify(backup)) recovery = backup;
+        else removeFallback();
+        return v;
+      })
         .catch(function (e) { lastError = e; return lsRead(); });
     }
     return Promise.resolve(lsRead());
@@ -143,13 +158,25 @@ XJ.storage = (function () {
   }
 
   function save(state) {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     runHook(state);
+    var snapshot = typeof structuredClone === 'function' ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+    saveQueue = saveQueue.then(function () { return persist(snapshot); });
+    return saveQueue;
+  }
+
+  function persist(state) {
     if (mode === 'idb') {
       return idbPut(state).catch(function (e) {
         lastError = e;
+        if (recovery) return storageFailure();
         // 写入失败即时降级，保证数据不丢
         mode = lsAvailable() ? 'ls' : 'none';
-        return lsWrite(state);
+        var saved = lsWrite(state);
+        if (saved) {
+          try { window.localStorage.setItem(LS_PENDING_KEY, '1'); } catch (markError) { lastError = markError; }
+        }
+        return saved;
       });
     }
     return Promise.resolve(lsWrite(state));
@@ -161,9 +188,25 @@ XJ.storage = (function () {
       return true;
     } catch (e) {
       lastError = e;
-      if (XJ.ui && XJ.ui.toast) XJ.ui.toast('保存失败：浏览器存储已满或被禁用');
-      return false;
+      return storageFailure();
     }
+  }
+
+  function storageFailure() {
+    if (XJ.ui && XJ.ui.toast) XJ.ui.toast('保存失败，请导出当前账本以保留修改');
+    return false;
+  }
+
+  function removeFallback() {
+    try {
+      window.localStorage.removeItem(LS_KEY);
+      window.localStorage.removeItem(LS_PENDING_KEY);
+      recovery = null;
+    } catch (e) { lastError = e; }
+  }
+
+  function fallbackWasLatest() {
+    try { return window.localStorage.getItem(LS_PENDING_KEY) === '1'; } catch (e) { return false; }
   }
 
   /** 节流保存：避免高频编辑时反复写盘 */
@@ -173,9 +216,15 @@ XJ.storage = (function () {
   }
 
   function clear() {
-    if (mode === 'idb') return idbDel().then(function () { try { window.localStorage.removeItem(LS_KEY); } catch (e) {} return true; });
-    try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
-    return Promise.resolve(true);
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    saveQueue = saveQueue.then(function () {
+      return (db ? idbDel() : Promise.resolve(true)).then(function (ok) {
+        if (!ok) return storageFailure();
+        removeFallback();
+        return true;
+      });
+    });
+    return saveQueue;
   }
 
   return {
@@ -188,6 +237,7 @@ XJ.storage = (function () {
     setOnBeforeSave: function (fn) { onBeforeSave = typeof fn === 'function' ? fn : null; },
     getMode: function () { return mode; },
     getLastError: function () { return lastError; },
+    recoveryCopy: function () { return recovery; },
     modeLabel: function () { return mode === 'idb' ? 'IndexedDB' : mode === 'ls' ? '浏览器本地存储' : '不可用'; },
   };
 })();
