@@ -23,6 +23,7 @@ XJ.views.analysis = (function () {
         '<button class="ghost-btn primary" data-act="closeSubPage">返回</button>');
       return html;
     }
+    if (s.missingFx) html += '<div class="offline-bar">部分持仓缺少汇率，人民币金额与占比仅覆盖可折算的标的。</div>';
 
     /* ② 总资产（深色卡） */
     var unrealized = s.totalUnrealized;
