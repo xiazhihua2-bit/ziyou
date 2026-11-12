@@ -410,7 +410,7 @@ section('【5】分红日历事件与状态机');
   eq('2026-07 涉及标的数', new Set(mv.events.map((e) => e.symbol)).size, 2);
   const pending = mv.events.filter((e) => e.type === 'payout' && e.date >= REF_TODAY);
   eq('2026-07 待收笔数（均已过期）', pending.length, 0);
-  close('2026-07 已到账合计 = 420 + 4901.40', mv.receivedTotal, 5321.4015, 1e-9);
+  eq('只有分红方案时，月历不把估算的历史派息当作已到账', mv.receivedTotal, 0);
 
   const mvNow = XJ.calc.monthView(state, 'acc_1', 2026, 9);
   eq('2026-09 无分红安排', mvNow.events.length, 0);
@@ -3520,6 +3520,7 @@ section('【33】多币种汇总：首页/分析的总市值不能把港币当�
     const s = XJ.model.defaultState();
     s.accounts = [{ accountId: 'a1', name: '主账户' }];
     s.settings.fx = { HKD: HKD, USD: USD };
+    s.snapshots = { '2026-06-30': { fx: { HKD: HKD } } };
     const add = (sym, name, qty, cost, now, cny) => {
       s.symbols[sym] = { symbol: sym, name, costMethod: 'weighted' };
       s.transactions.push({
@@ -4050,6 +4051,7 @@ section('【37】FIRE：三档分母 · fireNumber 双口径 · 时间反解 · 
   /* ---- 37.18~37.22 覆盖率历史：双币种折算 / 缺月 / 外推首月 / 连续填月 ---- */
   const hstate = M.ensureBootstrapped(M.defaultState());
   hstate.settings.fx = { HKD: 0.9, USD: 7.1, updatedAt: REF_TODAY + 'T00:00:00Z' };
+  hstate.snapshots = { '2026-01-19': { fx: { HKD: 0.9 } } };
   const acc1 = hstate.accounts[0].accountId;
   hstate.received = [
     { recId: 'r1', accountId: acc1, symbol: 'sh600036', planId: null, exDividendDate: '2026-01-10',
