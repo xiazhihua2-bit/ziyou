@@ -15,7 +15,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
-const SRC = path.join(ROOT, 'dist', '自由.html');
+const SRC = process.env.ZIYOU_TEST_PWA ? path.join(ROOT, 'dist', 'pwa', 'index.html') : path.join(ROOT, 'dist', '自由.html');
 const PORT = 9333;
 
 /* 安装链接必须在【http(s) 来源】下才生效（file:// 下应用会如实拒绝同步），
@@ -673,7 +673,7 @@ const PROBE = `
 
   /* 首页深色卡：收起后必须仍能展开（曾经的 bug 是「收起」把按钮一起 display:none 了） */
   try {
-    XJ.store.setUI({ tab: 'overview', subPage: null, floatOpen: false });
+    XJ.store.setUI({ tab: 'overview', subPage: null, floatOpen: false, overviewForecast: false });
     XJ.store.commit(function (s) { s.settings.heroCollapsed = false; });
     await sleep(90);
     out.subviews.heroToggleExists = !!document.querySelector('[data-act="toggleHero"]');
@@ -689,7 +689,9 @@ const PROBE = `
       expandBtn.click(); await sleep(90);
       out.subviews.heroReexpanded = XJ.store.state.settings.heroCollapsed === false;
       out.subviews.heroMetricsBack = !!document.querySelector('.hero-dark .hd-metrics');
-      out.subviews.hfBackAfterExpand = !!document.querySelector('.hero-dark .hd-forecast');
+      out.subviews.hfStillClosedAfterExpand = !document.querySelector('.forecast-card .hd-forecast');
+      document.querySelector('[data-act="toggleOverviewForecast"]').click();
+      out.subviews.hfBackAfterExpand = !!document.querySelector('.forecast-card .hd-forecast');
     }
   } catch (e) { out.subviews.heroCollapsed = { error: String(e && e.message) }; }
 
@@ -832,6 +834,28 @@ const PROBE = `
     XJ.ui.closeSheet();
     XJ.store.setUI({ floatOpen: false });
   } catch (e) { out.subviews.floatMenu = { error: String(e && e.message) }; }
+
+  try {
+    var state = XJ.store.state;
+    var originalTx = state.transactions;
+    var tx = originalTx[0];
+    state.transactions = Array.from({ length: 35 }, function (_, i) {
+      return Object.assign({}, tx, { txId: 'ledger-' + i, date: '2024-01-' + String(i % 27 + 1).padStart(2, '0') });
+    });
+    XJ.store.setUI({ tab: 'mine', subPage: null, foldMineTx: false, ledgerFilters: {}, ledgerLimit: 30 });
+    document.querySelector('[data-act="loadMoreLedger"]').click();
+    var canSeeAll = document.querySelectorAll('[data-act="openTxEditor"][data-id^="ledger-"]').length === 35;
+    var form = document.getElementById('ledger-filters');
+    form.query.value = 'zz-no-results';
+    form.requestSubmit();
+    var filtersWork = !document.querySelector('[data-act="openTxEditor"][data-id^="ledger-"]');
+    var result = XJ.ui.confirm({ title: '回归测试', message: '取消测试' });
+    document.querySelector('#modal-root .mask').click();
+    var dismissed = await Promise.race([result, sleep(150).then(function () { return 'pending'; })]);
+    out.subviews.ledgerAndDismiss = canSeeAll && filtersWork && dismissed === false;
+    state.transactions = originalTx;
+    XJ.store.setUI({ tab: 'overview', ledgerFilters: {}, ledgerLimit: 30 });
+  } catch (e) { out.subviews.ledgerAndDismiss = { error: String(e && e.message) }; }
 
   /* 截图识别：首次弹隐私确认 → 同意 → 进入识别面板 */
   try {
@@ -2129,7 +2153,7 @@ try {
         text: r.subviews && r.subviews.dsEntryText, err: r.subviews && r.subviews.dsErr }));
     }
     if (r.subviews && r.subviews.dsSubPage === 'divsummary' && r.subviews.dsSubTitle === '分红汇总' &&
-      r.subviews.dsHero === true && r.subviews.dsCap === '分红总额' &&
+      r.subviews.dsHero === true && r.subviews.dsCap === '登记分红总额' &&
       r.subviews.dsChips === 5 && r.subviews.dsChipActive === '今年') {
       console.log('      ✓ 点入口进「分红汇总」子页：五档时间胶囊，默认「今年」，主卡总额 ' +
         r.subviews.dsTotal);
@@ -2427,10 +2451,10 @@ try {
           btnVisible: r.subviews.heroExpandBtnVisible, reexpanded: r.subviews.heroReexpanded,
           metricsBack: r.subviews.heroMetricsBack }));
       }
-      if (r.subviews.hfHiddenWhenCollapsed === true && r.subviews.hfBackAfterExpand === true) {
-        console.log('      ✓ 测算带随深色卡一起收起 / 展开');
+      if (r.subviews.hfHiddenWhenCollapsed === true && r.subviews.hfStillClosedAfterExpand === true && r.subviews.hfBackAfterExpand === true) {
+        console.log('      ✓ 分红试算通过独立入口展开');
       } else {
-        bad('测算带未随深色卡收起: ' + JSON.stringify({
+        bad('分红试算独立折叠异常: ' + JSON.stringify({
           hidden: r.subviews.hfHiddenWhenCollapsed, back: r.subviews.hfBackAfterExpand }));
       }
     } else {
@@ -2495,6 +2519,8 @@ try {
     }
     if (r.subviews && r.subviews.floatManualOpened) console.log('      ✓ 悬浮「手动添加」可打开表单');
     else bad('悬浮「手动添加」未打开表单');
+    if (r.subviews && r.subviews.ledgerAndDismiss === true) console.log('      ✓ 可看第 31 笔以后交易，筛选有效，遮罩关闭能结束确认');
+    else bad('交易流水或关闭确认异常: ' + JSON.stringify(r.subviews && r.subviews.ledgerAndDismiss));
 
     if (r.interactions) {
       if (r.interactions.error) bad('交互冒烟失败: ' + r.interactions.error);
@@ -2585,7 +2611,7 @@ try {
          所以拿 calc.payoutsOn 的输出来对齐 —— 这条用例要验的是「界面把 calc 的结果如实渲染出来」。 */
       const expPop = await evalIn('(function(){var p=XJ.calc.payoutsOn(XJ.store.state,XJ.calc.ALL,XJ.util.today());' +
         'return {rows:p.items.length, total:XJ.util.signMoney(p.total)};})()');
-      const okCard = card.title === '今日分红到账' && /^\+¥/.test(card.total) &&
+      const okCard = card.title === '今日派息提醒' && /^\+¥/.test(card.total) &&
         card.rows === expPop.rows && card.btn === '查看分红记录' && card.ghost === '我知道了';      if (okCard) {
         console.log('      ✓ 弹窗内容：' + card.title + ' · ' + card.total + ' · ' +
           card.rows + ' 行明细（' + card.rowName + '）· 主按钮「' + card.btn + '」');
