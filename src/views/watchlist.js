@@ -275,7 +275,7 @@ XJ.views.watchlist = (function () {
   /* ---------------- 渲染 ---------------- */
 
   function quoteOf(sym) {
-    return pxMemo.quotes[sym] || XJ.store.state.quoteCache[sym] || null;
+    return XJ.store.state.quoteCache[sym] || pxMemo.quotes[sym] || null;
   }
 
   function indexBar(st) {
@@ -472,6 +472,11 @@ XJ.views.watchlist = (function () {
     return html;
   }
 
-  return { render: render, bind: bind, fillYield: fillYield, toggleSort: toggleSort };
+  return { render: render, bind: bind, fillYield: fillYield, toggleSort: toggleSort,
+    currentSymbols: function () {
+      var store = XJ.store;
+      return sortedRows(store, store.ui.wlGroup || 'all', null).map(function (row) { return row.symbol; });
+    },
+  };
 })();
 
