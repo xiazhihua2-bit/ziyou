@@ -141,4 +141,17 @@ for (const file of ['util', 'market', 'model', 'fetcher']) vm.runInContext(sourc
 const fetched = await apiContext.XJ.fetcher.fetchDividends(['sh600036', 'sh600023']);
 assert.deepEqual(Array.from(fetched.noData), ['sh600036']);
 assert.deepEqual(Array.from(fetched.failed), ['sh600023']);
+const market = apiContext.XJ.market;
+const fields = Array(50).fill('');
+fields[1] = '招商银行'; fields[2] = '600036'; fields[3] = '42'; fields[4] = '40';
+assert.equal(market.parseQuoteFields('sh600036', fields.join('~')).changePct, 5);
+fields[32] = '0';
+assert.equal(market.parseQuoteFields('sh600036', fields.join('~')).changePct, 0);
+fields[3] = ''; fields[32] = '';
+assert.equal(market.parseQuoteFields('sh600036', fields.join('~')).changePct, null);
+const close = apiContext.XJ.fetcher.closingQuoteOf('of110022', [['2026-11-09', 1], ['2026-11-10', 1.25]]);
+assert.equal(close.changePct, 25);
+assert.equal(close.quoteTime, '20261110');
+assert.equal(close.source, 'nav');
+assert.equal(apiContext.XJ.fetcher.closingQuoteOf('sh600036', [['2026-11-10', 40]]).changePct, null);
 console.log('Upgrade checks passed: dividend eligibility, currency gaps, ledger recovery, cache isolation, offline navigation and partial refresh.');
