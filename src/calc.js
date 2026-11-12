@@ -620,9 +620,9 @@ XJ.calc = (function () {
          ★ **每股数字（price / avgCost / prevClose）不折**：港股的价格本来就是港元，
          折了反而与行情软件对不上。 */
       var rate = fxRate(XJ.market.currency(sym), (state.settings && state.settings.fx) || {});
-      var marketValueCny = marketValue === null ? null : marketValue * rate;
-      var costValueCny = costValue * rate;
-      var unrealizedCny = marketValue === null ? null : marketValueCny - costValueCny;
+      var marketValueCny = marketValue === null || rate === null ? null : marketValue * rate;
+      var costValueCny = rate === null ? null : costValue * rate;
+      var unrealizedCny = marketValueCny === null ? null : marketValueCny - costValueCny;
 
       rows.push({
         symbol: sym,
@@ -659,10 +659,10 @@ XJ.calc = (function () {
         marketValueCny: marketValueCny,
         costValueCny: costValueCny,
         unrealizedCny: unrealizedCny,
-        realizedCny: pos.realized * rate,
-        netInvestedCny: netInvested * rate,
-        receivedTotalCny: recvTotal * rate,
-        predictedDividendCny: predictedDividend * rate,
+        realizedCny: rate === null ? null : pos.realized * rate,
+        netInvestedCny: rate === null ? null : netInvested * rate,
+        receivedTotalCny: rate === null ? null : recvTotal * rate,
+        predictedDividendCny: rate === null ? null : predictedDividend * rate,
         perShareTTM: ttm,
         dividendYield: dividendYield,
         annualPerShare: annual.perShare,
@@ -677,7 +677,7 @@ XJ.calc = (function () {
         receivedTotal: recvTotal,
         remaining: remaining,
         /* 人民币口径的「剩余待回收」= 净投入 − 已收分红（与上面同源，只是换算单位） */
-        remainingCny: Math.max(0, netInvested * rate - recvTotal * rate),
+        remainingCny: rate === null ? null : Math.max(0, (netInvested - recvTotal) * rate),
         recoveryPct: recoveryPct,
         expectedYears: expectedYears,
         holdDays: holdDays,
@@ -721,28 +721,36 @@ XJ.calc = (function () {
          缺昨收的标的（新加的、行情还没回）直接跳过 —— 绝不拿 0 当昨收，那会算出 +∞。 */
       var pc = U.num(h.prevClose), px = U.num(h.price);
       if (pc !== null && pc > 0 && px !== null && h.qty > 0) {
-        var fr = U.n0(h.fxRate) || 1;
+        var fr = U.n0(h.fxRate);
         totalTodayPnl += (px - pc) * h.qty * fr;
         totalPrevMv += pc * h.qty * fr;
       }
     });
 
     /* 分红同样按「该标的的币种」折算（港币分红不能当人民币加） */
-    var fxNow = (state.settings && state.settings.fx) || {};
+    var missingReceiptFx = false;
     var recvCny = function (r) {
-      return U.n0(r.amount) * fxRate(XJ.market.currency(r.symbol), fxNow);
+      var amount = historicalReceiptCny(state, r);
+      if (amount === null) missingReceiptFx = true;
+      return amount;
     };
 
     var receivedThisYear = U.sum(state.received.filter(function (r) {
       if (acc !== ALL && r.accountId !== acc) return false;
       return (r.year || U.yearOf(r.exDividendDate)) === curYear;
     }), recvCny);
+    var yearRecords = state.received.filter(function (r) {
+      return (acc === ALL || r.accountId === acc) && (r.year || U.yearOf(r.exDividendDate)) === curYear;
+    });
+    var confirmedThisYear = dividendAmounts(state, yearRecords.filter(function (r) { return r.source !== 'AUTO'; }), true);
+    var autoThisYear = dividendAmounts(state, yearRecords.filter(function (r) { return r.source === 'AUTO'; }), true);
 
     var receivedTotal = U.sum(state.received.filter(function (r) {
       return acc === ALL || r.accountId === acc;
     }), recvCny);
 
-    var compositeYield = totalMarketValue > 0 ? totalPredicted / totalMarketValue * 100 : null;
+    var missingFx = hs.some(function (h) { return h.fxRate === null; });
+    var compositeYield = !missingFx && totalMarketValue > 0 ? totalPredicted / totalMarketValue * 100 : null;
 
     var ups = upcomingPayouts(state, acc, today);
     var nextPayout = ups.length ? ups[0] : null;
@@ -770,14 +778,16 @@ XJ.calc = (function () {
       totalCost: totalCost,
       totalNetInvested: totalNetInvested,
       totalUnrealized: totalMarketValue - totalCost,
-      totalUnrealizedPct: totalCost > 0 ? (totalMarketValue - totalCost) / totalCost * 100 : null,
+      totalUnrealizedPct: !missingFx && totalCost > 0 ? (totalMarketValue - totalCost) / totalCost * 100 : null,
       totalPredicted: totalPredicted,
       totalRealized: totalRealized,
       receivedThisYear: receivedThisYear,
+      confirmedThisYear: confirmedThisYear,
+      autoThisYear: autoThisYear,
       receivedTotal: receivedTotal,
       compositeYield: compositeYield,
       /* 成本息率：预测年度分红 ÷ 总成本（成本非正时不显示） */
-      costYield: totalCost > 0 ? totalPredicted / totalCost * 100 : null,
+      costYield: !missingFx && totalCost > 0 ? totalPredicted / totalCost * 100 : null,
       /* 市值息率：预测年度分红 ÷ 总市值 */
       marketYield: compositeYield,
       /* 月均预测分红：预测年度分红 ÷ 12 */
@@ -785,6 +795,8 @@ XJ.calc = (function () {
       avgMarketValue: hs.length ? totalMarketValue / hs.length : 0,
       byAssetType: assetTypeList,
       missingQuote: missingQuote,
+      missingFx: missingFx,
+      missingReceiptFx: missingReceiptFx,
       nextPayout: nextPayout,
       upcomingCount: ups.length,
       /* 当日参考盈亏：现价相对【昨收】的浮动，人民币口径；不含当日已到账分红。
@@ -800,24 +812,50 @@ XJ.calc = (function () {
    * 生成日历事件（只针对当前账户持有的标的）。
    * 派息日字段缺失，统一按「除权除息日 T+1」推算并标注为【预计到账】。
    */
+  function dividendEligibility(txs, plan, today) {
+    var date = plan.equityRecordDate || null;
+    if (!date && plan.exDividendDate && !plan.eligibilityUncertain) date = U.addDays(plan.exDividendDate, -1);
+    if (!date) return { qty: null, estimated: true };
+    return { qty: position(txs, date > today ? today : date).qty, estimated: date > today };
+  }
+
+  function autoDividendNeedsReview(state, record) {
+    var plan = state.plans[record.planId];
+    if (record.source !== 'AUTO') return false;
+    if (!plan) return true;
+    var eligible = dividendEligibility(txOf(state, record.accountId, record.symbol), plan, U.today());
+    return eligible.estimated || eligible.qty !== record.qtyAtRecord ||
+      Math.abs(record.amount - Math.round(eligible.qty * perSharePretax(plan) * 100) / 100) > 0.001 ||
+      record.exDividendDate !== payoutDate(plan);
+  }
+
   function calendarEvents(state, accountId, fromDate, toDate) {
     var acc = accountId || ALL;
-    var hs = holdings(state, acc);
     var out = [];
     var today = U.today();
+    var bySymbol = new Map();
+    txOf(state, acc).forEach(function (tx) {
+      if (!bySymbol.has(tx.symbol)) bySymbol.set(tx.symbol, new Map());
+      var accounts = bySymbol.get(tx.symbol);
+      if (!accounts.has(tx.accountId)) accounts.set(tx.accountId, []);
+      accounts.get(tx.accountId).push(tx);
+    });
 
-    hs.forEach(function (h) {
-      var txs = txOf(state, acc, h.symbol);
-      var plans = plansOf(state, h.symbol);
+    bySymbol.forEach(function (accounts, symbol) {
+      var plans = plansOf(state, symbol);
       plans.forEach(function (p) {
-        /* 美股方案可能只有真实派息日而缺登记日/除息日，此时也应进日历 */
-        var hasDate = p.equityRecordDate || p.exDividendDate || (p.source === 'us' && p.payoutDate);
-        if (!hasDate) return;
-
-        var posAtReg = position(txs, p.equityRecordDate || p.exDividendDate);
-        var qty = posAtReg.qty > 0 ? posAtReg.qty : h.qty;
+        if (/取消/.test(p.assignProgress || '')) return;
+        var qty = 0, hasUncertain = false, estimatedQty = false;
+        accounts.forEach(function (txs) {
+          var eligibility = dividendEligibility(txs, p, today);
+          if (eligibility.qty === null && position(txs, today).qty > 0) hasUncertain = true;
+          qty += eligibility.qty || 0;
+          estimatedQty = estimatedQty || eligibility.estimated;
+        });
+        if (!qty && !hasUncertain) return;
         var ps = perSharePretax(p);
-        var amount = qty * ps;
+        if (!(ps > 0)) return;
+        var amount = hasUncertain ? null : qty * ps;
 
         var pay = payoutInfo(p);
         var seq = [];
@@ -836,15 +874,17 @@ XJ.calc = (function () {
             date: e.date,
             type: e.type,
             label: e.label,
-            symbol: h.symbol,
-            name: h.name,
-            code: h.code,
+            symbol: symbol,
+            name: (state.symbols[symbol] || {}).name || XJ.model.codeOf(symbol),
+            code: XJ.model.codeOf(symbol),
             planId: p.planId,
             reportDate: p.reportDate,
             reportType: p.reportType,
             perShare: ps,
             perShareProfile: p.implPlanProfile,
-            qty: qty,
+            qty: hasUncertain ? null : qty,
+            needsReview: hasUncertain,
+            estimatedQty: estimatedQty,
             amount: e.amount,
             assignProgress: p.assignProgress,
             isImplemented: p.isImplemented,
@@ -882,14 +922,17 @@ XJ.calc = (function () {
 
     var today = U.today();
     var pending = evs.filter(function (e) { return e.type === 'payout' && e.date >= today; });
-    var monthTotal = U.sum(pending, function (e) { return e.amount; });
-    var receivedInMonth = U.sum(evs.filter(function (e) { return e.type === 'payout' && e.date < today; }),
-      function (e) { return e.amount; });
+    var pendingAmounts = dividendAmounts(state, pending, false);
+    var receivedAmounts = dividendAmounts(state, state.received.filter(function (r) {
+      return (!accountId || accountId === ALL || accountId === r.accountId) && r.exDividendDate >= from &&
+        r.exDividendDate <= to && r.exDividendDate <= today;
+    }), true);
 
     return {
       ym: ym, year: year, month: month, from: from, to: to,
       events: evs, byDate: byDate,
-      pendingCount: pending.length, pendingTotal: monthTotal, receivedTotal: receivedInMonth,
+      pendingCount: pending.length, pendingTotal: pendingAmounts.total, receivedTotal: receivedAmounts.total,
+      receivedAmounts: receivedAmounts,
     };
   }
 
@@ -1443,16 +1486,16 @@ XJ.calc = (function () {
    * base ≤ 0（该档没有任何启用支出）→ 全部 pct = null，由视图显示「—」。
    */
   function fireCoverageHistory(state, acc, tier, cfg) {
-    var fxNow = (state.settings && state.settings.fx) || {};
     var eff = fireEffectiveSpend(cfg);
     var target = eff.base;
-    var byMonth = {};
+    var byMonth = {}, missingMonths = {};
     state.received.forEach(function (r) {
       if (acc !== ALL && r.accountId !== acc) return;
       var ym = U.ymOf(r.exDividendDate);
       if (!ym) return;
-      var cny = U.n0(r.amount) * fxRate(XJ.market.currency(r.symbol), fxNow);
-      byMonth[ym] = (byMonth[ym] || 0) + cny;
+      var cny = historicalReceiptCny(state, r);
+      if (cny === null) missingMonths[ym] = true;
+      byMonth[ym] = (byMonth[ym] || 0) + U.n0(cny);
     });
     var todayYm = U.ymOf(U.today());
     var keys = Object.keys(byMonth).filter(function (k) { return k <= todayYm; }).sort();
@@ -1461,7 +1504,7 @@ XJ.calc = (function () {
       var cur = keys[0];
       while (cur <= todayYm) {
         var amt = byMonth[cur] || 0;
-        history.push({ date: cur, pct: target > 0 ? amt / target * 100 : null });
+        history.push({ date: cur, pct: target > 0 && !missingMonths[cur] ? amt / target * 100 : null });
         cur = ymAdd(cur, 1);
       }
     }
@@ -1602,11 +1645,13 @@ XJ.calc = (function () {
     var d = date || U.today();
     var items = calendarEvents(state, accountId || ALL, d, d)
       .filter(function (e) { return e.type === 'payout'; });
+    var amounts = dividendAmounts(state, items, false);
     return {
       date: d,
       items: items,
       count: items.length,
-      total: U.sum(items, function (e) { return U.n0(e.amount); }),
+      total: amounts.total,
+      amounts: amounts,
       estimated: items.some(function (e) { return e.isEstimate; }),
     };
   }
@@ -1686,7 +1731,7 @@ XJ.calc = (function () {
       g.count++;
       g.records.push(r);
       var y = U.yearOf(r.exDividendDate);
-      if (y) byYear[y] = (byYear[y] || 0) + U.n0(r.amount);
+      if (y) byYear[y] = (byYear[y] || 0) + U.n0(historicalReceiptCny(state, r));
     });
     var bySymbolList = Object.keys(bySymbol).map(function (k) { return bySymbol[k]; })
       .sort(function (a, b) { return b.amount - a.amount; });
@@ -1707,17 +1752,23 @@ XJ.calc = (function () {
       g.count++;
     });
 
+    var actualAmounts = dividendAmounts(state, records, true);
+    var expectedAmounts = dividendAmounts(state, pending, false);
     return {
       range: rg,
       records: records,
       count: records.length,
-      total: U.sum(records, function (r) { return U.n0(r.amount); }),
+      total: actualAmounts.total,
+      amounts: actualAmounts,
+      confirmedAmounts: dividendAmounts(state, records.filter(function (r) { return r.source !== 'AUTO'; }), true),
+      autoAmounts: dividendAmounts(state, records.filter(function (r) { return r.source === 'AUTO'; }), true),
       bySymbolList: bySymbolList,
       byYear: byYear,
       years: years,
       pending: pending,
       pendingCount: pending.length,
-      pendingTotal: U.sum(pending, function (e) { return U.n0(e.amount); }),
+      pendingTotal: expectedAmounts.total,
+      pendingAmounts: expectedAmounts,
       pendingList: Object.keys(pendBy).map(function (k) { return pendBy[k]; })
         .sort(function (a, b) { return b.amount - a.amount; }),
       firstDate: records.length ? records[0].exDividendDate : null,
@@ -1746,11 +1797,10 @@ XJ.calc = (function () {
     var s = summary(state, accountId);
     if (!s.count) return null;
     var f = fx || (state.settings && state.settings.fx) || {};
-    var rate = { CNY: 1, HKD: U.n0(f.HKD) || 1, USD: U.n0(f.USD) || 1 };
 
     var mv = 0, cost = 0, pred = 0, net = 0;
     s.holdings.forEach(function (h) {
-      var r = rate[h.currency] || 1;
+      var r = fxRate(h.currency, f);
       if (h.marketValue !== null) mv += h.marketValue * r;
       cost += h.costValue * r;
       pred += h.predictedDividend * r;
@@ -1762,13 +1812,19 @@ XJ.calc = (function () {
     var recv = 0;
     state.received.forEach(function (rec) {
       if (accountId && accountId !== ALL && rec.accountId !== accountId) return;
-      recv += U.n0(rec.amount) * (rate[XJ.market.currency(rec.symbol)] || 1);
+      recv += U.n0(historicalReceiptCny(state, rec));
     });
 
     var r2 = function (v) { return Math.round(v * 100) / 100; };
     return {
       mv: r2(mv), cost: r2(cost), pred: r2(pred), recv: r2(recv), net: r2(net),
-      fx: (f.HKD || f.USD) ? { HKD: U.num(f.HKD), USD: U.num(f.USD) } : null,
+      missingFx: s.holdings.some(function (h) { return fxRate(h.currency, f) === null; }),
+      fx: ['HKD', 'USD', 'JPY'].reduce(function (rates, currency) {
+        var date = (f.observedOn || {})[currency] || (f.observedAt || {})[currency];
+        var rate = fxRate(currency, f);
+        if (rate !== null && (!date || date.slice(0, 10) === U.today())) rates[currency] = rate;
+        return rates;
+      }, {}),
     };
   }
 
@@ -1806,6 +1862,7 @@ XJ.calc = (function () {
     if (ds.length < 2) return null;
     var cur = state.snapshots[ds[ds.length - 1]];
     var prev = state.snapshots[ds[ds.length - 2]];
+    if (cur.missingFx || prev.missingFx) return null;
     return {
       date: ds[ds.length - 1],
       prevDate: ds[ds.length - 2],
@@ -1864,7 +1921,8 @@ XJ.calc = (function () {
           amount: 0, per10: 0, exDate: null, reportType: '',
           undatedCount: 0, datedAmount: 0, undatedAmount: 0, events: [],
         });
-        var amt = h.qty * ps;
+        var eligibility = undated ? { qty: h.qty } : dividendEligibility(txOf(state, acc, h.symbol), p, today);
+        var amt = eligibility.qty === null ? null : eligibility.qty * ps;
         g.amount += amt;
         if (future) {
           g.datedAmount += amt;
@@ -1893,7 +1951,9 @@ XJ.calc = (function () {
 
     return {
       count: list.length,
-      total: U.sum(list, function (x) { return x.amount; }),
+      total: dividendAmounts(state, list, false).total,
+      amounts: dividendAmounts(state, list, false),
+      undatedAmounts: dividendAmounts(state, list.map(function (x) { return { symbol: x.symbol, amount: x.undatedAmount }; }), false),
       datedCount: list.filter(function (x) { return x.dateKnown; }).length,
       undatedCount: list.filter(function (x) { return !x.dateKnown; }).length,
       datedTotal: U.sum(list.filter(function (x) { return x.dateKnown; }), function (x) { return x.amount; }),
@@ -1942,7 +2002,7 @@ XJ.calc = (function () {
       var y = r.year || U.yearOf(r.exDividendDate);
       if (y !== year) return;
       var m = U.monthOf(r.exDividendDate);
-      var amt = U.n0(r.amount);
+      var amt = U.n0(historicalReceiptCny(state, r));
       if (m >= 1 && m <= 12) months[m - 1] += amt;
       records.push(r);
       symSet[r.symbol] = true;
@@ -1950,9 +2010,11 @@ XJ.calc = (function () {
 
     var total = U.sum(months, function (x) { return x; });
     var denom = (year === curYear) ? U.monthOf(today) : 12;
+    var amounts = dividendAmounts(state, records, true);
     return {
       year: year,
       total: total,
+      amounts: amounts,
       count: records.length,
       symbolCount: Object.keys(symSet).length,
       months: months,
@@ -2121,10 +2183,10 @@ XJ.calc = (function () {
         });
         if (!txs.length) continue;
 
-        var pos = position(txs, p.equityRecordDate || payDate);
-        if (pos.qty <= 0) continue;
+        var eligible = dividendEligibility(txs, p, today);
+        if (eligible.estimated || !(eligible.qty > 0)) continue;
 
-        var amount = Math.round(pos.qty * ps * 100) / 100;
+        var amount = Math.round(eligible.qty * ps * 100) / 100;
 
         /* 二级去重：
              ① 同一方案（planId + 账户）→ 幂等，老规则
@@ -2147,7 +2209,7 @@ XJ.calc = (function () {
           planId: p.planId,
           exDividendDate: payDate,
           perShareAmount: ps,
-          qtyAtRecord: pos.qty,
+          qtyAtRecord: eligible.qty,
           amount: amount,
           source: 'AUTO',
           year: U.yearOf(payDate),
@@ -2207,11 +2269,11 @@ XJ.calc = (function () {
     return hit < 0 ? null : U.num(points[hit][1]);
   }
 
-  /** 汇率：人民币恒为 1；缺失时按 1 折算（与全应用口径一致） */
+  /** 每一单位原币对应的人民币，缺失用 null 表示。 */
   function fxRate(currency, fx) {
-    if (currency === 'HKD') return U.num(fx && fx.HKD) || 1;
-    if (currency === 'USD') return U.num(fx && fx.USD) || 1;
-    return 1;
+    if (currency === 'CNY') return 1;
+    var value = U.num(fx && fx[currency]);
+    return value > 0 ? value : null;
   }
 
   /**
@@ -2220,6 +2282,47 @@ XJ.calc = (function () {
    */
   function cnyRateOf(state, symbol) {
     return fxRate(XJ.market.currency(symbol), (state && state.settings && state.settings.fx) || {});
+  }
+
+  function historicalReceiptCny(state, record) {
+    var currency = XJ.market.currency(record.symbol);
+    if (currency === 'CNY') return U.n0(record.amount);
+    var day = record.exDividendDate;
+    if (!day) return null;
+    var latest = state.settings && state.settings.fx;
+    var latestDay = latest && String((latest.observedOn || {})[currency] || (latest.observedAt || {})[currency] || latest.updatedAt || '').slice(0, 10);
+    var rate = latestDay && latestDay <= day ? fxRate(currency, latest) : null;
+    var best = rate === null ? '' : latestDay;
+    var snapshots = state.snapshots || {};
+    Object.keys(snapshots).forEach(function (date) {
+      if (date > day || date < best) return;
+      var candidate = fxRate(currency, snapshots[date] && snapshots[date].fx);
+      if (candidate !== null) { rate = candidate; best = date; }
+    });
+    return rate === null ? null : U.n0(record.amount) * rate;
+  }
+
+  function dividendAmounts(state, rows, historical) {
+    var total = 0, missing = 0, native = {};
+    rows.forEach(function (row) {
+      if (row.amount === null || row.amount === undefined) { missing++; return; }
+      var currency = XJ.market.currency(row.symbol);
+      var amount = U.n0(row.amount);
+      native[currency] = (native[currency] || 0) + amount;
+      var rate = historical ? null : cnyRateOf(state, row.symbol);
+      var value = historical ? historicalReceiptCny(state, row) : (rate === null ? null : amount * rate);
+      if (value === null) missing++;
+      else total += value;
+    });
+    return { total: total, missing: missing, native: native };
+  }
+
+  function dividendAmountText(amounts, decimals) {
+    var text = U.moneySign(amounts.total, decimals);
+    if (!amounts.missing) return text;
+    var native = Object.keys(amounts.native).filter(function (code) { return code !== 'CNY'; })
+      .map(function (code) { return code + ' ' + U.money(amounts.native[code], decimals); });
+    return text + '（合计不完整' + (native.length ? ' · 原币 ' + native.join(' / ') : '') + '）';
   }
 
   /**
@@ -2354,7 +2457,7 @@ XJ.calc = (function () {
       return s;
     }
 
-    var series = [];
+    var series = [], missingFx = false;
     var prevNetLocal = {};   // sym -> 上一个曲线日的【原币】累计净投入
     for (var i = 0; i < dates.length; i++) {
       var d = dates[i];
@@ -2366,6 +2469,7 @@ XJ.calc = (function () {
         var recOn = receivedOn(info.recs, d);
         var pos = position(info.txs, d, info.method, recOn);
         var rate = fxRate(info.currency, dayFx);
+        if (rate === null && (pos.qty > 0 || pos.netInvested || recOn)) missingFx = true;
         /* 外部现金流只由真实交易驱动：用【原币】净投入的差分再按当日汇率折算。
            若直接用 net(t) − net(t−1)（人民币口径），汇率一变就凭空多出/少掉一笔本金进出，
            TWR 会把汇率损益误当现金流，收益率曲线被压平。 */
@@ -2409,7 +2513,7 @@ XJ.calc = (function () {
         source: snap ? 'snapshot' : 'kline',   // 仅标记「当日有快照」，数值一律重建
       });
     }
-    return { series: series, missing: missing, used: used };
+    return { series: series, missing: missing, used: used, missingFx: missingFx };
   }
 
   /** 日/月粒度降采样：月粒度取每月最后一个点 */
@@ -3175,11 +3279,17 @@ XJ.calc = (function () {
     alignMinute: alignMinute,
     netWorthAdjust: netWorthAdjust,
     cnyRateOf: cnyRateOf,
+    fxRate: fxRate,
     minuteOf: minuteOf,
     minuteMapFor: minuteMapFor,
     perSharePretax: perSharePretax,
     perShareAfterTax: perShareAfterTax,
     payoutDate: payoutDate,
+    dividendAmounts: dividendAmounts,
+    dividendAmountText: dividendAmountText,
+    historicalReceiptCny: historicalReceiptCny,
+    dividendEligibility: dividendEligibility,
+    autoDividendNeedsReview: autoDividendNeedsReview,
     payoutInfo: payoutInfo,
     dividendAnchor: dividendAnchor,
     plansOf: plansOf,
