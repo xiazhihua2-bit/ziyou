@@ -139,13 +139,14 @@ XJ.usdiv = (function () {
   function fetchOne(secucode) {
     if (requester) {
       return Promise.resolve().then(function () { return requester(secucode); })
-        .then(function (rows) { return Array.isArray(rows) ? rows : []; })
-        .catch(function () { return []; });
+        .then(function (rows) { return Array.isArray(rows) ? rows : null; })
+        .catch(function () { return null; });
     }
     return jsonp(buildUrl(secucode)).then(function (res) {
-      if (!res || !res.result || !Array.isArray(res.result.data)) return [];
-      return res.result.data;
-    }).catch(function () { return []; });
+      if (!res) return null;
+      if (res.result && Array.isArray(res.result.data)) return res.result.data;
+      return res.success === true || /没有相关数据|暂无数据/.test(res.message || '') ? [] : null;
+    }).catch(function () { return null; });
   }
 
   /**
@@ -161,13 +162,15 @@ XJ.usdiv = (function () {
       : SUFFIXES.slice();
     var today = U.today();
     var i = 0;
+    var failed = false;
 
     function step() {
       if (i >= candidates.length) {
-        return Promise.resolve({ symbol: symbol, plans: [], suffix: null, noData: true });
+        return Promise.resolve({ symbol: symbol, plans: [], suffix: null, noData: true, failed: failed });
       }
       var suf = candidates[i++];
       return fetchOne(code + suf).then(function (rows) {
+        if (!rows) failed = true;
         if (!rows || !rows.length) return step();
         suffixMap[symbol] = suf;
         var seen = {}, plans = [];
@@ -189,19 +192,19 @@ XJ.usdiv = (function () {
   /** 批量串行 + 间隔；单只失败不中断其它标的。返回 { plans: {sym: plans[]}, noData: sym[] } */
   function fetchAll(symbols, onProgress) {
     symbols = (symbols || []).filter(function (s, i, a) { return s && a.indexOf(s) === i; });
-    var bySym = {}, noData = [], i = 0;
+    var bySym = {}, noData = [], failed = [], i = 0;
     function step() {
-      if (i >= symbols.length) return Promise.resolve({ plans: bySym, noData: noData });
+      if (i >= symbols.length) return Promise.resolve({ plans: bySym, noData: noData, failed: failed });
       var sym = symbols[i++];
       return fetchSymbol(sym).then(function (r) {
         bySym[sym] = r.plans;
         if (r.noData) noData.push(sym);
+        if (r.failed) failed.push(sym);
         if (onProgress) onProgress(i, symbols.length, sym);
-        if (i >= symbols.length) return { plans: bySym, noData: noData };
+        if (i >= symbols.length) return { plans: bySym, noData: noData, failed: failed };
         return new Promise(function (res) { setTimeout(res, GAP); }).then(step);
       });
     }
-    if (!symbols.length) return Promise.resolve({ plans: bySym, noData: noData });
     return step();
   }
 
@@ -222,11 +225,16 @@ XJ.usdiv = (function () {
    *   · 美股 + 汇率可用 → 按实时汇率折成 ¥
    *   · 美股 + 汇率缺失 → 显示 USD 原币「$x.xx」，绝不按 1 折算造成 1 美元当 1 元的假数字
    */
-  function moneyText(state, symbol, amount, dec) {
-    if (!isUs(symbol)) return U.moneySign(amount, dec);
-    var r = usdRate(state);
-    if (!r) return '$' + U.money(amount, dec);
-    return U.moneySign(U.n0(amount) * r, dec);
+  function moneyText(state, symbol, amount, dec, receivedOn) {
+    if (amount === null || amount === undefined) return '—';
+    var currency = XJ.market.currency(symbol);
+    if (currency === 'CNY') return U.moneySign(amount, dec);
+    var r = state && state.settings && state.settings.fx && U.num(state.settings.fx[currency]);
+    var value = receivedOn ? XJ.calc.historicalReceiptCny(state, {
+      symbol: symbol, amount: amount, exDividendDate: receivedOn,
+    }) : (r > 0 ? amount * r : null);
+    if (value === null) return (currency === 'USD' ? '$' : currency + ' ') + U.money(amount, dec);
+    return U.moneySign(value, dec);
   }
 
   /** 金额旁的口径说明（税前 / 汇率 / 未计税） */
