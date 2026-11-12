@@ -45,7 +45,7 @@ XJ.views.common = (function () {
     } else if (st.ui.status) {
       parts.push('<div class="offline-bar">' + UI.icon('info', 15) + '<span>' + U.esc(st.ui.status) + '</span></div>');
     }
-    if (st.state.settings.lastQuoteAt && st.ui.offline) {
+    if (!st.ui.busy && !st.ui.status && st.state.settings.lastQuoteAt && st.ui.offline) {
       parts.push('<div class="offline-bar">' + UI.icon('warn', 15) +
         '<span>行情未能刷新，当前展示缓存数据（' + U.esc(String(st.state.settings.lastQuoteAt).slice(5, 16).replace('T', ' ')) + '）</span></div>');
     }
@@ -83,7 +83,7 @@ XJ.views.common = (function () {
 
   /** 指标旁的解释气泡 */
   function qmark(text) {
-    return '<span class="qmark" data-act="explain" data-text="' + U.esc(text) + '">?</span>';
+    return '<button class="qmark" aria-label="查看指标说明" data-act="explain" data-text="' + U.esc(text) + '">?</button>';
   }
 
   /**
@@ -157,17 +157,17 @@ XJ.views.overview = (function () {
       '<span class="hd-today-note">较昨收 · 跨币种已折算</span></div>';
   }
 
-  function heroCard(st, s, proj, stat) {
+  function heroCard(st, s) {
     var cfg = st.state.settings;
     var collapsed = XJ.store.folded('heroCollapsed', cfg);   // 默认折叠（util.FOLD.collapsed）
     var all = XJ.model.HERO_METRICS;
     var chosen = (cfg.heroMetrics && cfg.heroMetrics.length) ? cfg.heroMetrics : all.map(function (m) { return m.key; });
 
     var vals = {
-      receivedThisYear: U.moneySign(s.receivedThisYear, 0),
+      receivedThisYear: U.moneySign(s.receivedThisYear, 0) + (s.missingReceiptFx ? '（部分）' : ''),
       totalCost: '¥' + U.moneyCompact(s.totalCost),
       totalMarketValue: '¥' + U.moneyCompact(s.totalMarketValue),
-      costYield: s.costYield === null ? '已回本' : U.pct(s.costYield),
+      costYield: s.missingFx ? '—' : (s.costYield === null ? '已回本' : U.pct(s.costYield)),
       marketYield: s.marketYield === null ? '—' : U.pct(s.marketYield),
       monthlyDividend: U.moneySign(s.monthlyDividend, 0),
     };
@@ -182,12 +182,6 @@ XJ.views.overview = (function () {
         '</div>';
     }).join('');
 
-    var statusLine = stat.since
-      ? '收息第 <b>' + stat.days + '</b> 天，你的耐心正在被时间奖励 🎁'
-      : '还没有开始计算收息天数，添加第一笔买入即可';
-
-    var years = U.n0(st.state.projection.years) || 10;
-    var mult = proj.multiple ? '· ' + years + ' 年可达 <b>' + proj.multiple.toFixed(1) + ' 倍</b>' : '';
 
     /* 收起态必须保留一个「展开」按钮 —— 早先的实现把 .hd-actions 一起隐藏了，
        于是点「收起」之后再也没有入口能展开，等于把自己锁死。 */
@@ -202,20 +196,20 @@ XJ.views.overview = (function () {
       ? cfg.heroColor : XJ.model.HERO_COLOR_DEFAULT;
 
     return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '">' +
-      '<div class="hd-status">' + statusLine + '</div>' +
       '<div class="hd-row">' +
       '<div>' +
       '<div class="lbl">预测年度分红</div>' +
       '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
       '</div>' +
-      '<div class="hd-badge">基于 <b>' + s.count + '</b> 只持仓<br>' + mult + '</div>' +
+      '<div class="hd-badge">今年确认实收<br><b>' + XJ.calc.dividendAmountText(s.confirmedThisYear, 0) + '</b>' +
+      ((s.autoThisYear.total || s.autoThisYear.missing) ? '<br>自动估算 ' + XJ.calc.dividendAmountText(s.autoThisYear, 0) : '') + '</div>' +
       '</div>' +
       /* 当日参考盈亏：现价相对【昨收】的浮动（人民币口径，跨币种已折算）。
          刻意放在 hd-row 下方独立一行、不塞进 HERO_METRICS —— 老用户的
          settings.heroMetrics 里没有这个 key，塞进去会导致它默认不显示。 */
-      (collapsed ? '' : todayPnlLine(s)) +
+      todayPnlLine(s) +
+      (s.missingFx ? '<div class="hd-today-note">部分持仓缺少汇率，人民币合计不完整</div>' : '') +
       (collapsed ? '' : '<div class="hd-metrics">' + metrics + '</div>') +
-      (collapsed ? '' : forecastStrip(st, s)) +
       '<div class="hd-collapsed-hint">已收起 · 点下方「展开」查看全部指标</div>' +
       '<div class="hd-actions">' + actions + '</div>' +
       '</div>';
@@ -395,6 +389,7 @@ XJ.views.overview = (function () {
   }
 
   function holdingCard(h) {
+    var state = XJ.store.state;
     var chg = h.changePct;
     var dir = (chg === null || chg === undefined) ? 'flat' : U.direction(chg);
     /* 成本口径标签（分红摊薄 / 加权平均 / 摊薄成本）不再挂在名字旁 —— 太占地方，
@@ -469,14 +464,14 @@ XJ.views.overview = (function () {
       '</div>' +
       '</div>' +
       '<div class="hc-right">' +
-      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':div">' + U.moneySign(h.predictedDividendCny) + '</div>' +
+      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':div">' + XJ.usdiv.moneyText(state, h.symbol, h.predictedDividend) + '</div>' +
       '<div class="hc-div-lbl">预测分红</div>' +
       '</div>' +
       '</div>' +
       intra +
       '<div class="hc-grid">' +
       '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.qtyText(h.qty) + '股</div></div>' +
-      '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + XJ.usdiv.moneyText(state, h.symbol, h.marketValue, mvDec) + '</div></div>' +
       '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
       '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + pctBadge + '</div></div>' +
       '</div>' +
@@ -513,8 +508,6 @@ XJ.views.overview = (function () {
     var s = XJ.calc.summary(st.state, st.acc());
     var cov = XJ.calc.coverage(s.totalPredicted, st.state.expenses, 7);
     var ms = XJ.calc.milestone(cov.overallProgress);
-    var proj = XJ.calc.projection(st.state.projection, s.totalMarketValue, s.totalPredicted);
-    var stat = XJ.calc.statDays(st.state, st.acc());
 
     var html = '';
     html += C.statusBanner();
@@ -528,17 +521,11 @@ XJ.views.overview = (function () {
       return html;
     }
 
-    html += heroCard(st, s, proj, stat);
-    /* 标语口径：每天睡醒「到账」= 日均分红 = 年预测分红 ÷ 365（不是月均）。
-       ≥0.5 元四舍五入取整；不足 1 元保留 1 位小数（避免出现「0 元」）。 */
-    var dailyIn = s.totalPredicted / 365;
-    var dayTxt = dailyIn >= 0.5 ? U.thousands(Math.round(dailyIn))
-      : (dailyIn > 0 ? U.money(dailyIn, 1) : '0');
-    html += '<div class="slogan-bar warm slogan-hero">' +
-      '<div class="sb-main">每天睡醒到账分红 <b class="sb-amt" data-anim="A" data-anim-key="slogan:daily">' + dayTxt + '</b> 元</div>' +
-      '<div class="sb-sub">' + UI.icon('info', 13) + '<span>' + U.esc(C.slogan()) + '</span></div>' +
-      '</div>';
-    html += coverageCard(st, cov, ms);
+    html += heroCard(st, s);
+    html += '<div class="hero-dark forecast-card"><button class="fold-head" data-act="toggleOverviewForecast" aria-expanded="' +
+      !!st.ui.overviewForecast + '"><span>分红试算</span><span class="spacer"></span>' + UI.icon('chevron', 16) + '</button>' +
+      (st.ui.overviewForecast ? (s.missingFx ? '<p>补齐汇率后可计算组合预测。</p>' : forecastStrip(st, s)) : '') + '</div>';
+    if (!s.missingFx) html += coverageCard(st, cov, ms);
 
     /* ---- 资产走势（市值 / 净资产曲线，卡片自带标题与折叠） ---- */
     html += XJ.views.networth.render();
