@@ -2,7 +2,7 @@
  * 用法： node build.mjs
  *
  * 产出两份互不影响的东西：
- *   dist/自由.html        单文件，双击即用（内置 OCR Key，可当离线备份、可微信发文件）
+ *   dist/自由.html        单文件，双击即用（可选从 ZIYOU_OCR_KEY 读取本地 OCR Key）
  *   dist/pwa/             部署用（index.html + manifest + Service Worker + PNG 图标），OCR Key 置空
  */
 import fs from 'node:fs';
@@ -54,7 +54,7 @@ const JS_FILES = [
 ];
 
 /* OCR 默认 Key：只注入单文件产物；部署版置空（公开即等于把额度送人） */
-const OCR_KEY = 'd02efc3249e0441483dc039e165575a6.MBAiWDVCypcG1tCk';
+const OCR_KEY = (process.env.ZIYOU_OCR_KEY || '').trim();
 const KEY_PLACEHOLDER = '__XJ_OCR_KEY__';
 
 const APP_NAME = '自由 · 股息收入追踪';
@@ -110,7 +110,7 @@ function renderHtml(key, headExtra) {
 const distDir = path.join(ROOT, 'dist');
 fs.mkdirSync(distDir, { recursive: true });
 
-/* ---------------- ① 单文件产物（保持现状：双击即用、内置 Key） ---------------- */
+/* ---------------- ① 本地双击版 ---------------- */
 const singleHtml = renderHtml(OCR_KEY, '');
 const singleFile = path.join(distDir, '自由.html');
 fs.writeFileSync(singleFile, singleHtml, 'utf8');
@@ -122,7 +122,7 @@ fs.mkdirSync(pwaDir, { recursive: true });
 
 /* ★ 版本号必须把 CSS 一起算进去：CSS 不在 JS bundle 里，只改样式时 bundle 的 sha1 不变，
    sw 版本号就不推进 —— 已安装 PWA 的设备会一直吃旧缓存，新样式永远到不了（实测踩过）。 */
-const version = createHash('sha1').update(bundle + css).digest('hex').slice(0, 8);
+const version = createHash('sha1').update(bundle + css + tpl + read('assets/sw.template.js')).digest('hex').slice(0, 8);
 const head = [
   '<link rel="manifest" href="./manifest.webmanifest">',
   '<link rel="apple-touch-icon" href="./apple-touch-icon.png">',
@@ -171,7 +171,7 @@ console.log(`[build] pwa -> ${pwaDir}  (图标 ${copied}/${ICON_FILES.length})`)
 if (copied < ICON_FILES.length) {
   console.log('[build] ⚠️ 缺少 PNG 图标，请先运行: node tools/make-icons.mjs');
 }
-if (fs.readFileSync(path.join(pwaDir, 'index.html'), 'utf8').includes(OCR_KEY)) {
+if (OCR_KEY && fs.readFileSync(path.join(pwaDir, 'index.html'), 'utf8').includes(OCR_KEY)) {
   console.error('[build] ✗ 部署版里竟然含有 OCR Key！已中止');
   process.exit(1);
 }
