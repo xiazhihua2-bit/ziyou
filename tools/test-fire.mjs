@@ -184,6 +184,7 @@ console.log('\n--- 5) fireMonthlyPassive：月度线性插值 × forecastRows �
 console.log('\n--- 6) fireCoverageHistory：折 CNY / 缺月 / 外推 ---');
 {
   const hs = mkState();
+  hs.snapshots = { '2026-01-19': { fx: { HKD: 0.9 } } };
   addRecv(hs, 'r1', 'sh600036', '2026-01-10', 1000);   // CNY 1000
   addRecv(hs, 'r2', 'hk00700', '2026-01-20', 500);     // HKD 500 → ×0.9 = 450
   hs.symbols['hk00700'] = { symbol: 'hk00700', code: '00700', market: 'hk', name: '腾讯控股', type: 'STOCK' };
