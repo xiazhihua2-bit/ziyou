@@ -93,9 +93,9 @@ XJ.views.common = (function () {
    * 返回 null 时视图回退到「中文简称」文字头像。
    */
   function logoOf(h) {
-    if (!h || !h.logoUrl) return null;
+    if (!h) return null;
     try { if (XJ.store.state.settings.showLogo === false) return null; } catch (e) { /* 忽略 */ }
-    return h.logoUrl;
+    return XJ.fetcher.bundledLogo(h.symbol) || h.logoUrl || null;
   }
 
   /** 只有 symbol 时的公司图标（分红日历 / 年度总览等列表用） */
@@ -412,7 +412,7 @@ XJ.views.overview = (function () {
     var prev = h.prevClose;
     var chgAmt = (h.price !== null && h.price !== undefined && prev) ? h.price - prev : null;
     /* 当日参考盈亏（人民币口径）：持股数 ×（现价 − 昨收）× 该标的币种汇率 */
-    var dayPnl = (chgAmt !== null && h.qty > 0) ? chgAmt * h.qty * (U.n0(h.fxRate) || 1) : null;
+    var dayPnl = (U.num(chg) !== null && chgAmt !== null && h.qty > 0 && h.fxRate > 0) ? chgAmt * h.qty * h.fxRate : null;
 
     /* 股息率分位徽标：与个股详情页同一函数、同一窗口；现价一变就跟着重算。
        口径提示写进 title —— 它和左边那个「股价息」的分子不是同一个（那边只算已实施、按财年基准平均）。 */
@@ -435,17 +435,22 @@ XJ.views.overview = (function () {
          【次位】实时价格 —— 小号灰色，退为次要信息
        价差（±金额）已移除；这一行【始终显示】—— 无分时数据时只是没有曲线，
        停牌 / 无缓存 / 非交易时段也能看到涨跌主信息。 */
+    var quoteDay = String(h.quoteTime || '').replace(/\D/g, '').slice(0, 8);
+    var date = quoteDay.length === 8 ? quoteDay.slice(4, 6) + '/' + quoteDay.slice(6, 8) : '';
+    var source = h.quoteSource === 'nav' ? '公布净值' : (h.quoteSource === 'close' ? '日线报价' : '行情');
+    var quoteLabel = h.price === null ? '等待报价' : source + (date ? ' · ' + date : '');
     var intra = '<div class="hc-intra">' +
-      (showMin ? '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' : '') +
+      (showMin ? '<div class="hc-spark">' + XJ.chart.sparkline(min.points, { prevClose: prev }) + '</div>' :
+        '<span class="hc-quote-label">' + U.esc(quoteLabel) + '</span>') +
       '<div class="hc-px">' +
-      (chg === null || chg === undefined ? '' : '<span class="chg chg-lg ' + dir +
+      (chg === null || chg === undefined ? '<span class="chg chg-lg flat hc-quote-missing">暂无涨跌</span>' : '<span class="chg chg-lg ' + dir +
         '" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':pxchg">' + U.signPct(chg) + '</span>') +
       '<b data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':px">' +
-      (h.price === null || h.price === undefined ? '—' : U.money(h.price, 2)) + '</b>' +
-      (showMin && !minToday ? '<i class="hc-at">' + U.esc(U.mdShort(min.date)) + '</i>' : '') +
+      (h.price === null || h.price === undefined ? '—' : U.money(h.price, h.quoteSource === 'nav' ? 4 : 2)) + '</b>' +
+      (showMin && (!minToday || h.quoteSource === 'close') ? '<i class="hc-at">' + U.esc(h.quoteSource === 'close' ? quoteLabel : U.mdShort(min.date)) + '</i>' : '') +
       '</div>' +
       /* 当日参考盈亏（金额）：持股数 ×（现价 − 昨收）× 汇率 —— 报价一变就跟着变 */
-      (dayPnl === null ? '' : '<div class="hc-daypnl ' + U.dirClass(dayPnl) + '">当日 ' +
+      (dayPnl === null ? '' : '<div class="hc-daypnl ' + U.dirClass(dayPnl) + '">' + (h.quoteSource === 'nav' ? '净值变动 ' : '较昨收 ') +
         U.signMoney(dayPnl, 0) + '</div>') +
       '</div>';
 
