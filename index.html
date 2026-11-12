@@ -211,7 +211,7 @@ a{ color:var(--blue); text-decoration:none; }
 .topbar .sub{ font-size:12px; color:var(--text-2); margin-top:2px; }
 .topbar .spacer{ flex:1; }
 .icon-btn{
-  width:34px; height:34px; border-radius:50%;
+  width:44px; height:44px; border-radius:50%;
   display:flex; align-items:center; justify-content:center;
   background:var(--fill); color:var(--text);
   transition:transform .18s ease, background .18s ease;
@@ -1118,7 +1118,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hc-pct.lo{ color:var(--text-3); background:var(--card-2); }
 
 /* ==================== 悬浮双入口 ==================== */
-.float-wrap{ position:fixed; right:16px; bottom:calc(96px + var(--safe-b)); z-index:70; display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
+.float-wrap{ position:fixed; z-index:70; display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
 .float-menu{ display:flex; flex-direction:column; gap:9px; align-items:flex-end; animation:popUp .2s cubic-bezier(.25,.8,.3,1); }
 @keyframes popUp{ from{ opacity:0; transform:translateY(12px) scale(.94); } to{ opacity:1; transform:none; } }
 .float-item{
@@ -2019,6 +2019,25 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .sync-log-l .k.k-warn{ background:var(--pend-tag-bg); color:var(--pend-text); }
 .sync-log-l .x{ color:var(--text-2); min-width:0; word-break:break-word; }
 .sync-card code{ font-size:11.5px; background:var(--fill); padding:1px 4px; border-radius:4px; }
+
+/* Shared focus, touch targets and transaction filters. */
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.sheet:focus { outline: none; }
+.tab, .segmented button, .ghost-btn, .float-item, .fold-head { min-height: 44px; }
+.forecast-card { margin: 12px 0; }
+.forecast-card > .fold-head { width: 100%; }
+.forecast-card .hd-forecast { margin-top: 4px; }
+.ledger-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 8px 16px 12px; }
+.ledger-filters label { min-width: 0; display: grid; gap: 4px; font-size: 12px; color: var(--text-2); }
+.ledger-filters label:first-child, .ledger-actions { grid-column: 1 / -1; }
+.ledger-filters input, .ledger-filters select {
+  width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 10px;
+  padding: 5px 8px; background: var(--fill); box-sizing: border-box;
+}
+.ledger-actions { display: flex; gap: 8px; }
 
 
 /* ==================== 手动主题（build 自动派生，勿手改） ====================
@@ -3053,7 +3072,7 @@ XJ.market = (function () {
   }
 
   /* ---------------- 币种换算 ---------------- */
-  var FX_SYMBOL = { HKD: 'whHKDCNY', USD: 'whUSDCNY' };
+  var FX_SYMBOL = { HKD: 'whHKDCNY', USD: 'whUSDCNY', JPY: 'whCNYJPY' };
 
   function fxCode(c) { return FX_SYMBOL[c] || null; }
 
@@ -3360,7 +3379,7 @@ XJ.model = (function () {
 
   /* ---- 首页年度分红卡可选指标（用户可自选 1~6 个） ---- */
   var HERO_METRICS = [
-    { key: 'receivedThisYear', label: '今年已收',    hint: '本年度已到账的分红合计' },
+    { key: 'receivedThisYear', label: '今年登记',    hint: '本年度已登记的分红，包含尚未核对实收的自动估算' },
     { key: 'totalCost',        label: '总成本',      hint: '按所选成本口径计算的投入合计' },
     { key: 'totalMarketValue', label: '总市值',      hint: '最近交易日收盘价 × 持股数，多币种按当日汇率折算为人民币' },
     { key: 'costYield',        label: '成本息率',    hint: '预测年度分红 ÷ 持仓总成本，反映实际投入资金的回报率' },
@@ -3973,6 +3992,7 @@ XJ.model = (function () {
       quoteCache: state.quoteCache,
       watchlist: state.watchlist,
       priceHistory: state.priceHistory,
+      snapshots: state.snapshots,
       indexHistory: state.indexHistory,
       klineCache: state.klineCache,
       /* 股息率曲线的收盘价与余额宝基准：都是要跑网络才拿得到的历史数据，
@@ -4006,6 +4026,7 @@ XJ.model = (function () {
     if (raw.quoteCache && typeof raw.quoteCache === 'object') out.quoteCache = raw.quoteCache;
     if (raw.watchlist && typeof raw.watchlist === 'object') out.watchlist = raw.watchlist;
     if (raw.priceHistory && typeof raw.priceHistory === 'object') out.priceHistory = raw.priceHistory;
+    if (raw.snapshots && typeof raw.snapshots === 'object') out.snapshots = raw.snapshots;
     if (raw.indexHistory && typeof raw.indexHistory === 'object') out.indexHistory = raw.indexHistory;
     if (raw.klineCache && typeof raw.klineCache === 'object') out.klineCache = raw.klineCache;
     if (raw.yieldHistory && typeof raw.yieldHistory === 'object') out.yieldHistory = raw.yieldHistory;
@@ -4124,11 +4145,14 @@ XJ.storage = (function () {
   var STORE = 'kv';
   var KEY = 'state';
   var LS_KEY = 'ziyou_state_v1';
+  var LS_PENDING_KEY = LS_KEY + '_pending';
 
   var mode = null;      // 'idb' | 'ls'
   var db = null;
   var saveTimer = null;
   var lastError = null;
+  var recovery = null;
+  var saveQueue = Promise.resolve();
 
   /* 落盘前的钩子槽。同步层（src/sync.js）会把它挂上，用来在「与 state 同一次写入」里
      把本轮变更算成增量 op —— 单文档整份写入天然原子，所以 op 与数据不可能写一半。
@@ -4204,7 +4228,7 @@ XJ.storage = (function () {
       try {
         var tx = db.transaction(STORE, 'readwrite');
         var r = tx.objectStore(STORE).put(val, KEY);
-        r.onsuccess = function () { resolve(true); };
+        tx.oncomplete = function () { resolve(true); };
         r.onerror = function () { reject(r.error); };
         tx.onabort = function () { reject(new Error('tx abort')); };
       } catch (e) { reject(e); }
@@ -4243,7 +4267,19 @@ XJ.storage = (function () {
 
   function load() {
     if (mode === 'idb') {
-      return idbGet().then(function (v) { return v || null; })
+      return idbGet().then(function (v) {
+        var backup = lsRead();
+        if (!backup) return v;
+        if (!v || fallbackWasLatest()) {
+          return idbPut(backup).then(function () {
+            removeFallback();
+            return backup;
+          }, function (e) { lastError = e; mode = 'ls'; return backup; });
+        }
+        if (JSON.stringify(v) !== JSON.stringify(backup)) recovery = backup;
+        else removeFallback();
+        return v;
+      })
         .catch(function (e) { lastError = e; return lsRead(); });
     }
     return Promise.resolve(lsRead());
@@ -4257,13 +4293,25 @@ XJ.storage = (function () {
   }
 
   function save(state) {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
     runHook(state);
+    var snapshot = typeof structuredClone === 'function' ? structuredClone(state) : JSON.parse(JSON.stringify(state));
+    saveQueue = saveQueue.then(function () { return persist(snapshot); });
+    return saveQueue;
+  }
+
+  function persist(state) {
     if (mode === 'idb') {
       return idbPut(state).catch(function (e) {
         lastError = e;
+        if (recovery) return storageFailure();
         // 写入失败即时降级，保证数据不丢
         mode = lsAvailable() ? 'ls' : 'none';
-        return lsWrite(state);
+        var saved = lsWrite(state);
+        if (saved) {
+          try { window.localStorage.setItem(LS_PENDING_KEY, '1'); } catch (markError) { lastError = markError; }
+        }
+        return saved;
       });
     }
     return Promise.resolve(lsWrite(state));
@@ -4275,9 +4323,25 @@ XJ.storage = (function () {
       return true;
     } catch (e) {
       lastError = e;
-      if (XJ.ui && XJ.ui.toast) XJ.ui.toast('保存失败：浏览器存储已满或被禁用');
-      return false;
+      return storageFailure();
     }
+  }
+
+  function storageFailure() {
+    if (XJ.ui && XJ.ui.toast) XJ.ui.toast('保存失败，请导出当前账本以保留修改');
+    return false;
+  }
+
+  function removeFallback() {
+    try {
+      window.localStorage.removeItem(LS_KEY);
+      window.localStorage.removeItem(LS_PENDING_KEY);
+      recovery = null;
+    } catch (e) { lastError = e; }
+  }
+
+  function fallbackWasLatest() {
+    try { return window.localStorage.getItem(LS_PENDING_KEY) === '1'; } catch (e) { return false; }
   }
 
   /** 节流保存：避免高频编辑时反复写盘 */
@@ -4287,9 +4351,15 @@ XJ.storage = (function () {
   }
 
   function clear() {
-    if (mode === 'idb') return idbDel().then(function () { try { window.localStorage.removeItem(LS_KEY); } catch (e) {} return true; });
-    try { window.localStorage.removeItem(LS_KEY); } catch (e) {}
-    return Promise.resolve(true);
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    saveQueue = saveQueue.then(function () {
+      return (db ? idbDel() : Promise.resolve(true)).then(function (ok) {
+        if (!ok) return storageFailure();
+        removeFallback();
+        return true;
+      });
+    });
+    return saveQueue;
   }
 
   return {
@@ -4302,6 +4372,7 @@ XJ.storage = (function () {
     setOnBeforeSave: function (fn) { onBeforeSave = typeof fn === 'function' ? fn : null; },
     getMode: function () { return mode; },
     getLastError: function () { return lastError; },
+    recoveryCopy: function () { return recovery; },
     modeLabel: function () { return mode === 'idb' ? 'IndexedDB' : mode === 'ls' ? '浏览器本地存储' : '不可用'; },
   };
 })();
@@ -6123,13 +6194,14 @@ XJ.usdiv = (function () {
   function fetchOne(secucode) {
     if (requester) {
       return Promise.resolve().then(function () { return requester(secucode); })
-        .then(function (rows) { return Array.isArray(rows) ? rows : []; })
-        .catch(function () { return []; });
+        .then(function (rows) { return Array.isArray(rows) ? rows : null; })
+        .catch(function () { return null; });
     }
     return jsonp(buildUrl(secucode)).then(function (res) {
-      if (!res || !res.result || !Array.isArray(res.result.data)) return [];
-      return res.result.data;
-    }).catch(function () { return []; });
+      if (!res) return null;
+      if (res.result && Array.isArray(res.result.data)) return res.result.data;
+      return res.success === true || /没有相关数据|暂无数据/.test(res.message || '') ? [] : null;
+    }).catch(function () { return null; });
   }
 
   /**
@@ -6145,13 +6217,15 @@ XJ.usdiv = (function () {
       : SUFFIXES.slice();
     var today = U.today();
     var i = 0;
+    var failed = false;
 
     function step() {
       if (i >= candidates.length) {
-        return Promise.resolve({ symbol: symbol, plans: [], suffix: null, noData: true });
+        return Promise.resolve({ symbol: symbol, plans: [], suffix: null, noData: true, failed: failed });
       }
       var suf = candidates[i++];
       return fetchOne(code + suf).then(function (rows) {
+        if (!rows) failed = true;
         if (!rows || !rows.length) return step();
         suffixMap[symbol] = suf;
         var seen = {}, plans = [];
@@ -6173,19 +6247,19 @@ XJ.usdiv = (function () {
   /** 批量串行 + 间隔；单只失败不中断其它标的。返回 { plans: {sym: plans[]}, noData: sym[] } */
   function fetchAll(symbols, onProgress) {
     symbols = (symbols || []).filter(function (s, i, a) { return s && a.indexOf(s) === i; });
-    var bySym = {}, noData = [], i = 0;
+    var bySym = {}, noData = [], failed = [], i = 0;
     function step() {
-      if (i >= symbols.length) return Promise.resolve({ plans: bySym, noData: noData });
+      if (i >= symbols.length) return Promise.resolve({ plans: bySym, noData: noData, failed: failed });
       var sym = symbols[i++];
       return fetchSymbol(sym).then(function (r) {
         bySym[sym] = r.plans;
         if (r.noData) noData.push(sym);
+        if (r.failed) failed.push(sym);
         if (onProgress) onProgress(i, symbols.length, sym);
-        if (i >= symbols.length) return { plans: bySym, noData: noData };
+        if (i >= symbols.length) return { plans: bySym, noData: noData, failed: failed };
         return new Promise(function (res) { setTimeout(res, GAP); }).then(step);
       });
     }
-    if (!symbols.length) return Promise.resolve({ plans: bySym, noData: noData });
     return step();
   }
 
@@ -6206,11 +6280,16 @@ XJ.usdiv = (function () {
    *   · 美股 + 汇率可用 → 按实时汇率折成 ¥
    *   · 美股 + 汇率缺失 → 显示 USD 原币「$x.xx」，绝不按 1 折算造成 1 美元当 1 元的假数字
    */
-  function moneyText(state, symbol, amount, dec) {
-    if (!isUs(symbol)) return U.moneySign(amount, dec);
-    var r = usdRate(state);
-    if (!r) return '$' + U.money(amount, dec);
-    return U.moneySign(U.n0(amount) * r, dec);
+  function moneyText(state, symbol, amount, dec, receivedOn) {
+    if (amount === null || amount === undefined) return '—';
+    var currency = XJ.market.currency(symbol);
+    if (currency === 'CNY') return U.moneySign(amount, dec);
+    var r = state && state.settings && state.settings.fx && U.num(state.settings.fx[currency]);
+    var value = receivedOn ? XJ.calc.historicalReceiptCny(state, {
+      symbol: symbol, amount: amount, exDividendDate: receivedOn,
+    }) : (r > 0 ? amount * r : null);
+    if (value === null) return (currency === 'USD' ? '$' : currency + ' ') + U.money(amount, dec);
+    return U.moneySign(value, dec);
   }
 
   /** 金额旁的口径说明（税前 / 汇率 / 未计税） */
@@ -6289,7 +6368,7 @@ XJ.fetcher = (function () {
         if (!ok) return resolve(out);
         curs.forEach(function (cur) {
           var v = XJ.market.parseFx(window['v_' + XJ.market.FX_SYMBOL[cur]]);
-          if (v) out[cur] = v;
+          if (v) out[cur] = cur === 'JPY' ? 1 / v : v;
         });
         resolve(out);
       });
@@ -6461,7 +6540,14 @@ XJ.fetcher = (function () {
   }
 
   /** 拉取单个标的的全部分红方案（JSONP） */
-  function fetchPlans(symbol) {
+  function dividendRows(response) {
+    if (!response) return null;
+    if (response.result && Array.isArray(response.result.data)) return response.result.data;
+    if (response.success === true || /没有相关数据|暂无数据/.test(response.message || '')) return [];
+    return null;
+  }
+
+  function fetchPlans(symbol, distinguishFailure) {
     var code = XJ.model.codeOf(symbol);
     var cbName = 'xjcb_' + (++cbSeq) + '_' + Date.now().toString(36);
     var url = PLAN_URL +
@@ -6491,9 +6577,10 @@ XJ.fetcher = (function () {
         // onload 但回调没触发的情况由 timeout 兜底
       });
     }).then(function (res) {
-      if (!res || !res.result || !Array.isArray(res.result.data)) return [];
+      var rows = dividendRows(res);
+      if (!rows) return distinguishFailure ? null : [];
       var parsed = [];
-      res.result.data.forEach(function (row) {
+      rows.forEach(function (row) {
         var p = parsePlanRow(row, symbol);
         if (p) parsed.push(p);
       });
@@ -6512,7 +6599,7 @@ XJ.fetcher = (function () {
     function step() {
       if (i >= symbols.length) return Promise.resolve(result);
       var sym = symbols[i++];
-      return fetchPlans(sym).then(function (plans) {
+      return fetchPlans(sym, true).then(function (plans) {
         result[sym] = plans;
         if (onProgress) onProgress(i, symbols.length, sym);
         if (i >= symbols.length) return result;
@@ -6563,7 +6650,7 @@ XJ.fetcher = (function () {
   }
 
   /** 抓某一年的全市场基金分红（分页），返回已解析行数组 */
-  function fetchFundDivYear(year, onProgress) {
+  function fetchFundDivYear(year, onProgress, onFailure) {
     var all = [];
     var page = 1;
     var totalPages = 1;
@@ -6572,7 +6659,7 @@ XJ.fetcher = (function () {
       if (page > totalPages || page > FUND_MAX_PAGES) return Promise.resolve(all);
       var cur = page;
       return fetchFundDivPage(year, cur).then(function (res) {
-        if (!res || !res.data) { totalPages = 0; return all; }
+        if (!res || !res.data) { if (onFailure) onFailure(); return all; }
         res.data.forEach(function (r) {
           var row = parseFundDivRow(r);
           if (row) all.push(row);
@@ -6588,7 +6675,7 @@ XJ.fetcher = (function () {
   }
 
   /** 只为指定基金代码抓分红（跨多个年份） */
-  function fetchFundDividends(codes, years, onProgress) {
+  function fetchFundDividends(codes, years, onProgress, onFailure) {
     var wanted = {};
     (codes || []).forEach(function (c) { wanted[String(c)] = true; });
     if (!Object.keys(wanted).length) return Promise.resolve({});
@@ -6597,7 +6684,7 @@ XJ.fetcher = (function () {
     var chain = Promise.resolve();
     (years || []).forEach(function (y) {
       chain = chain.then(function () {
-        return fetchFundDivYear(y, onProgress).then(function (rows) {
+        return fetchFundDivYear(y, onProgress, onFailure).then(function (rows) {
           rows.forEach(function (r) {
             if (!wanted[r.fundCode]) return;
             (out[r.fundCode] || (out[r.fundCode] = [])).push(r);
@@ -6788,7 +6875,7 @@ XJ.fetcher = (function () {
     };
   }
 
-  function fetchHkPlans(symbol) {
+  function fetchHkPlans(symbol, distinguishFailure) {
     var code = XJ.model.codeOf(symbol);
     var cbName = 'xjhk_' + (++cbSeq) + '_' + Date.now().toString(36);
     var url = HK_PLAN_URL +
@@ -6813,9 +6900,10 @@ XJ.fetcher = (function () {
         if (!ok) { lastError = new Error('港股分红接口请求失败'); finish(null); }
       });
     }).then(function (res) {
-      if (!res || !res.result || !Array.isArray(res.result.data)) return [];
+      var rows = dividendRows(res);
+      if (!rows) return distinguishFailure ? null : [];
       var out = [], seen = {};
-      res.result.data.forEach(function (row) {
+      rows.forEach(function (row) {
         var p = parseHkRow(row, symbol);
         if (p && !seen[p.planId]) { seen[p.planId] = true; out.push(p); }
       });
@@ -6828,7 +6916,7 @@ XJ.fetcher = (function () {
     function step() {
       if (i >= symbols.length) return Promise.resolve(result);
       var sym = symbols[i++];
-      return fetchHkPlans(sym).then(function (plans) {
+      return fetchHkPlans(sym, true).then(function (plans) {
         result[sym] = plans;
         if (onProgress) onProgress(i, symbols.length, sym);
         if (i >= symbols.length) return result;
@@ -7723,6 +7811,8 @@ XJ.fetcher = (function () {
     });
 
     var out = {};
+    var failed = [];
+    var fundFailed = false;
     var chain = Promise.resolve();
 
     if (groups.cn.length) {
@@ -7747,8 +7837,9 @@ XJ.fetcher = (function () {
         var y = new Date().getFullYear();
         return fetchFundDividends(codes, [y, y - 1, y - 2], function (page, pages, year) {
           if (onProgress) onProgress('fund', page, pages, null, '基金分红 ' + year + ' 年');
-        });
+        }, function () { fundFailed = true; });
       }).then(function (byCode) {
+        if (fundFailed) failed.push.apply(failed, groups.fund);
         groups.fund.forEach(function (sym) {
           var rows = byCode[XJ.model.codeOf(sym)] || [];
           out[sym] = rows.map(function (r) { return fundRowToPlan(r, sym); });
@@ -7761,14 +7852,22 @@ XJ.fetcher = (function () {
         /* 整批失败也只吞掉美股这一组：返回空方案，不 reject、不拖垮 cn/hk/fund */
         return XJ.usdiv.fetchAll(groups.us, function (i, t, sym) {
           if (onProgress) onProgress('us', i, t, sym, '美股分红方案');
-        }).catch(function () { return { plans: {}, noData: groups.us.slice() }; });
+        }).catch(function () { return { plans: {}, failed: groups.us.slice() }; });
       }).then(function (m) {
+        failed.push.apply(failed, m.failed || []);
         Object.keys(m.plans || {}).forEach(function (k) { out[k] = m.plans[k]; });
       });
     }
 
     return chain.then(function () {
-      return { plans: out, unsupported: groups.none.slice(), groups: groups };
+      Object.keys(out).forEach(function (symbol) {
+        if (out[symbol] !== null) return;
+        failed.push(symbol);
+        delete out[symbol];
+      });
+      return { plans: out, failed: failed, noData: Object.keys(out).filter(function (symbol) {
+        return !out[symbol].length && failed.indexOf(symbol) < 0;
+      }), unsupported: groups.none.slice(), groups: groups };
     });
   }
 
@@ -9756,9 +9855,9 @@ XJ.calc = (function () {
          ★ **每股数字（price / avgCost / prevClose）不折**：港股的价格本来就是港元，
          折了反而与行情软件对不上。 */
       var rate = fxRate(XJ.market.currency(sym), (state.settings && state.settings.fx) || {});
-      var marketValueCny = marketValue === null ? null : marketValue * rate;
-      var costValueCny = costValue * rate;
-      var unrealizedCny = marketValue === null ? null : marketValueCny - costValueCny;
+      var marketValueCny = marketValue === null || rate === null ? null : marketValue * rate;
+      var costValueCny = rate === null ? null : costValue * rate;
+      var unrealizedCny = marketValueCny === null ? null : marketValueCny - costValueCny;
 
       rows.push({
         symbol: sym,
@@ -9795,10 +9894,10 @@ XJ.calc = (function () {
         marketValueCny: marketValueCny,
         costValueCny: costValueCny,
         unrealizedCny: unrealizedCny,
-        realizedCny: pos.realized * rate,
-        netInvestedCny: netInvested * rate,
-        receivedTotalCny: recvTotal * rate,
-        predictedDividendCny: predictedDividend * rate,
+        realizedCny: rate === null ? null : pos.realized * rate,
+        netInvestedCny: rate === null ? null : netInvested * rate,
+        receivedTotalCny: rate === null ? null : recvTotal * rate,
+        predictedDividendCny: rate === null ? null : predictedDividend * rate,
         perShareTTM: ttm,
         dividendYield: dividendYield,
         annualPerShare: annual.perShare,
@@ -9813,7 +9912,7 @@ XJ.calc = (function () {
         receivedTotal: recvTotal,
         remaining: remaining,
         /* 人民币口径的「剩余待回收」= 净投入 − 已收分红（与上面同源，只是换算单位） */
-        remainingCny: Math.max(0, netInvested * rate - recvTotal * rate),
+        remainingCny: rate === null ? null : Math.max(0, (netInvested - recvTotal) * rate),
         recoveryPct: recoveryPct,
         expectedYears: expectedYears,
         holdDays: holdDays,
@@ -9857,28 +9956,36 @@ XJ.calc = (function () {
          缺昨收的标的（新加的、行情还没回）直接跳过 —— 绝不拿 0 当昨收，那会算出 +∞。 */
       var pc = U.num(h.prevClose), px = U.num(h.price);
       if (pc !== null && pc > 0 && px !== null && h.qty > 0) {
-        var fr = U.n0(h.fxRate) || 1;
+        var fr = U.n0(h.fxRate);
         totalTodayPnl += (px - pc) * h.qty * fr;
         totalPrevMv += pc * h.qty * fr;
       }
     });
 
     /* 分红同样按「该标的的币种」折算（港币分红不能当人民币加） */
-    var fxNow = (state.settings && state.settings.fx) || {};
+    var missingReceiptFx = false;
     var recvCny = function (r) {
-      return U.n0(r.amount) * fxRate(XJ.market.currency(r.symbol), fxNow);
+      var amount = historicalReceiptCny(state, r);
+      if (amount === null) missingReceiptFx = true;
+      return amount;
     };
 
     var receivedThisYear = U.sum(state.received.filter(function (r) {
       if (acc !== ALL && r.accountId !== acc) return false;
       return (r.year || U.yearOf(r.exDividendDate)) === curYear;
     }), recvCny);
+    var yearRecords = state.received.filter(function (r) {
+      return (acc === ALL || r.accountId === acc) && (r.year || U.yearOf(r.exDividendDate)) === curYear;
+    });
+    var confirmedThisYear = dividendAmounts(state, yearRecords.filter(function (r) { return r.source !== 'AUTO'; }), true);
+    var autoThisYear = dividendAmounts(state, yearRecords.filter(function (r) { return r.source === 'AUTO'; }), true);
 
     var receivedTotal = U.sum(state.received.filter(function (r) {
       return acc === ALL || r.accountId === acc;
     }), recvCny);
 
-    var compositeYield = totalMarketValue > 0 ? totalPredicted / totalMarketValue * 100 : null;
+    var missingFx = hs.some(function (h) { return h.fxRate === null; });
+    var compositeYield = !missingFx && totalMarketValue > 0 ? totalPredicted / totalMarketValue * 100 : null;
 
     var ups = upcomingPayouts(state, acc, today);
     var nextPayout = ups.length ? ups[0] : null;
@@ -9906,14 +10013,16 @@ XJ.calc = (function () {
       totalCost: totalCost,
       totalNetInvested: totalNetInvested,
       totalUnrealized: totalMarketValue - totalCost,
-      totalUnrealizedPct: totalCost > 0 ? (totalMarketValue - totalCost) / totalCost * 100 : null,
+      totalUnrealizedPct: !missingFx && totalCost > 0 ? (totalMarketValue - totalCost) / totalCost * 100 : null,
       totalPredicted: totalPredicted,
       totalRealized: totalRealized,
       receivedThisYear: receivedThisYear,
+      confirmedThisYear: confirmedThisYear,
+      autoThisYear: autoThisYear,
       receivedTotal: receivedTotal,
       compositeYield: compositeYield,
       /* 成本息率：预测年度分红 ÷ 总成本（成本非正时不显示） */
-      costYield: totalCost > 0 ? totalPredicted / totalCost * 100 : null,
+      costYield: !missingFx && totalCost > 0 ? totalPredicted / totalCost * 100 : null,
       /* 市值息率：预测年度分红 ÷ 总市值 */
       marketYield: compositeYield,
       /* 月均预测分红：预测年度分红 ÷ 12 */
@@ -9921,6 +10030,8 @@ XJ.calc = (function () {
       avgMarketValue: hs.length ? totalMarketValue / hs.length : 0,
       byAssetType: assetTypeList,
       missingQuote: missingQuote,
+      missingFx: missingFx,
+      missingReceiptFx: missingReceiptFx,
       nextPayout: nextPayout,
       upcomingCount: ups.length,
       /* 当日参考盈亏：现价相对【昨收】的浮动，人民币口径；不含当日已到账分红。
@@ -9936,24 +10047,50 @@ XJ.calc = (function () {
    * 生成日历事件（只针对当前账户持有的标的）。
    * 派息日字段缺失，统一按「除权除息日 T+1」推算并标注为【预计到账】。
    */
+  function dividendEligibility(txs, plan, today) {
+    var date = plan.equityRecordDate || null;
+    if (!date && plan.exDividendDate && !plan.eligibilityUncertain) date = U.addDays(plan.exDividendDate, -1);
+    if (!date) return { qty: null, estimated: true };
+    return { qty: position(txs, date > today ? today : date).qty, estimated: date > today };
+  }
+
+  function autoDividendNeedsReview(state, record) {
+    var plan = state.plans[record.planId];
+    if (record.source !== 'AUTO') return false;
+    if (!plan) return true;
+    var eligible = dividendEligibility(txOf(state, record.accountId, record.symbol), plan, U.today());
+    return eligible.estimated || eligible.qty !== record.qtyAtRecord ||
+      Math.abs(record.amount - Math.round(eligible.qty * perSharePretax(plan) * 100) / 100) > 0.001 ||
+      record.exDividendDate !== payoutDate(plan);
+  }
+
   function calendarEvents(state, accountId, fromDate, toDate) {
     var acc = accountId || ALL;
-    var hs = holdings(state, acc);
     var out = [];
     var today = U.today();
+    var bySymbol = new Map();
+    txOf(state, acc).forEach(function (tx) {
+      if (!bySymbol.has(tx.symbol)) bySymbol.set(tx.symbol, new Map());
+      var accounts = bySymbol.get(tx.symbol);
+      if (!accounts.has(tx.accountId)) accounts.set(tx.accountId, []);
+      accounts.get(tx.accountId).push(tx);
+    });
 
-    hs.forEach(function (h) {
-      var txs = txOf(state, acc, h.symbol);
-      var plans = plansOf(state, h.symbol);
+    bySymbol.forEach(function (accounts, symbol) {
+      var plans = plansOf(state, symbol);
       plans.forEach(function (p) {
-        /* 美股方案可能只有真实派息日而缺登记日/除息日，此时也应进日历 */
-        var hasDate = p.equityRecordDate || p.exDividendDate || (p.source === 'us' && p.payoutDate);
-        if (!hasDate) return;
-
-        var posAtReg = position(txs, p.equityRecordDate || p.exDividendDate);
-        var qty = posAtReg.qty > 0 ? posAtReg.qty : h.qty;
+        if (/取消/.test(p.assignProgress || '')) return;
+        var qty = 0, hasUncertain = false, estimatedQty = false;
+        accounts.forEach(function (txs) {
+          var eligibility = dividendEligibility(txs, p, today);
+          if (eligibility.qty === null && position(txs, today).qty > 0) hasUncertain = true;
+          qty += eligibility.qty || 0;
+          estimatedQty = estimatedQty || eligibility.estimated;
+        });
+        if (!qty && !hasUncertain) return;
         var ps = perSharePretax(p);
-        var amount = qty * ps;
+        if (!(ps > 0)) return;
+        var amount = hasUncertain ? null : qty * ps;
 
         var pay = payoutInfo(p);
         var seq = [];
@@ -9972,15 +10109,17 @@ XJ.calc = (function () {
             date: e.date,
             type: e.type,
             label: e.label,
-            symbol: h.symbol,
-            name: h.name,
-            code: h.code,
+            symbol: symbol,
+            name: (state.symbols[symbol] || {}).name || XJ.model.codeOf(symbol),
+            code: XJ.model.codeOf(symbol),
             planId: p.planId,
             reportDate: p.reportDate,
             reportType: p.reportType,
             perShare: ps,
             perShareProfile: p.implPlanProfile,
-            qty: qty,
+            qty: hasUncertain ? null : qty,
+            needsReview: hasUncertain,
+            estimatedQty: estimatedQty,
             amount: e.amount,
             assignProgress: p.assignProgress,
             isImplemented: p.isImplemented,
@@ -10018,14 +10157,17 @@ XJ.calc = (function () {
 
     var today = U.today();
     var pending = evs.filter(function (e) { return e.type === 'payout' && e.date >= today; });
-    var monthTotal = U.sum(pending, function (e) { return e.amount; });
-    var receivedInMonth = U.sum(evs.filter(function (e) { return e.type === 'payout' && e.date < today; }),
-      function (e) { return e.amount; });
+    var pendingAmounts = dividendAmounts(state, pending, false);
+    var receivedAmounts = dividendAmounts(state, state.received.filter(function (r) {
+      return (!accountId || accountId === ALL || accountId === r.accountId) && r.exDividendDate >= from &&
+        r.exDividendDate <= to && r.exDividendDate <= today;
+    }), true);
 
     return {
       ym: ym, year: year, month: month, from: from, to: to,
       events: evs, byDate: byDate,
-      pendingCount: pending.length, pendingTotal: monthTotal, receivedTotal: receivedInMonth,
+      pendingCount: pending.length, pendingTotal: pendingAmounts.total, receivedTotal: receivedAmounts.total,
+      receivedAmounts: receivedAmounts,
     };
   }
 
@@ -10579,16 +10721,16 @@ XJ.calc = (function () {
    * base ≤ 0（该档没有任何启用支出）→ 全部 pct = null，由视图显示「—」。
    */
   function fireCoverageHistory(state, acc, tier, cfg) {
-    var fxNow = (state.settings && state.settings.fx) || {};
     var eff = fireEffectiveSpend(cfg);
     var target = eff.base;
-    var byMonth = {};
+    var byMonth = {}, missingMonths = {};
     state.received.forEach(function (r) {
       if (acc !== ALL && r.accountId !== acc) return;
       var ym = U.ymOf(r.exDividendDate);
       if (!ym) return;
-      var cny = U.n0(r.amount) * fxRate(XJ.market.currency(r.symbol), fxNow);
-      byMonth[ym] = (byMonth[ym] || 0) + cny;
+      var cny = historicalReceiptCny(state, r);
+      if (cny === null) missingMonths[ym] = true;
+      byMonth[ym] = (byMonth[ym] || 0) + U.n0(cny);
     });
     var todayYm = U.ymOf(U.today());
     var keys = Object.keys(byMonth).filter(function (k) { return k <= todayYm; }).sort();
@@ -10597,7 +10739,7 @@ XJ.calc = (function () {
       var cur = keys[0];
       while (cur <= todayYm) {
         var amt = byMonth[cur] || 0;
-        history.push({ date: cur, pct: target > 0 ? amt / target * 100 : null });
+        history.push({ date: cur, pct: target > 0 && !missingMonths[cur] ? amt / target * 100 : null });
         cur = ymAdd(cur, 1);
       }
     }
@@ -10738,11 +10880,13 @@ XJ.calc = (function () {
     var d = date || U.today();
     var items = calendarEvents(state, accountId || ALL, d, d)
       .filter(function (e) { return e.type === 'payout'; });
+    var amounts = dividendAmounts(state, items, false);
     return {
       date: d,
       items: items,
       count: items.length,
-      total: U.sum(items, function (e) { return U.n0(e.amount); }),
+      total: amounts.total,
+      amounts: amounts,
       estimated: items.some(function (e) { return e.isEstimate; }),
     };
   }
@@ -10822,7 +10966,7 @@ XJ.calc = (function () {
       g.count++;
       g.records.push(r);
       var y = U.yearOf(r.exDividendDate);
-      if (y) byYear[y] = (byYear[y] || 0) + U.n0(r.amount);
+      if (y) byYear[y] = (byYear[y] || 0) + U.n0(historicalReceiptCny(state, r));
     });
     var bySymbolList = Object.keys(bySymbol).map(function (k) { return bySymbol[k]; })
       .sort(function (a, b) { return b.amount - a.amount; });
@@ -10843,17 +10987,23 @@ XJ.calc = (function () {
       g.count++;
     });
 
+    var actualAmounts = dividendAmounts(state, records, true);
+    var expectedAmounts = dividendAmounts(state, pending, false);
     return {
       range: rg,
       records: records,
       count: records.length,
-      total: U.sum(records, function (r) { return U.n0(r.amount); }),
+      total: actualAmounts.total,
+      amounts: actualAmounts,
+      confirmedAmounts: dividendAmounts(state, records.filter(function (r) { return r.source !== 'AUTO'; }), true),
+      autoAmounts: dividendAmounts(state, records.filter(function (r) { return r.source === 'AUTO'; }), true),
       bySymbolList: bySymbolList,
       byYear: byYear,
       years: years,
       pending: pending,
       pendingCount: pending.length,
-      pendingTotal: U.sum(pending, function (e) { return U.n0(e.amount); }),
+      pendingTotal: expectedAmounts.total,
+      pendingAmounts: expectedAmounts,
       pendingList: Object.keys(pendBy).map(function (k) { return pendBy[k]; })
         .sort(function (a, b) { return b.amount - a.amount; }),
       firstDate: records.length ? records[0].exDividendDate : null,
@@ -10882,11 +11032,10 @@ XJ.calc = (function () {
     var s = summary(state, accountId);
     if (!s.count) return null;
     var f = fx || (state.settings && state.settings.fx) || {};
-    var rate = { CNY: 1, HKD: U.n0(f.HKD) || 1, USD: U.n0(f.USD) || 1 };
 
     var mv = 0, cost = 0, pred = 0, net = 0;
     s.holdings.forEach(function (h) {
-      var r = rate[h.currency] || 1;
+      var r = fxRate(h.currency, f);
       if (h.marketValue !== null) mv += h.marketValue * r;
       cost += h.costValue * r;
       pred += h.predictedDividend * r;
@@ -10898,13 +11047,19 @@ XJ.calc = (function () {
     var recv = 0;
     state.received.forEach(function (rec) {
       if (accountId && accountId !== ALL && rec.accountId !== accountId) return;
-      recv += U.n0(rec.amount) * (rate[XJ.market.currency(rec.symbol)] || 1);
+      recv += U.n0(historicalReceiptCny(state, rec));
     });
 
     var r2 = function (v) { return Math.round(v * 100) / 100; };
     return {
       mv: r2(mv), cost: r2(cost), pred: r2(pred), recv: r2(recv), net: r2(net),
-      fx: (f.HKD || f.USD) ? { HKD: U.num(f.HKD), USD: U.num(f.USD) } : null,
+      missingFx: s.holdings.some(function (h) { return fxRate(h.currency, f) === null; }),
+      fx: ['HKD', 'USD', 'JPY'].reduce(function (rates, currency) {
+        var date = (f.observedOn || {})[currency] || (f.observedAt || {})[currency];
+        var rate = fxRate(currency, f);
+        if (rate !== null && (!date || date.slice(0, 10) === U.today())) rates[currency] = rate;
+        return rates;
+      }, {}),
     };
   }
 
@@ -10942,6 +11097,7 @@ XJ.calc = (function () {
     if (ds.length < 2) return null;
     var cur = state.snapshots[ds[ds.length - 1]];
     var prev = state.snapshots[ds[ds.length - 2]];
+    if (cur.missingFx || prev.missingFx) return null;
     return {
       date: ds[ds.length - 1],
       prevDate: ds[ds.length - 2],
@@ -11000,7 +11156,8 @@ XJ.calc = (function () {
           amount: 0, per10: 0, exDate: null, reportType: '',
           undatedCount: 0, datedAmount: 0, undatedAmount: 0, events: [],
         });
-        var amt = h.qty * ps;
+        var eligibility = undated ? { qty: h.qty } : dividendEligibility(txOf(state, acc, h.symbol), p, today);
+        var amt = eligibility.qty === null ? null : eligibility.qty * ps;
         g.amount += amt;
         if (future) {
           g.datedAmount += amt;
@@ -11029,7 +11186,9 @@ XJ.calc = (function () {
 
     return {
       count: list.length,
-      total: U.sum(list, function (x) { return x.amount; }),
+      total: dividendAmounts(state, list, false).total,
+      amounts: dividendAmounts(state, list, false),
+      undatedAmounts: dividendAmounts(state, list.map(function (x) { return { symbol: x.symbol, amount: x.undatedAmount }; }), false),
       datedCount: list.filter(function (x) { return x.dateKnown; }).length,
       undatedCount: list.filter(function (x) { return !x.dateKnown; }).length,
       datedTotal: U.sum(list.filter(function (x) { return x.dateKnown; }), function (x) { return x.amount; }),
@@ -11078,7 +11237,7 @@ XJ.calc = (function () {
       var y = r.year || U.yearOf(r.exDividendDate);
       if (y !== year) return;
       var m = U.monthOf(r.exDividendDate);
-      var amt = U.n0(r.amount);
+      var amt = U.n0(historicalReceiptCny(state, r));
       if (m >= 1 && m <= 12) months[m - 1] += amt;
       records.push(r);
       symSet[r.symbol] = true;
@@ -11086,9 +11245,11 @@ XJ.calc = (function () {
 
     var total = U.sum(months, function (x) { return x; });
     var denom = (year === curYear) ? U.monthOf(today) : 12;
+    var amounts = dividendAmounts(state, records, true);
     return {
       year: year,
       total: total,
+      amounts: amounts,
       count: records.length,
       symbolCount: Object.keys(symSet).length,
       months: months,
@@ -11257,10 +11418,10 @@ XJ.calc = (function () {
         });
         if (!txs.length) continue;
 
-        var pos = position(txs, p.equityRecordDate || payDate);
-        if (pos.qty <= 0) continue;
+        var eligible = dividendEligibility(txs, p, today);
+        if (eligible.estimated || !(eligible.qty > 0)) continue;
 
-        var amount = Math.round(pos.qty * ps * 100) / 100;
+        var amount = Math.round(eligible.qty * ps * 100) / 100;
 
         /* 二级去重：
              ① 同一方案（planId + 账户）→ 幂等，老规则
@@ -11283,7 +11444,7 @@ XJ.calc = (function () {
           planId: p.planId,
           exDividendDate: payDate,
           perShareAmount: ps,
-          qtyAtRecord: pos.qty,
+          qtyAtRecord: eligible.qty,
           amount: amount,
           source: 'AUTO',
           year: U.yearOf(payDate),
@@ -11343,11 +11504,11 @@ XJ.calc = (function () {
     return hit < 0 ? null : U.num(points[hit][1]);
   }
 
-  /** 汇率：人民币恒为 1；缺失时按 1 折算（与全应用口径一致） */
+  /** 每一单位原币对应的人民币，缺失用 null 表示。 */
   function fxRate(currency, fx) {
-    if (currency === 'HKD') return U.num(fx && fx.HKD) || 1;
-    if (currency === 'USD') return U.num(fx && fx.USD) || 1;
-    return 1;
+    if (currency === 'CNY') return 1;
+    var value = U.num(fx && fx[currency]);
+    return value > 0 ? value : null;
   }
 
   /**
@@ -11356,6 +11517,47 @@ XJ.calc = (function () {
    */
   function cnyRateOf(state, symbol) {
     return fxRate(XJ.market.currency(symbol), (state && state.settings && state.settings.fx) || {});
+  }
+
+  function historicalReceiptCny(state, record) {
+    var currency = XJ.market.currency(record.symbol);
+    if (currency === 'CNY') return U.n0(record.amount);
+    var day = record.exDividendDate;
+    if (!day) return null;
+    var latest = state.settings && state.settings.fx;
+    var latestDay = latest && String((latest.observedOn || {})[currency] || (latest.observedAt || {})[currency] || latest.updatedAt || '').slice(0, 10);
+    var rate = latestDay && latestDay <= day ? fxRate(currency, latest) : null;
+    var best = rate === null ? '' : latestDay;
+    var snapshots = state.snapshots || {};
+    Object.keys(snapshots).forEach(function (date) {
+      if (date > day || date < best) return;
+      var candidate = fxRate(currency, snapshots[date] && snapshots[date].fx);
+      if (candidate !== null) { rate = candidate; best = date; }
+    });
+    return rate === null ? null : U.n0(record.amount) * rate;
+  }
+
+  function dividendAmounts(state, rows, historical) {
+    var total = 0, missing = 0, native = {};
+    rows.forEach(function (row) {
+      if (row.amount === null || row.amount === undefined) { missing++; return; }
+      var currency = XJ.market.currency(row.symbol);
+      var amount = U.n0(row.amount);
+      native[currency] = (native[currency] || 0) + amount;
+      var rate = historical ? null : cnyRateOf(state, row.symbol);
+      var value = historical ? historicalReceiptCny(state, row) : (rate === null ? null : amount * rate);
+      if (value === null) missing++;
+      else total += value;
+    });
+    return { total: total, missing: missing, native: native };
+  }
+
+  function dividendAmountText(amounts, decimals) {
+    var text = U.moneySign(amounts.total, decimals);
+    if (!amounts.missing) return text;
+    var native = Object.keys(amounts.native).filter(function (code) { return code !== 'CNY'; })
+      .map(function (code) { return code + ' ' + U.money(amounts.native[code], decimals); });
+    return text + '（合计不完整' + (native.length ? ' · 原币 ' + native.join(' / ') : '') + '）';
   }
 
   /**
@@ -11490,7 +11692,7 @@ XJ.calc = (function () {
       return s;
     }
 
-    var series = [];
+    var series = [], missingFx = false;
     var prevNetLocal = {};   // sym -> 上一个曲线日的【原币】累计净投入
     for (var i = 0; i < dates.length; i++) {
       var d = dates[i];
@@ -11502,6 +11704,7 @@ XJ.calc = (function () {
         var recOn = receivedOn(info.recs, d);
         var pos = position(info.txs, d, info.method, recOn);
         var rate = fxRate(info.currency, dayFx);
+        if (rate === null && (pos.qty > 0 || pos.netInvested || recOn)) missingFx = true;
         /* 外部现金流只由真实交易驱动：用【原币】净投入的差分再按当日汇率折算。
            若直接用 net(t) − net(t−1)（人民币口径），汇率一变就凭空多出/少掉一笔本金进出，
            TWR 会把汇率损益误当现金流，收益率曲线被压平。 */
@@ -11545,7 +11748,7 @@ XJ.calc = (function () {
         source: snap ? 'snapshot' : 'kline',   // 仅标记「当日有快照」，数值一律重建
       });
     }
-    return { series: series, missing: missing, used: used };
+    return { series: series, missing: missing, used: used, missingFx: missingFx };
   }
 
   /** 日/月粒度降采样：月粒度取每月最后一个点 */
@@ -12311,11 +12514,17 @@ XJ.calc = (function () {
     alignMinute: alignMinute,
     netWorthAdjust: netWorthAdjust,
     cnyRateOf: cnyRateOf,
+    fxRate: fxRate,
     minuteOf: minuteOf,
     minuteMapFor: minuteMapFor,
     perSharePretax: perSharePretax,
     perShareAfterTax: perShareAfterTax,
     payoutDate: payoutDate,
+    dividendAmounts: dividendAmounts,
+    dividendAmountText: dividendAmountText,
+    historicalReceiptCny: historicalReceiptCny,
+    dividendEligibility: dividendEligibility,
+    autoDividendNeedsReview: autoDividendNeedsReview,
     payoutInfo: payoutInfo,
     dividendAnchor: dividendAnchor,
     plansOf: plansOf,
@@ -13969,6 +14178,8 @@ XJ.ui = (function () {
       开 A→关 A→开 B 的流程里 B 会被挂起的清场定时器一起删掉（实测 uitest 全线挂）。
       immediate=true 或 reduced-motion：不播动画。 */
   var sheetHist = null;
+  var dismissSheet = null;
+  var returnFocus = null;
 
   function closeSheet(immediate, silentHist) {
     var root = document.getElementById('modal-root');
@@ -13978,8 +14189,13 @@ XJ.ui = (function () {
     var hid = sheetHist && sheetHist.id;
     var animate = !immediate && !(XJ.anim && XJ.anim.reduced());
     var ghost = animate ? mask.cloneNode(true) : null;
+    var dismiss = dismissSheet;
+    dismissSheet = null;
     root.innerHTML = '';
     sheetHist = null;
+    var trigger = returnFocus;
+    returnFocus = null;
+    if (trigger && trigger.isConnected) trigger.focus({ preventScroll: true });
     if (ghost) {
       ghost.classList.add('closing');
       var host = document.createElement('div');
@@ -13992,24 +14208,41 @@ XJ.ui = (function () {
     /* 入栈的内容型 sheet 被 UI 关闭时通知 app 弹掉对应历史条目（栈与画面同步）；
        silentHist = 调用方自己在同步栈（openSheet 顶替旧层 / popstate 还原），不要再 back() */
     if (hid && !silentHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(hid);
+    if (dismiss) dismiss();
   }
 
   function openSheet(opts) {
     opts = opts || {};
     var prevHist = sheetHist && sheetHist.id;
+    var trigger = returnFocus || document.activeElement;
     closeSheet(false, true);
+    returnFocus = trigger;
     var root = document.getElementById('modal-root');
     var mask = document.createElement('div');
     mask.className = 'mask';
     var inner = '<div class="sheet-grip"></div>' +
       (opts.title ? '<h3' + (opts.center ? ' class="center"' : '') + '>' + U.esc(opts.title) + '</h3>' : '') +
       (opts.html || '');
-    mask.innerHTML = '<div class="sheet">' + inner + '</div>';
+    mask.innerHTML = '<div class="sheet" role="dialog" aria-modal="true" aria-label="' +
+      U.esc(opts.title || '操作面板') + '" tabindex="-1">' + inner + '</div>';
     mask.addEventListener('click', function (e) { if (e.target === mask) closeSheet(); });
     root.appendChild(mask);
     sheetHist = opts.hist ? { id: opts.hist, arg: opts.histArg === undefined ? null : opts.histArg } : null;
     var sheet = mask.querySelector('.sheet');
+    dismissSheet = opts.onDismiss || null;
+    mask.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') { ev.preventDefault(); closeSheet(); }
+      if (ev.key !== 'Tab') return;
+      var focusable = Array.from(sheet.querySelectorAll('button, input, select, textarea, a[href], [tabindex]'))
+        .filter(function (el) { return !el.disabled && el.tabIndex >= 0 && el.getClientRects().length; });
+      var index = focusable.indexOf(document.activeElement);
+      if (!focusable.length || index < 0 || (ev.shiftKey ? index === 0 : index === focusable.length - 1)) {
+        ev.preventDefault();
+        (focusable[ev.shiftKey ? focusable.length - 1 : 0] || sheet).focus();
+      }
+    });
     if (opts.onMount) opts.onMount(sheet);
+    if (!sheet.contains(document.activeElement)) sheet.focus({ preventScroll: true });
     /* 入栈 sheet 被无栈 sheet 顶替（如分组选择里点「新建分组」开表单）：
        旧 sheet 不会再回来，静默弹掉它的历史条目，保持栈与画面同步 */
     if (prevHist && !sheetHist && XJ.app && XJ.app.onSheetClose) XJ.app.onSheetClose(prevHist);
@@ -14025,13 +14258,14 @@ XJ.ui = (function () {
     return new Promise(function (resolve) {
       openSheet({
         title: opts.title || '确认操作',
+        onDismiss: function () { resolve(false); },
         html:
           '<p class="muted" style="font-size:13.5px;line-height:1.7;margin:0 0 16px">' + (opts.html || U.esc(opts.message || '')) + '</p>' +
           '<button class="btn-block ' + (opts.danger ? 'danger' : '') + '" data-act="__confirm_ok">' + U.esc(opts.confirmText || '确定') + '</button>' +
           '<button class="btn-block ghost" data-act="__confirm_cancel">取消</button>',
         onMount: function () {
-          on('__confirm_ok', function () { closeSheet(); resolve(true); });
-          on('__confirm_cancel', function () { closeSheet(); resolve(false); });
+          on('__confirm_ok', function () { resolve(true); closeSheet(); });
+          on('__confirm_cancel', function () { closeSheet(); });
         },
       });
     });
@@ -14391,7 +14625,7 @@ XJ.views.common = (function () {
     } else if (st.ui.status) {
       parts.push('<div class="offline-bar">' + UI.icon('info', 15) + '<span>' + U.esc(st.ui.status) + '</span></div>');
     }
-    if (st.state.settings.lastQuoteAt && st.ui.offline) {
+    if (!st.ui.busy && !st.ui.status && st.state.settings.lastQuoteAt && st.ui.offline) {
       parts.push('<div class="offline-bar">' + UI.icon('warn', 15) +
         '<span>行情未能刷新，当前展示缓存数据（' + U.esc(String(st.state.settings.lastQuoteAt).slice(5, 16).replace('T', ' ')) + '）</span></div>');
     }
@@ -14429,7 +14663,7 @@ XJ.views.common = (function () {
 
   /** 指标旁的解释气泡 */
   function qmark(text) {
-    return '<span class="qmark" data-act="explain" data-text="' + U.esc(text) + '">?</span>';
+    return '<button class="qmark" aria-label="查看指标说明" data-act="explain" data-text="' + U.esc(text) + '">?</button>';
   }
 
   /**
@@ -14503,17 +14737,17 @@ XJ.views.overview = (function () {
       '<span class="hd-today-note">较昨收 · 跨币种已折算</span></div>';
   }
 
-  function heroCard(st, s, proj, stat) {
+  function heroCard(st, s) {
     var cfg = st.state.settings;
     var collapsed = XJ.store.folded('heroCollapsed', cfg);   // 默认折叠（util.FOLD.collapsed）
     var all = XJ.model.HERO_METRICS;
     var chosen = (cfg.heroMetrics && cfg.heroMetrics.length) ? cfg.heroMetrics : all.map(function (m) { return m.key; });
 
     var vals = {
-      receivedThisYear: U.moneySign(s.receivedThisYear, 0),
+      receivedThisYear: U.moneySign(s.receivedThisYear, 0) + (s.missingReceiptFx ? '（部分）' : ''),
       totalCost: '¥' + U.moneyCompact(s.totalCost),
       totalMarketValue: '¥' + U.moneyCompact(s.totalMarketValue),
-      costYield: s.costYield === null ? '已回本' : U.pct(s.costYield),
+      costYield: s.missingFx ? '—' : (s.costYield === null ? '已回本' : U.pct(s.costYield)),
       marketYield: s.marketYield === null ? '—' : U.pct(s.marketYield),
       monthlyDividend: U.moneySign(s.monthlyDividend, 0),
     };
@@ -14528,12 +14762,6 @@ XJ.views.overview = (function () {
         '</div>';
     }).join('');
 
-    var statusLine = stat.since
-      ? '收息第 <b>' + stat.days + '</b> 天，你的耐心正在被时间奖励 🎁'
-      : '还没有开始计算收息天数，添加第一笔买入即可';
-
-    var years = U.n0(st.state.projection.years) || 10;
-    var mult = proj.multiple ? '· ' + years + ' 年可达 <b>' + proj.multiple.toFixed(1) + ' 倍</b>' : '';
 
     /* 收起态必须保留一个「展开」按钮 —— 早先的实现把 .hd-actions 一起隐藏了，
        于是点「收起」之后再也没有入口能展开，等于把自己锁死。 */
@@ -14548,20 +14776,20 @@ XJ.views.overview = (function () {
       ? cfg.heroColor : XJ.model.HERO_COLOR_DEFAULT;
 
     return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '">' +
-      '<div class="hd-status">' + statusLine + '</div>' +
       '<div class="hd-row">' +
       '<div>' +
       '<div class="lbl">预测年度分红</div>' +
       '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
       '</div>' +
-      '<div class="hd-badge">基于 <b>' + s.count + '</b> 只持仓<br>' + mult + '</div>' +
+      '<div class="hd-badge">今年确认实收<br><b>' + XJ.calc.dividendAmountText(s.confirmedThisYear, 0) + '</b>' +
+      ((s.autoThisYear.total || s.autoThisYear.missing) ? '<br>自动估算 ' + XJ.calc.dividendAmountText(s.autoThisYear, 0) : '') + '</div>' +
       '</div>' +
       /* 当日参考盈亏：现价相对【昨收】的浮动（人民币口径，跨币种已折算）。
          刻意放在 hd-row 下方独立一行、不塞进 HERO_METRICS —— 老用户的
          settings.heroMetrics 里没有这个 key，塞进去会导致它默认不显示。 */
-      (collapsed ? '' : todayPnlLine(s)) +
+      todayPnlLine(s) +
+      (s.missingFx ? '<div class="hd-today-note">部分持仓缺少汇率，人民币合计不完整</div>' : '') +
       (collapsed ? '' : '<div class="hd-metrics">' + metrics + '</div>') +
-      (collapsed ? '' : forecastStrip(st, s)) +
       '<div class="hd-collapsed-hint">已收起 · 点下方「展开」查看全部指标</div>' +
       '<div class="hd-actions">' + actions + '</div>' +
       '</div>';
@@ -14741,6 +14969,7 @@ XJ.views.overview = (function () {
   }
 
   function holdingCard(h) {
+    var state = XJ.store.state;
     var chg = h.changePct;
     var dir = (chg === null || chg === undefined) ? 'flat' : U.direction(chg);
     /* 成本口径标签（分红摊薄 / 加权平均 / 摊薄成本）不再挂在名字旁 —— 太占地方，
@@ -14815,14 +15044,14 @@ XJ.views.overview = (function () {
       '</div>' +
       '</div>' +
       '<div class="hc-right">' +
-      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':div">' + U.moneySign(h.predictedDividendCny) + '</div>' +
+      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':div">' + XJ.usdiv.moneyText(state, h.symbol, h.predictedDividend) + '</div>' +
       '<div class="hc-div-lbl">预测分红</div>' +
       '</div>' +
       '</div>' +
       intra +
       '<div class="hc-grid">' +
       '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.qtyText(h.qty) + '股</div></div>' +
-      '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + U.moneySign(h.marketValueCny, mvDec) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + XJ.usdiv.moneyText(state, h.symbol, h.marketValue, mvDec) + '</div></div>' +
       '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
       '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + pctBadge + '</div></div>' +
       '</div>' +
@@ -14859,8 +15088,6 @@ XJ.views.overview = (function () {
     var s = XJ.calc.summary(st.state, st.acc());
     var cov = XJ.calc.coverage(s.totalPredicted, st.state.expenses, 7);
     var ms = XJ.calc.milestone(cov.overallProgress);
-    var proj = XJ.calc.projection(st.state.projection, s.totalMarketValue, s.totalPredicted);
-    var stat = XJ.calc.statDays(st.state, st.acc());
 
     var html = '';
     html += C.statusBanner();
@@ -14874,17 +15101,11 @@ XJ.views.overview = (function () {
       return html;
     }
 
-    html += heroCard(st, s, proj, stat);
-    /* 标语口径：每天睡醒「到账」= 日均分红 = 年预测分红 ÷ 365（不是月均）。
-       ≥0.5 元四舍五入取整；不足 1 元保留 1 位小数（避免出现「0 元」）。 */
-    var dailyIn = s.totalPredicted / 365;
-    var dayTxt = dailyIn >= 0.5 ? U.thousands(Math.round(dailyIn))
-      : (dailyIn > 0 ? U.money(dailyIn, 1) : '0');
-    html += '<div class="slogan-bar warm slogan-hero">' +
-      '<div class="sb-main">每天睡醒到账分红 <b class="sb-amt" data-anim="A" data-anim-key="slogan:daily">' + dayTxt + '</b> 元</div>' +
-      '<div class="sb-sub">' + UI.icon('info', 13) + '<span>' + U.esc(C.slogan()) + '</span></div>' +
-      '</div>';
-    html += coverageCard(st, cov, ms);
+    html += heroCard(st, s);
+    html += '<div class="hero-dark forecast-card"><button class="fold-head" data-act="toggleOverviewForecast" aria-expanded="' +
+      !!st.ui.overviewForecast + '"><span>分红试算</span><span class="spacer"></span>' + UI.icon('chevron', 16) + '</button>' +
+      (st.ui.overviewForecast ? (s.missingFx ? '<p>补齐汇率后可计算组合预测。</p>' : forecastStrip(st, s)) : '') + '</div>';
+    if (!s.missingFx) html += coverageCard(st, cov, ms);
 
     /* ---- 资产走势（市值 / 净资产曲线，卡片自带标题与折叠） ---- */
     html += XJ.views.networth.render();
@@ -15067,6 +15288,10 @@ XJ.views.networth = (function () {
   function render(ns) {
     ns = ns || '';
     var st = XJ.store;
+    var holdings = XJ.calc.holdings(st.state, st.acc());
+    if (holdings.some(function (h) { return h.fxRate === null; })) {
+      return '<div class="card nw-card"><h2>资产走势</h2><p class="muted">部分持仓缺少汇率，暂无法计算完整的组合走势。</p></div>';
+    }
     var metricV = getUI(ns, 'metric');
     var metric = (metricV === 'nw' || metricV === 'ret') ? metricV : 'mv';
     var mode = getUI(ns, 'mode') === 'candle' ? 'candle' : 'line';
@@ -15493,6 +15718,7 @@ XJ.views.networth = (function () {
       notes.push('有 ' + b.res.missing.length + ' 只标的没有历史行情（场外基金净值或长期停牌），' +
         '按现价作常量计入市值，避免曲线在这些日子整块缺失');
     }
+    if (!isToday && b.res.missingFx) notes.push('部分历史日期缺少汇率，曲线只包含可折算的金额');
     if (isToday && intradayMissing && intradayMissing.length) {
       notes.push('有 ' + intradayMissing.length + ' 只标的没有当日分时（场外基金 / 美股 / 长期停牌），' +
         '不参与逐分钟曲线' + (metric === 'nw' ? '（当日收益里按其最新市值、按币种折算作常量计入，日内不波动）' : '，未计入曲线'));
@@ -15506,10 +15732,7 @@ XJ.views.networth = (function () {
 
   /** 当日分时的汇率取值（HKD / USD 换人民币，未配置时按 1） */
   function fxRate(st, cur) {
-    var fx = st.state.settings.fx || {};
-    if (cur === 'HKD') return U.num(fx.HKD) || 1;
-    if (cur === 'USD') return U.num(fx.USD) || 1;
-    return 1;
+    return XJ.calc.fxRate(cur, st.state.settings.fx);
   }
 
   /**
@@ -15741,10 +15964,10 @@ XJ.views.calendar = (function () {
       '<span class="pend-ico">💌</span>' +
       '<span class="pend-hmain">' +
       '<span class="pend-title">你有 <b>' + pend.count + '</b> 只持仓已公布分红方案，等待除权日</span>' +
-      '<span class="pend-sub" data-anim="A">预计共可得 <b>' + U.moneySign(pend.total) + '</b>' +
+      '<span class="pend-sub" data-anim="A">预计共可得 <b>' + XJ.calc.dividendAmountText(pend.amounts) + '</b>' +
       /* 除权日还没公告的那部分金额是估算，这里如实说明，不混进确定值里 */
       (pend.undatedTotal > 0
-        ? '<i class="pend-subnote" data-anim="A">其中 ' + U.moneySign(pend.undatedTotal) + ' 除权日待定</i>'
+        ? '<i class="pend-subnote" data-anim="A">其中 ' + XJ.calc.dividendAmountText(pend.undatedAmounts) + ' 除权日待定</i>'
         : '') +
       '</span>' +
       '</span>' +
@@ -15759,10 +15982,10 @@ XJ.views.calendar = (function () {
           '<span class="pi-row">' +
           '<span class="pi-name">' + U.esc(it.name) +
           '<i class="pi-tag">' + U.esc(XJ.market.displayCode(it.symbol)) + '</i></span>' +
-          '<span class="pi-amt" data-anim="A">' + U.moneySign(it.amount) + '</span>' +
+          '<span class="pi-amt" data-anim="A">' + XJ.usdiv.moneyText(st.state, it.symbol, it.amount) + '</span>' +
           '</span>' +
           '<span class="pi-row">' +
-          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' 元 · 持有 ' + U.qtyText(it.qty) + '股</span>' +
+          '<span class="pi-desc">每10股派 ' + trimNum(it.per10) + ' ' + U.esc(it.currency) + ' · 持有 ' + U.qtyText(it.qty) + '股</span>' +
           '<span class="pi-when">' + (it.exDate
             ? '除权日 ' + U.esc(String(it.exDate).slice(5))
             : '<i class="pi-tbd">除权日待定</i>') +
@@ -15788,7 +16011,7 @@ XJ.views.calendar = (function () {
     var right = e.amount === null || e.amount === undefined
       ? ''
       : '<div class="row-v c-div">' + amtTxt + '</div>';
-    var sub = (e.type === 'payout')
+    var sub = e.needsReview ? '分红资格待核对，可按券商记录补录' : (e.type === 'payout')
       ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股 · ' +
       (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + amtTxt +
       (XJ.usdiv.isUs(e.symbol) ? '（税前 USD）' : '')
@@ -15829,10 +16052,12 @@ XJ.views.calendar = (function () {
       if (selDate === ds && ds !== today) cls += ' sel';
       var dots = ['register', 'exdiv', 'payout'].filter(function (t) { return types[t]; })
         .map(function (t) { return '<span class="cal-dot ' + t + '"></span>'; }).join('');
-      cells += '<div class="' + cls + '"' + (evs.length ? ' data-act="selDate" data-date="' + ds + '"' : '') + '>' +
+      var tag = evs.length ? 'button' : 'div';
+      cells += '<' + tag + ' class="' + cls + '"' + (evs.length ? ' data-act="selDate" data-date="' + ds +
+        '" aria-label="' + ds + '，' + evs.length + ' 条分红事件" aria-pressed="' + (selDate === ds) + '"' : '') + '>' +
         '<span>' + d + '</span>' +
         (dots ? '<span class="cal-dots">' + dots + '</span>' : '<span class="cal-dots"></span>') +
-        '</div>';
+        '</' + tag + '>';
     }
     var total = startPad + daysInMonth;
     var tail = (7 - (total % 7)) % 7;
@@ -15849,9 +16074,9 @@ XJ.views.calendar = (function () {
     /* 待除权：已公布分红方案、等待除权日（息记同款卡片） */
     if (pend.count > 0) {
       html += pendingCard(st, pend);
-    } else if (mv.receivedTotal > 0) {
+    } else if (mv.receivedTotal > 0 || mv.receivedAmounts.missing) {
       html += '<div class="cal-banner" data-anim="A" style="background:var(--payout-banner-grad);border-color:var(--payout-banner-line);color:var(--payout-banner-fg)">' +
-        '本月已到账分红 <b style="color:var(--down)">' + U.moneySign(mv.receivedTotal) + '</b>，当前没有等待除权的方案。</div>';
+        '本月已登记分红 <b style="color:var(--down)">' + XJ.calc.dividendAmountText(mv.receivedAmounts) + '</b></div>';
     } else {
       html += '<div class="cal-banner" data-anim="A" style="background:var(--card-2);border-color:var(--line);color:var(--text-2)">' +
         '当前没有等待除权的分红方案。</div>';
@@ -15934,7 +16159,7 @@ XJ.views.calendar = (function () {
     html += '<div class="card" style="background:var(--slogan-grad);border:1px solid var(--warn-line)">' +
       '<div style="font-size:12px;color:var(--warn-fg)">年度已到账分红</div>' +
       '<div style="font-size:34px;font-weight:750;letter-spacing:-1.2px;color:var(--dividend);margin-top:4px">' +
-      U.moneySign(av.total) + '</div>' +
+      XJ.calc.dividendAmountText(av.amounts) + '</div>' +
       '<div class="tiny" style="margin-top:6px">共 ' + U.cn(av.count) + ' 笔，来自 ' + av.symbolCount + ' 只持仓</div>' +
       '</div>';
 
@@ -15959,10 +16184,10 @@ XJ.views.calendar = (function () {
 
     /* 月度明细 */
     var monthRecords = av.records.filter(function (r) { return U.monthOf(r.exDividendDate) === selMonth; });
-    var monthTotal = U.sum(monthRecords, function (r) { return r.amount; });
+    var monthAmounts = XJ.calc.dividendAmounts(st.state, monthRecords, true);
     html += '<div class="section-title" style="display:flex;align-items:center">' +
       '<span>' + selMonth + '月到账明细</span><span style="flex:1"></span>' +
-      '<span class="c-div" style="font-weight:700">' + U.moneySign(monthTotal) + '</span></div>';
+      '<span class="c-div" style="font-weight:700">' + XJ.calc.dividendAmountText(monthAmounts) + '</span></div>';
 
     if (!monthRecords.length) {
       html += '<div class="card"><div class="tiny" style="text-align:center;padding:14px 0">该月没有到账记录。</div></div>';
@@ -15976,7 +16201,7 @@ XJ.views.calendar = (function () {
           U.esc(r.exDividendDate) + ' 到账 · ' + U.qtyText(r.qtyAtRecord) + ' 股 × ' +
           U.money(r.perShareAmount, 4) + '</div>' +
           '</div>' +
-          '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</div></div>' +
+          '<div class="row-right"><div class="row-v c-div">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount, undefined, r.exDividendDate) + '</div></div>' +
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
       }).join('') + '</div>';
@@ -16401,6 +16626,7 @@ XJ.views.plan = (function () {
       return html;
     }
 
+    if (X.summary(st.state, st.acc()).missingFx) return html + '<div class="card">部分持仓缺少汇率。补齐汇率后可计算组合的财务自由进度。</div>' + expensesCardHtml(st) + entryCardHtml(st);
     var fire = st.state.settings.fire || {};
     var tier = tierKey(fire);
     var targets = X.fireTargets(st.state, st.acc(), 'market');
@@ -16458,16 +16684,18 @@ XJ.views.divsummary = (function () {
 
   /* ---------------- 主卡 ---------------- */
   function hero(sum, fun) {
-    var n = XJ.calc.funEquivalent(sum.total, fun.monthly);
+    var n = sum.amounts.missing ? null : XJ.calc.funEquivalent(sum.total, fun.monthly);
     return '<div class="card ds-hero">' +
-      '<div class="ds-cap">分红总额</div>' +
-      '<div class="ds-total" data-anim="S">' + U.moneySign(sum.total) + '</div>' +
+      '<div class="ds-cap">登记分红总额</div>' +
+      '<div class="ds-total" data-anim="S">' + XJ.calc.dividendAmountText(sum.amounts) + '</div>' +
       '<div class="ds-rule"></div>' +
+      '<div class="ds-kv"><span>确认实收</span><span>' + XJ.calc.dividendAmountText(sum.confirmedAmounts) + '</span></div>' +
+      ((sum.autoAmounts.total || sum.autoAmounts.missing) ? '<div class="ds-kv"><span>自动估算 · 税前</span><span>' + XJ.calc.dividendAmountText(sum.autoAmounts) + '</span></div>' : '') +
       '<div class="ds-kv"><span>到账笔数</span><span>' + sum.count + ' 笔</span></div>' +
       '<div class="ds-kv"><span>涉及标的</span><span>' + sum.bySymbolList.length + ' 只</span></div>' +
-      (sum.pendingTotal > 0
+      (sum.pendingCount > 0
         ? '<div class="ds-kv ds-pend" data-anim="A"><span>另有预计到账</span><span>' +
-          U.moneySign(sum.pendingTotal) + '</span></div>'
+          XJ.calc.dividendAmountText(sum.pendingAmounts) + '</span></div>'
         : '') +
       (n !== null
         ? '<div class="ds-fun" data-anim="A">这些分红相当于 ' + U.thousands(n) + ' 个月' +
@@ -16489,7 +16717,7 @@ XJ.views.divsummary = (function () {
             '<span class="ds-rec-d">' + U.esc(String(r.exDividendDate || '').slice(5)) + '</span>' +
             '<span class="ds-rec-m">每股 ' + U.money(r.perShareAmount, 3) +
             ' × ' + U.qtyText(qty) + ' 股</span>' +
-            '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount) + '</span>' +
+            '<span class="ds-rec-a" data-anim="B">' + XJ.usdiv.moneyText(st.state, r.symbol, r.amount, undefined, r.exDividendDate) + '</span>' +
             '</div>';
         }).join('');
         return '<div class="ds-sym' + (isOpen ? ' open' : '') + '">' +
@@ -16498,7 +16726,7 @@ XJ.views.divsummary = (function () {
           '<span class="ds-code">' + U.esc(XJ.model.codeOf(g.symbol)) + '</span>' +
           '<span class="ds-name">' + U.esc(st.symbolName(g.symbol)) + '</span>' +
           '<span class="ds-sp"></span>' +
-          '<span class="ds-amt" data-anim="A">' + XJ.usdiv.moneyText(st.state, g.symbol, g.amount) + '</span>' +
+          '<span class="ds-amt" data-anim="A">' + XJ.calc.dividendAmountText(XJ.calc.dividendAmounts(st.state, g.records, true)) + '</span>' +
           '<span class="chev">' + UI.icon('chevron', 15, 2) + '</span>' +
           '</button>' +
           (isOpen ? '<div class="ds-detail">' + rows + '</div>' : '') +
@@ -16551,7 +16779,7 @@ XJ.views.divsummary = (function () {
     html += chips(key);
     html += customRow(st);
 
-    if (!(sum.total > 0) && !(sum.pendingTotal > 0)) {
+    if (!sum.count && !sum.pendingCount) {
       html += UI.emptyState('🌾', '这个区间没有分红',
         '换一个时间档位看看，或者在「我的 · 分红流水」里补录一笔。');
       return html;
@@ -16559,18 +16787,17 @@ XJ.views.divsummary = (function () {
 
     html += hero(sum, fun);
 
-    if (sum.total > 0) {
+    if (sum.count) {
       html += symList(sum, st);
-      html += yearBars(sum);
+      if (!sum.amounts.missing) html += yearBars(sum);
     } else {
       html += '<div class="card"><div class="tiny" style="line-height:1.8">' +
-        '这个区间还没有分红到账，另有 <b class="c-div">' + U.moneySign(sum.pendingTotal) +
+        '这个区间还没有分红到账，另有 <b class="c-div">' + XJ.calc.dividendAmountText(sum.pendingAmounts) +
         '</b> 预计到账（' + sum.pendingCount + ' 笔）。到账后会自动登记在这里。</div></div>';
     }
 
     html += '<div class="tiny ds-note">' +
-      '口径：金额一律为<b>税前</b>；「分红总额」只统计<b>已到账</b>（与「我的 · 分红流水」逐笔一致），' +
-      '未到账的部分单列在「另有预计到账」里，不混进总额。' +
+      '自动登记使用公告税前金额。已核对的记录可填入券商实际到账额。未来派息单独汇总。' +
       'A 股派息日按除权除息日推算，实际到账可能晚 1-2 天。' +
       '</div>';
     return html;
@@ -17375,7 +17602,7 @@ XJ.views.watchlist = (function () {
   /* ---------------- 渲染 ---------------- */
 
   function quoteOf(sym) {
-    return pxMemo.quotes[sym] || XJ.store.state.quoteCache[sym] || null;
+    return XJ.store.state.quoteCache[sym] || pxMemo.quotes[sym] || null;
   }
 
   function indexBar(st) {
@@ -17572,7 +17799,12 @@ XJ.views.watchlist = (function () {
     return html;
   }
 
-  return { render: render, bind: bind, fillYield: fillYield, toggleSort: toggleSort };
+  return { render: render, bind: bind, fillYield: fillYield, toggleSort: toggleSort,
+    currentSymbols: function () {
+      var store = XJ.store;
+      return sortedRows(store, store.ui.wlGroup || 'all', null).map(function (row) { return row.symbol; });
+    },
+  };
 })();
 
 
@@ -18236,18 +18468,12 @@ XJ.views.mine = (function () {
      让「用实时汇率显示数据」这件事在界面上可被验证。 */
   function fxLine() {
     var fx = (XJ.store.state && XJ.store.state.settings && XJ.store.state.settings.fx) || {};
-    var usd = U.num(fx.USD), hkd = U.num(fx.HKD);
-    if (!usd && !hkd) return '尚未取到（腾讯 whUSDCNY / whHKDCNY 公开接口），美股数据暂按原币显示';
-    var parts = [];
-    if (usd) parts.push('USD/CNY ' + U.money(usd, 4));
-    if (hkd) parts.push('HKD/CNY ' + U.money(hkd, 4));
-    var at = String(fx.updatedAt || '');
-    if (at) {
-      var d = new Date(at);
-      if (!isNaN(d.getTime())) {
-        parts.push('更新于 ' + U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes()) + ':' + U.pad2(d.getSeconds()));
-      }
-    }
+    var parts = ['USD', 'HKD', 'JPY'].filter(function (code) { return U.num(fx[code]) > 0; }).map(function (code) {
+      var at = new Date((fx.observedAt || {})[code] || fx.updatedAt || '');
+      return code + '/CNY ' + U.money(fx[code], 4) + (!isNaN(at.getTime()) ? '（' +
+        U.pad2(at.getMonth() + 1) + '-' + U.pad2(at.getDate()) + ' ' + U.pad2(at.getHours()) + ':' + U.pad2(at.getMinutes()) + '）' : '');
+    });
+    if (!parts.length) return '尚未取得汇率，外币金额按原币显示';
     return parts.join(' · ') + '（每 30 秒刷新，回到前台立即刷新）' +
       (XJ.store.ui.fxError ? ' · 本次刷新失败，仍用上一次的汇率' : '');
   }
@@ -18284,10 +18510,17 @@ XJ.views.mine = (function () {
   function renderTransactions() {
     var st = XJ.store;
     var folded = XJ.store.folded('foldMineTx');   // 默认折叠（util.FOLD.collapsed）
-    var txs = st.state.transactions.slice().sort(function (a, b) {
+    var f = st.ui.ledgerFilters || {};
+    var query = (f.query || '').trim().toLowerCase();
+    var txs = st.state.transactions.filter(function (t) {
+      return (!f.account || f.account === t.accountId) && (!f.action || f.action === t.action) &&
+        (!f.beg || t.date >= f.beg) && (!f.end || t.date <= f.end) &&
+        (!query || (t.symbol + ' ' + st.symbolName(t.symbol)).toLowerCase().includes(query));
+    }).sort(function (a, b) {
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-      return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1;
-    }).slice(0, 30);
+      return String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(a.txId).localeCompare(String(b.txId));
+    });
+    var limit = st.ui.ledgerLimit || 30;
 
     var html = '<div class="card flush">' +
       '<div style="padding:14px 16px 10px">' +
@@ -18300,12 +18533,26 @@ XJ.views.mine = (function () {
       '<div class="spacer"></div>' +
       '<button class="ghost-btn" data-act="openTxEditor">' + UI.icon('plus', 14) + ' 记一笔</button>' +
       '</div></div>';
-    if (!txs.length) {
+    if (!st.state.transactions.length) {
       html += '<div style="padding:0 16px 16px" class="tiny">暂无交易记录。持仓由交易流水推导，添加交易即可建立持仓。</div>';
     } else if (folded) {
-      html += '<div class="fold-hint">已收起，最近 ' + txs.length + ' 笔 · 点标题展开查看</div>';
+      html += '<div class="fold-hint">展开查看和筛选全部流水</div>';
     } else {
-      html += txs.map(function (t) {
+      function option(value, label, selected) {
+        return '<option value="' + U.esc(value) + '"' + (selected === value ? ' selected' : '') + '>' + U.esc(label) + '</option>';
+      }
+      html += '<form class="ledger-filters" id="ledger-filters">' +
+        '<label>名称或代码<input type="search" name="query" value="' + U.esc(f.query || '') + '"></label>' +
+        '<label>账户<select name="account"><option value="">全部账户</option>' +
+        st.state.accounts.map(function (a) { return option(a.accountId, a.name, f.account); }).join('') + '</select></label>' +
+        '<label>交易类型<select name="action"><option value="">全部类型</option>' +
+        [['BUY', '买入'], ['SELL', '卖出'], ['ADJUST', '成本调整']].map(function (a) { return option(a[0], a[1], f.action); }).join('') + '</select></label>' +
+        '<label>起始日期<input type="date" name="beg" value="' + U.esc(f.beg || '') + '"></label>' +
+        '<label>结束日期<input type="date" name="end" value="' + U.esc(f.end || '') + '"></label>' +
+        '<div class="ledger-actions"><button type="submit" class="ghost-btn primary">筛选</button>' +
+        '<button type="button" class="ghost-btn" data-act="resetLedgerFilters">重置</button></div></form>' +
+        '<div class="fold-hint">' + (txs.length ? '符合条件 ' + txs.length + ' 笔' : '没有符合条件的交易') + '</div>';
+      html += txs.slice(0, limit).map(function (t) {
         var isAdj = t.action === 'ADJUST';
         var amt = isAdj ? U.n0(t.amount) : U.n0(t.quantity) * U.n0(t.price);
         return '<button class="list-row" data-act="openTxEditor" data-id="' + U.esc(t.txId) + '">' +
@@ -18325,6 +18572,7 @@ XJ.views.mine = (function () {
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
       }).join('');
+      if (txs.length > limit) html += '<button class="btn-block ghost" data-act="loadMoreLedger">显示更多交易</button>';
     }
     html += '</div>';
     return html;
@@ -18462,6 +18710,10 @@ XJ.views.mine = (function () {
 
     var html = '<div class="card flush">' +
       '<div style="padding:14px 16px 10px"><div class="card-head" style="margin:0"><h2>数据管理</h2></div></div>';
+
+    if (XJ.storage.recoveryCopy()) html += '<button class="list-row" data-act="openRecoveryCopy">' +
+      '<div class="row-main"><div class="row-t">发现备用账本</div><div class="row-s">预览、导出或合并本机备用记录</div></div>' +
+      '<span class="chev">' + UI.icon('chevron', 16) + '</span></button>';
 
     html += '<button class="list-row" data-act="exportJson">' +
       '<div class="row-main"><div class="row-t">' + UI.icon('download', 17) + ' 导出全部数据（JSON）</div>' +
@@ -18623,6 +18875,7 @@ XJ.views.analysis = (function () {
         '<button class="ghost-btn primary" data-act="closeSubPage">返回</button>');
       return html;
     }
+    if (s.missingFx) html += '<div class="offline-bar">部分持仓缺少汇率，人民币金额与占比仅覆盖可折算的标的。</div>';
 
     /* ② 总资产（深色卡） */
     var unrealized = s.totalUnrealized;
@@ -18784,8 +19037,7 @@ XJ.views.symbol = (function () {
      非美股沿用原「按 cnyRateOf 折人民币」口径；
      美股按 settings.fx.USD 实时汇率折 ¥，汇率缺失时显示 USD 原币（绝不按 1 折算）。 */
   function divMoney(st, symbol, amount, dec) {
-    if (XJ.market.assetType(symbol) === 'us') return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
-    return U.moneySign(amount * XJ.calc.cnyRateOf(st.state, symbol), dec);
+    return XJ.usdiv.moneyText(st.state, symbol, amount, dec);
   }
 
   /* 交易明细是账户【原币流水】：美股一律用 $ 原币（买入金额、分红摊薄都按 USD 记账）。
@@ -19367,7 +19619,7 @@ XJ.views.symbol = (function () {
     html += '<div class="card flush" style="margin-bottom:12px">';
     html += '<div style="padding:14px 16px 8px"><div class="card-head" style="margin:0"><h2>分红记录</h2>' +
       '<div class="spacer"></div><span class="hint">累计 ' +
-      divMoney(st, symbol, U.sum(recs, function (r) { return r.amount; })) + '</span>' +
+      XJ.calc.dividendAmountText(XJ.calc.dividendAmounts(st.state, recs, true)) + '</span>' +
       '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '">+ 添加</button></div>' +
       (XJ.usdiv.isUs(symbol) ? '<div class="tiny" style="padding:0 16px 8px">' + U.esc(XJ.usdiv.rateNote(st.state, symbol)) + '</div>' : '') +
       '</div>';
@@ -19377,11 +19629,18 @@ XJ.views.symbol = (function () {
       html += '<div class="table-wrap"><table class="tbl"><thead><tr>' +
         '<th>到账日</th><th>每股(税前)</th><th>数量</th><th>金额</th></tr></thead><tbody>';
       recs.forEach(function (r) {
+        var plan = st.state.plans[r.planId];
+        var needsReview = XJ.calc.autoDividendNeedsReview(st.state, r);
+        var dates = plan ? [['登记', plan.equityRecordDate], ['除息', plan.exDividendDate], ['公告派息', plan.payoutDate]]
+          .filter(function (d) { return d[1]; }).map(function (d) { return U.esc(d[0] + ' ' + d[1]); }).join('<br>') : '';
         html += '<tr><td>' + U.esc(r.exDividendDate) + '<div class="tiny">' +
-          (r.source === 'AUTO' ? '自动' : '手动') + '</div></td>' +
+          (needsReview ? '待核对' : (r.source === 'AUTO' ? '自动估算 · 税前' : '手动登记')) +
+          (dates ? '<br>' + dates : '') + '</div></td>' +
           '<td>' + (r.perShareAmount > 0 ? U.money(r.perShareAmount, 4) : '<span class="muted">—</span>') + '</td>' +
           '<td>' + (r.qtyAtRecord > 0 ? U.qtyText(r.qtyAtRecord) : '<span class="muted">—</span>') + '</td>' +
-          '<td class="c-div">' + divMoney(st, symbol, r.amount) +
+          '<td class="c-div">' + U.esc(XJ.market.currency(symbol)) + ' ' + U.money(r.amount) +
+          '<div class="tiny">' + XJ.usdiv.moneyText(st.state, symbol, r.amount, undefined, r.exDividendDate) + '</div>' +
+          '<button class="ghost-btn" data-act="openReceiveEditor" data-symbol="' + U.esc(symbol) + '" data-id="' + U.esc(r.recId) + '">核对</button>' +
           (r.source === 'MANUAL'
             ? '<div><button class="tiny" style="color:var(--up);margin-top:2px" data-act="deleteReceive" data-id="' +
             U.esc(r.recId) + '">删除</button></div>'
@@ -19449,18 +19708,16 @@ XJ.views.symbol = (function () {
     if (!root) return;
     if (S.ui.tab !== 'overview' || S.ui.subPage) { root.innerHTML = ''; return; }
     var open = !!S.ui.floatOpen;
-    root.innerHTML =
-      (open ? '<div class="float-mask" data-act="closeFloat"></div>' : '') +
-      '<div class="float-wrap">' +
-      (open
-        ? '<div class="float-menu">' +
-        '<button class="float-item" data-act="floatOcr"><span class="ic">📷</span>截图识别</button>' +
-        '<button class="float-item" data-act="floatManual"><span class="ic">✏️</span>手动添加</button>' +
-        '</div>'
-        : '') +
-      '<button class="float-btn' + (open ? ' open' : '') + '" data-act="toggleFloat" aria-label="添加持仓">' +
-      UI.icon('plus', 25, 2) + '</button>' +
-      '</div>';
+    root.innerHTML = '';
+    if (!open) return;
+    var button = document.querySelector('[data-act="toggleFloat"]');
+    if (!button) return;
+    var box = button.getBoundingClientRect();
+    root.innerHTML = '<div class="float-mask" data-act="closeFloat"></div>' +
+      '<div class="float-wrap" style="top:' + (box.bottom + 8) + 'px;right:' + (window.innerWidth - box.right) + 'px">' +
+      '<div class="float-menu" id="holding-add-options">' +
+      '<button class="float-item" data-act="floatManual">' + UI.icon('plus', 17) + ' 手动添加</button>' +
+      '<button class="float-item" data-act="floatOcr">截图识别</button></div></div>';
   }
 
   var notifyTimer = null;
@@ -19498,7 +19755,7 @@ XJ.views.symbol = (function () {
     var sub = meta[1];
     if (S.ui.tab === 'overview' && S.hasAnyData()) {
       var s = C.summary(S.state, S.acc());
-      sub = '总市值 ' + U.moneySign(s.totalMarketValue, 0) + ' · ' + S.accountName(S.acc());
+      sub = '总市值 ' + U.moneySign(s.totalMarketValue, 0) + (s.missingFx || s.missingQuote ? '（部分）' : '') + ' · ' + S.accountName(S.acc());
     }
 
     return '<div class="topbar-row">' +
@@ -19509,9 +19766,8 @@ XJ.views.symbol = (function () {
       '<div class="spacer"></div>' +
       '<button class="icon-btn' + (S.ui.busy ? ' spinning' : '') + '" data-act="refresh" title="同步数据" aria-label="同步数据">' +
       UI.icon('refresh', 18) + '</button>' +
-      (S.ui.tab === 'overview' ? '' :
-        '<button class="icon-btn" data-act="openAddHolding" title="添加持仓" aria-label="添加持仓">' +
-        UI.icon('plus', 19) + '</button>') +
+      (S.ui.tab === 'overview' ?
+        '<button class="icon-btn" data-act="toggleFloat" aria-label="添加持仓" aria-expanded="' + !!S.ui.floatOpen + '">' + UI.icon('plus', 19) + '</button>' : '') +
       '</div>';
   }
 
@@ -19519,7 +19775,7 @@ XJ.views.symbol = (function () {
     if (S.ui.subPage) return '';
     return tabOrderList().map(function (t) {
       var act = S.ui.tab === t.id;
-      return '<button class="tab' + (act ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '" aria-label="' + t.label + '">' +
+      return '<button class="tab' + (act ? ' active' : '') + '" data-act="gotoTab" data-tab="' + t.id + '" aria-label="' + t.label + '"' + (act ? ' aria-current="page"' : '') + '>' +
         UI.icon(t.icon, 23) +
         '<span>' + t.label + '</span></button>';
     }).join('');
@@ -19587,12 +19843,32 @@ XJ.views.symbol = (function () {
   /* ---------------- 行情与分红数据刷新（与跨设备同步无关） ---------------- */
   var syncing = false;
 
+  function mergeRates(rates) {
+    var previous = S.state.settings.fx || {};
+    var next = Object.assign({}, previous, { observedAt: Object.assign({}, previous.observedAt), observedOn: Object.assign({}, previous.observedOn) });
+    var at = U.nowStamp(), changed = false;
+    ['HKD', 'USD', 'JPY'].forEach(function (currency) {
+      if (!(U.num(rates[currency]) > 0)) return;
+      if (next[currency] !== rates[currency]) changed = true;
+      next[currency] = rates[currency];
+      next.observedAt[currency] = at;
+      next.observedOn[currency] = U.today();
+    });
+    if (!Object.keys(rates).length) return false;
+    next.updatedAt = at;
+    S.state.settings.fx = next;
+    return changed;
+  }
+
   function refreshAll(opts) {
     opts = opts || {};
-    if (syncing) return Promise.resolve();
-    var syms = S.activeSymbols();
+    if (syncing) {
+      if (!opts.silent) UI.toast('正在刷新，请稍候');
+      return Promise.resolve();
+    }
+    var syms = opts.symbols || S.activeSymbols();
     if (!syms.length) {
-      if (!opts.silent) UI.toast('还没有持仓，先添加一只吧');
+      if (!opts.silent) UI.toast('当前页面没有可刷新的标的');
       return Promise.resolve();
     }
     syncing = true;
@@ -19601,18 +19877,17 @@ XJ.views.symbol = (function () {
     S.ui.offline = false;
     render();
 
+    var quoteCount = 0;
     return Promise.all([
       XJ.fetcher.fetchQuotes(syms),
       XJ.fetcher.fetchFX().catch(function () { return {}; }),
     ]).then(function (res) {
       var quotes = res[0] || {}, fx = res[1] || {};
-      if (Object.keys(fx).length) {
-        S.state.settings.fx = Object.assign({}, fx, { updatedAt: U.nowStamp() });
-      }
+      mergeRates(fx);
 
-      var n = S.mergeQuotes(quotes);
-      if (!n) S.ui.offline = true;
-      else S.state.settings.lastPlanAt = null;
+      quoteCount = syms.filter(function (symbol) { return !!quotes[symbol]; }).length;
+      S.mergeQuotes(quotes);
+      if (!quoteCount) S.ui.offline = true;
 
       /* 当日分时：任何时段都请求（收盘后接口照样返回当天完整数据，落盘保存）。
          放在行情合并之后，因为美股分时需要行情里带交易所后缀的代码。
@@ -19636,6 +19911,9 @@ XJ.views.symbol = (function () {
         });
       });
       var unsupported = (res && res.unsupported) || [];
+      var failedPlans = (res && res.failed) || [];
+      var emptyPlans = (res && res.noData) || [];
+      var supportedCount = syms.length - unsupported.length;
       S.state.settings.unsupportedDividend = unsupported;
 
       /* 补公司官网域名 → 用于展示股票官方图标（拿不到的自动弹回字母头像） */
@@ -19649,7 +19927,7 @@ XJ.views.symbol = (function () {
         return healSymbolNames();
       }).then(function (healed) {
         var recAdded = C.applyAutoReceived(S.state);
-        S.state.settings.lastPlanAt = U.nowStamp();
+        if (supportedCount > failedPlans.length) S.state.settings.lastPlanAt = U.nowStamp();
         /* 每日资产快照（人民币口径，同一天覆盖同一条） */
         C.writeSnapshot(S.state, S.ui.accountId, S.state.settings.fx);
         S.ui.busy = false;
@@ -19657,7 +19935,10 @@ XJ.views.symbol = (function () {
         syncing = false;
         S.commitNow(null);
         if (!opts.silent) {
-          var msg = '已同步 ' + syms.length + ' 只标的' + (recAdded ? '，新增 ' + recAdded + ' 笔到账' : '');
+          var msg = '行情 ' + quoteCount + '/' + syms.length + ' · 分红方案 ' + planCount + ' 条';
+          if (emptyPlans.length) msg += ' · ' + emptyPlans.length + ' 只无分红记录';
+          if (quoteCount < syms.length || failedPlans.length) msg += ' · 部分未更新，可再次刷新';
+          if (recAdded) msg += ' · 自动登记 ' + recAdded + ' 笔';
           if (healed) msg += '，补全 ' + healed + ' 个名称';
           if (unsupported.length) msg += '；' + unsupported.length + ' 只标的（日股等）暂无分红数据源，可手工补录';
           UI.toast(msg);
@@ -19675,10 +19956,11 @@ XJ.views.symbol = (function () {
     }).catch(function (e) {
       console.error('[sync]', e);
       S.ui.busy = false;
-      S.ui.status = '同步失败，可稍后重试';
+      S.ui.status = '刷新失败，可稍后重试';
       S.ui.offline = true;
       syncing = false;
       S.commitNow(null);
+      if (!opts.silent) UI.toast(S.ui.status);
     });
   }
 
@@ -20208,8 +20490,6 @@ XJ.views.symbol = (function () {
   }
 
   function refreshOne(symbol) {
-    var src = XJ.market.dividendSource(symbol);
-    UI.toast('正在同步 ' + S.symbolName(symbol) + '…');
     /* 股息率曲线要的那份长历史收盘价，也一并强制重取（它是独立缓存，不在 fetchQuotes 里） */
     if (XJ.market.supportsYieldCurve(symbol)) {
       S.ui.yieldTriedAt = S.ui.yieldTriedAt || {};
@@ -20225,21 +20505,7 @@ XJ.views.symbol = (function () {
         S.commitNow(null);
       }).catch(function () { /* 曲线取数失败不影响下面的行情与分红同步 */ });
     }
-    XJ.fetcher.fetchQuotes([symbol]).then(function (quotes) {
-      S.mergeQuotes(quotes);
-      return pullPlansFor(symbol);
-    }).then(function (plans) {
-      var added = C.applyAutoReceived(S.state);
-      S.commitNow(null);
-      if (!src) {
-        UI.toast('行情已更新；' + XJ.market.kind(symbol) + '暂无分红数据源，可在分红记录里手工补录');
-      } else {
-        UI.toast('同步完成' + (plans.length ? '，' + plans.length + ' 条分红方案' : '') +
-          (added ? '，新增 ' + added + ' 笔到账' : ''));
-      }
-    }).catch(function () {
-      UI.toast('同步失败，请稍后重试');
-    });
+    return refreshAll({ symbols: [symbol] });
   }
 
   /**
@@ -21132,21 +21398,24 @@ XJ.views.symbol = (function () {
   /* ---- 补录分红记录 ---- */
   UI.on('openReceiveEditor', function (node) {
     var sym = node.getAttribute('data-symbol');
-    var accNow = S.acc() === C.ALL ? S.state.settings.defaultAccountId : S.acc();
+    var id = node.getAttribute('data-id');
+    var record = id && S.state.received.find(function (r) { return r.recId === id && r.symbol === sym; });
+    var accNow = record ? record.accountId : (S.acc() === C.ALL ? S.state.settings.defaultAccountId : S.acc());
     var h = C.holdings(S.state, S.acc()).filter(function (x) { return x.symbol === sym; })[0];
     var html =
-      UI.field('到账日期', UI.inputHtml('date', U.today(), { type: 'date' })) +
+      UI.field('到账日期', UI.inputHtml('date', record ? record.exDividendDate : U.today(), { type: 'date' })) +
       '<div class="field-row">' +
-      UI.field('每股分红（税前，元）',
-        '<input type="text" inputmode="decimal" data-k="perShare" data-input="rcPreview" placeholder="0.28">') +
+      UI.field('每股分红（' + XJ.market.currency(sym) + '）',
+        '<input type="text" inputmode="decimal" data-k="perShare" data-input="rcPreview" value="' + U.esc(record ? record.perShareAmount : '') + '">') +
       UI.field('登记数量（股）',
-        '<input type="text" inputmode="numeric" data-k="qty" data-input="rcPreview" value="' + (h ? h.qty : '') + '">') +
+        '<input type="text" inputmode="decimal" data-k="qty" data-input="rcPreview" value="' + U.esc(record ? record.qtyAtRecord : (h ? h.qty : '')) + '">') +
       '</div>' +
-      UI.field('所属账户', '<select data-k="accountId">' + accountOptions(accNow) + '</select>') +
+      UI.field('所属账户', '<select data-k="accountId"' + (record && record.planId ? ' disabled' : '') + '>' + accountOptions(accNow) + '</select>') +
+      UI.field('券商实收金额（' + XJ.market.currency(sym) + '，可选）', UI.inputHtml('amount', record ? record.amount : '', { inputmode: 'decimal' })) +
       '<div class="tiny" id="xj-rc-preview" style="margin-bottom:12px">金额 = 每股分红 × 登记数量</div>' +
-      '<button class="btn-block" data-act="saveReceive" data-symbol="' + U.esc(sym) + '">保存到账记录</button>' +
+      '<button class="btn-block" data-act="saveReceive" data-symbol="' + U.esc(sym) + '" data-id="' + U.esc(record ? record.recId : '') + '">保存到账记录</button>' +
       '<div class="tiny" style="margin-top:10px">手工补录的记录标记为「手动」，不会被自动同步覆盖。</div>';
-    UI.openSheet({ title: '补录分红 · ' + S.symbolName(sym), html: html });
+    UI.openSheet({ title: (record ? '核对分红 · ' : '补录分红 · ') + S.symbolName(sym), html: html });
   });
 
   UI.on('rcPreview', function (node) {
@@ -21156,45 +21425,52 @@ XJ.views.symbol = (function () {
     var amt = U.n0(f.perShare) * U.n0(f.qty);
     var box = sheet.querySelector('#xj-rc-preview');
     if (box) box.innerHTML = '金额 = ' + U.money(f.perShare, 4) + ' × ' + U.thousands(f.qty) +
-      ' = <b class="c-div">' + U.moneySign(amt) + '</b>';
+      ' = <b class="c-div">' + U.money(amt) + '</b>';
   });
 
   UI.on('saveReceive', function (node) {
     var sym = node.getAttribute('data-symbol');
+    var id = node.getAttribute('data-id');
+    var record = id && S.state.received.find(function (r) { return r.recId === id && r.symbol === sym; });
     var f = UI.readFields(node.closest('.sheet'));
     var perShare = U.num(f.perShare);
     var qty = U.num(f.qty);
     if (!(perShare > 0)) return UI.toast('每股分红必须大于 0');
     if (!(qty > 0)) return UI.toast('登记数量必须大于 0');
-    var date = /^\d{4}-\d{2}-\d{2}$/.test(f.date || '') ? f.date : U.today();
-    var amount = Math.round(qty * perShare * 100) / 100;
-    var accId = f.accountId || S.state.settings.defaultAccountId;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date || '') || f.date > U.today()) return UI.toast('请选择有效且已经发生的到账日期');
+    var date = f.date;
+    var paid = U.num(f.amount);
+    if (f.amount && !(paid >= 0 && paid !== null)) return UI.toast('实收金额须为有效的非负数字');
+    var amount = Math.round((paid === null ? qty * perShare : paid) * 100) / 100;
+    var accId = (record && record.planId ? record.accountId : f.accountId) || S.state.settings.defaultAccountId;
 
     /* 去重：同一标的 + 同一账户 + 同一到账日 + 金额相符 → 已存在，拒绝重复记录 */
     var dup = S.state.received.some(function (r) {
-      return U.sameDividend(r, {
+      return r.recId !== id && U.sameDividend(r, {
         accountId: accId, symbol: sym, exDividendDate: date, amount: amount,
       });
     });
     if (dup) return UI.toast('该标的在这天已有一笔金额相同的分红记录；如需重复记录，请先删除原记录');
 
     S.commit(function (s) {
-      s.received.push({
-        recId: U.uid('rec'),
+      var next = {
+        recId: record ? record.recId : U.uid('rec'),
         accountId: accId,
         symbol: sym,
-        planId: null,
+        planId: record ? record.planId : null,
         exDividendDate: date,
         perShareAmount: perShare,
         qtyAtRecord: qty,
         amount: amount,
         source: 'MANUAL',
         year: U.yearOf(date),
-        createdAt: U.nowStamp(),
-      });
+        createdAt: record ? record.createdAt : U.nowStamp(),
+      };
+      if (record) s.received[s.received.indexOf(record)] = next;
+      else s.received.push(next);
     });
     UI.closeSheet();
-    UI.toast('已补录一笔分红');
+    UI.toast(record ? '已更新分红记录' : '已补录一笔分红');
   });
 
   UI.on('deleteReceive', function (node) {
@@ -21339,8 +21615,16 @@ XJ.views.symbol = (function () {
   });
 
   UI.on('refresh', function () {
-    UI.toast('正在同步最新数据…');
-    refreshAll();
+    var symbols;
+    if (S.ui.subPage === 'symbol' && S.ui.subArg) return refreshOne(S.ui.subArg);
+    if (S.ui.tab === 'watchlist') symbols = XJ.views.watchlist.currentSymbols();
+    if (S.ui.tab === 'calendar') {
+      var cutoff = U.addDays(U.today(), -400);
+      symbols = Array.from(new Set(S.activeSymbols().concat(C.txOf(S.state, S.acc()).filter(function (tx) {
+        return tx.date >= cutoff;
+      }).map(function (tx) { return tx.symbol; }))));
+    }
+    refreshAll({ symbols: symbols });
   });
 
   UI.on('refreshOne', function (node) {
@@ -21377,17 +21661,17 @@ XJ.views.symbol = (function () {
     var rows = p.items.map(function (e) {
       return '<div class="pp-row">' +
         '<span class="pp-nm">' + U.esc(e.name || XJ.model.codeOf(e.symbol)) + '</span>' +
-        '<span class="pp-amt">+' + U.moneySign(e.amount) + '</span>' +
+        '<span class="pp-amt">' + (e.amount === null ? '待核对' : '+' + XJ.usdiv.moneyText(S.state, e.symbol, e.amount)) + '</span>' +
         '</div>';
     }).join('');
-    return '<div class="pp-card" role="dialog" aria-label="今日分红到账">' +
+    return '<div class="pp-card" role="dialog" aria-label="今日派息提醒">' +
       '<div class="pp-art">' +
       '<span class="pp-e1">🤑</span>' +
       '<span class="pp-sp pp-s1">💛</span><span class="pp-sp pp-s2">✨</span>' +
       '<span class="pp-sp pp-s3">💛</span><span class="pp-sp pp-s4">✨</span>' +
       '</div>' +
-      '<div class="pp-title">今日分红到账</div>' +
-      '<div class="pp-total">+' + U.moneySign(p.total) + '</div>' +
+      '<div class="pp-title">今日派息提醒</div>' +
+      '<div class="pp-total">+' + C.dividendAmountText(p.amounts) + '</div>' +
       '<div class="pp-rows">' + rows + '</div>' +
       '<button class="pp-main" data-act="viewDivRecords">查看分红记录</button>' +
       '<button class="pp-ghost" data-act="closeSheet">我知道了</button>' +
@@ -21474,6 +21758,7 @@ XJ.views.symbol = (function () {
 
   /* ---- 悬浮双入口 ---- */
   UI.on('toggleFloat', function () { S.setUI({ floatOpen: !S.ui.floatOpen }); });
+  UI.on('toggleOverviewForecast', function () { S.setUI({ overviewForecast: !S.ui.overviewForecast }); });
   UI.on('closeFloat', function () { S.setUI({ floatOpen: false }); });
   UI.on('floatManual', function () {
     S.setUI({ floatOpen: false });
@@ -22438,6 +22723,16 @@ XJ.views.symbol = (function () {
     S.setUI({ foldMineTx: !(S.ui.foldMineTx !== false) });
   });
 
+  document.addEventListener('submit', function (event) {
+    if (event.target.id !== 'ledger-filters') return;
+    event.preventDefault();
+    var filters = Object.fromEntries(new FormData(event.target));
+    if (filters.beg && filters.end && filters.beg > filters.end) return UI.toast('结束日期应晚于或等于起始日期');
+    S.setUI({ ledgerFilters: filters, ledgerLimit: 30 });
+  });
+  UI.on('resetLedgerFilters', function () { S.setUI({ ledgerFilters: {}, ledgerLimit: 30 }); });
+  UI.on('loadMoreLedger', function () { S.setUI({ ledgerLimit: (S.ui.ledgerLimit || 30) + 30 }); });
+
   /* ---------------- 资产走势：指标 / 区间 / 粒度 / 模式 / 收起 ----------------
    * 这张卡挂了两处（首页 ns=''、账户分析 ns='an'），控件状态各自独立：
    * 按钮上带 data-ns，这里统一换算成对应实例的 ui 键再写入。 */
@@ -23343,6 +23638,34 @@ XJ.views.symbol = (function () {
     UI.toast('已导出 JSON 备份');
   });
 
+  UI.on('openRecoveryCopy', function () {
+    var copy = XJ.storage.recoveryCopy();
+    if (!copy) return;
+    var info = XJ.transfer.summarize(copy);
+    UI.openSheet({ title: '本机备用账本', html:
+      '<p>' + info.accounts + ' 个账户 · ' + info.transactions + ' 笔交易 · ' + info.received + ' 笔分红</p>' +
+      '<button class="btn-block" data-act="mergeRecoveryCopy">合并缺少的记录</button>' +
+      '<button class="btn-block ghost" data-act="exportRecoveryCopy">导出备用账本</button>' });
+  });
+  UI.on('exportRecoveryCopy', function () {
+    var copy = XJ.storage.recoveryCopy();
+    if (!copy) return;
+    U.download('自由备用账本_' + U.today() + '.json', JSON.stringify(M.toExport(copy, '本机备用账本'), null, 2), 'application/json');
+  });
+  UI.on('mergeRecoveryCopy', function () {
+    var copy = XJ.storage.recoveryCopy();
+    if (!copy) return;
+    UI.confirm({ title: '合并备用账本', message: '将补入当前账本缺少的账户、交易与分红，原备用账本仍可导出。', confirmText: '合并' })
+      .then(function (ok) {
+        if (!ok) return;
+        var added = XJ.transfer.mergeInto(S.state, copy);
+        return XJ.storage.save(S.state).then(function (saved) {
+          S.notify();
+          if (saved) UI.toast('已合并 ' + (added.transactions + added.received + added.accounts) + ' 条记录');
+        });
+      });
+  });
+
   UI.on('importJson', function () {
     pickFile('.json,application/json').then(function (text) {
       if (!text) return;
@@ -23387,7 +23710,8 @@ XJ.views.symbol = (function () {
       /* ★ 架构预留：将来接回同步层时，这里要恢复「keepSync」逻辑——
          同步连接信息（deviceId / token / gistId / 修订账本 / 墓碑）必须跨清空保留，
          否则下一次同步会把云端已有的一切当成「本机新增」整份推回去，或反过来当成删除。 */
-      XJ.storage.clear().then(function () {
+      XJ.storage.clear().then(function (cleared) {
+        if (!cleared) return;
         var fresh = M.ensureBootstrapped(M.defaultState());
         S.init(fresh);
         S.ui.accountId = C.ALL;
@@ -23938,8 +24262,7 @@ XJ.views.symbol = (function () {
         return XJ.fetcher.fetchFX().then(function (fx) {
           fxBusy = false;
           if (!fx || !Object.keys(fx).length) { S.ui.fxError = true; return false; }
-          var changed = (U.num(fx.USD) !== U.num(cur.USD)) || (U.num(fx.HKD) !== U.num(cur.HKD));
-          S.state.settings.fx = Object.assign({}, fx, { updatedAt: U.nowStamp() });
+          var changed = mergeRates(fx);
           S.ui.fxError = false;
           if (changed) {
             /* 当日快照按新汇率重写；历史快照不动 */
