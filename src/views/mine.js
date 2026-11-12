@@ -6,18 +6,12 @@ XJ.views.mine = (function () {
      让「用实时汇率显示数据」这件事在界面上可被验证。 */
   function fxLine() {
     var fx = (XJ.store.state && XJ.store.state.settings && XJ.store.state.settings.fx) || {};
-    var usd = U.num(fx.USD), hkd = U.num(fx.HKD);
-    if (!usd && !hkd) return '尚未取到（腾讯 whUSDCNY / whHKDCNY 公开接口），美股数据暂按原币显示';
-    var parts = [];
-    if (usd) parts.push('USD/CNY ' + U.money(usd, 4));
-    if (hkd) parts.push('HKD/CNY ' + U.money(hkd, 4));
-    var at = String(fx.updatedAt || '');
-    if (at) {
-      var d = new Date(at);
-      if (!isNaN(d.getTime())) {
-        parts.push('更新于 ' + U.pad2(d.getHours()) + ':' + U.pad2(d.getMinutes()) + ':' + U.pad2(d.getSeconds()));
-      }
-    }
+    var parts = ['USD', 'HKD', 'JPY'].filter(function (code) { return U.num(fx[code]) > 0; }).map(function (code) {
+      var at = new Date((fx.observedAt || {})[code] || fx.updatedAt || '');
+      return code + '/CNY ' + U.money(fx[code], 4) + (!isNaN(at.getTime()) ? '（' +
+        U.pad2(at.getMonth() + 1) + '-' + U.pad2(at.getDate()) + ' ' + U.pad2(at.getHours()) + ':' + U.pad2(at.getMinutes()) + '）' : '');
+    });
+    if (!parts.length) return '尚未取得汇率，外币金额按原币显示';
     return parts.join(' · ') + '（每 30 秒刷新，回到前台立即刷新）' +
       (XJ.store.ui.fxError ? ' · 本次刷新失败，仍用上一次的汇率' : '');
   }
@@ -54,10 +48,17 @@ XJ.views.mine = (function () {
   function renderTransactions() {
     var st = XJ.store;
     var folded = XJ.store.folded('foldMineTx');   // 默认折叠（util.FOLD.collapsed）
-    var txs = st.state.transactions.slice().sort(function (a, b) {
+    var f = st.ui.ledgerFilters || {};
+    var query = (f.query || '').trim().toLowerCase();
+    var txs = st.state.transactions.filter(function (t) {
+      return (!f.account || f.account === t.accountId) && (!f.action || f.action === t.action) &&
+        (!f.beg || t.date >= f.beg) && (!f.end || t.date <= f.end) &&
+        (!query || (t.symbol + ' ' + st.symbolName(t.symbol)).toLowerCase().includes(query));
+    }).sort(function (a, b) {
       if (a.date !== b.date) return a.date < b.date ? 1 : -1;
-      return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1;
-    }).slice(0, 30);
+      return String(b.createdAt || '').localeCompare(String(a.createdAt || '')) || String(a.txId).localeCompare(String(b.txId));
+    });
+    var limit = st.ui.ledgerLimit || 30;
 
     var html = '<div class="card flush">' +
       '<div style="padding:14px 16px 10px">' +
@@ -70,12 +71,26 @@ XJ.views.mine = (function () {
       '<div class="spacer"></div>' +
       '<button class="ghost-btn" data-act="openTxEditor">' + UI.icon('plus', 14) + ' 记一笔</button>' +
       '</div></div>';
-    if (!txs.length) {
+    if (!st.state.transactions.length) {
       html += '<div style="padding:0 16px 16px" class="tiny">暂无交易记录。持仓由交易流水推导，添加交易即可建立持仓。</div>';
     } else if (folded) {
-      html += '<div class="fold-hint">已收起，最近 ' + txs.length + ' 笔 · 点标题展开查看</div>';
+      html += '<div class="fold-hint">展开查看和筛选全部流水</div>';
     } else {
-      html += txs.map(function (t) {
+      function option(value, label, selected) {
+        return '<option value="' + U.esc(value) + '"' + (selected === value ? ' selected' : '') + '>' + U.esc(label) + '</option>';
+      }
+      html += '<form class="ledger-filters" id="ledger-filters">' +
+        '<label>名称或代码<input type="search" name="query" value="' + U.esc(f.query || '') + '"></label>' +
+        '<label>账户<select name="account"><option value="">全部账户</option>' +
+        st.state.accounts.map(function (a) { return option(a.accountId, a.name, f.account); }).join('') + '</select></label>' +
+        '<label>交易类型<select name="action"><option value="">全部类型</option>' +
+        [['BUY', '买入'], ['SELL', '卖出'], ['ADJUST', '成本调整']].map(function (a) { return option(a[0], a[1], f.action); }).join('') + '</select></label>' +
+        '<label>起始日期<input type="date" name="beg" value="' + U.esc(f.beg || '') + '"></label>' +
+        '<label>结束日期<input type="date" name="end" value="' + U.esc(f.end || '') + '"></label>' +
+        '<div class="ledger-actions"><button type="submit" class="ghost-btn primary">筛选</button>' +
+        '<button type="button" class="ghost-btn" data-act="resetLedgerFilters">重置</button></div></form>' +
+        '<div class="fold-hint">' + (txs.length ? '符合条件 ' + txs.length + ' 笔' : '没有符合条件的交易') + '</div>';
+      html += txs.slice(0, limit).map(function (t) {
         var isAdj = t.action === 'ADJUST';
         var amt = isAdj ? U.n0(t.amount) : U.n0(t.quantity) * U.n0(t.price);
         return '<button class="list-row" data-act="openTxEditor" data-id="' + U.esc(t.txId) + '">' +
@@ -95,6 +110,7 @@ XJ.views.mine = (function () {
           '<span class="chev">' + UI.icon('chevron', 16) + '</span>' +
           '</button>';
       }).join('');
+      if (txs.length > limit) html += '<button class="btn-block ghost" data-act="loadMoreLedger">显示更多交易</button>';
     }
     html += '</div>';
     return html;
@@ -232,6 +248,10 @@ XJ.views.mine = (function () {
 
     var html = '<div class="card flush">' +
       '<div style="padding:14px 16px 10px"><div class="card-head" style="margin:0"><h2>数据管理</h2></div></div>';
+
+    if (XJ.storage.recoveryCopy()) html += '<button class="list-row" data-act="openRecoveryCopy">' +
+      '<div class="row-main"><div class="row-t">发现备用账本</div><div class="row-s">预览、导出或合并本机备用记录</div></div>' +
+      '<span class="chev">' + UI.icon('chevron', 16) + '</span></button>';
 
     html += '<button class="list-row" data-act="exportJson">' +
       '<div class="row-main"><div class="row-t">' + UI.icon('download', 17) + ' 导出全部数据（JSON）</div>' +
