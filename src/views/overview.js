@@ -185,17 +185,15 @@ XJ.views.overview = (function () {
 
     /* 收起态必须保留一个「展开」按钮 —— 早先的实现把 .hd-actions 一起隐藏了，
        于是点「收起」之后再也没有入口能展开，等于把自己锁死。 */
-    var actions = collapsed
-      ? '<button class="hd-expand" data-act="toggleHero">展开 ⌄ 查看全部指标</button>' +
-        '<button data-act="openMetricSettings">⚙ 设置指标</button>'
-      : '<button data-act="toggleHero">收起 ⌃</button>' +
-        '<button data-act="openMetricSettings">⚙ 设置指标</button>';
+    var actions = '<button class="hd-metrics-toggle" data-act="toggleHero" aria-expanded="' + !collapsed + '">' +
+      (collapsed ? '查看全部指标' : '收起指标') + UI.icon('chevron', 14) + '</button>' +
+      '<button data-act="openMetricSettings">' + UI.icon('gear', 15) + ' 指标设置</button>';
 
     /* 配色由 settings.heroColor 决定（本机偏好、不同步）；非法值已在 model.normalize 兜底 */
     var heroColor = XJ.model.HERO_COLORS.some(function (c) { return c.key === cfg.heroColor; })
       ? cfg.heroColor : XJ.model.HERO_COLOR_DEFAULT;
 
-    return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '">' +
+    return '<section class="hero-dark overview-hero' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '" aria-label="分红总览">' +
       '<div class="hd-row">' +
       '<div>' +
       '<div class="lbl">预测年度分红</div>' +
@@ -207,7 +205,7 @@ XJ.views.overview = (function () {
       '<strong class="hd-daily-amount">' + U.moneySign(s.totalPredicted / 365, 2) + '</strong>' +
       '<small>按年度预测折算' + (s.missingFx ? ' · 合计不完整' : '') + '</small></div>' +
       '<button class="hd-dividend hd-receipts" data-act="openDivSum" data-range="all">' +
-      '<span class="hd-dividend-label">累计到账分红' + UI.icon('chevron', 13) + '</span>' +
+      '<span class="hd-dividend-label">累计到账分红</span>' + UI.icon('chevron', 14) +
       '<strong class="hd-receipts-amount">' + (s.receivedCount ? XJ.calc.dividendAmountText(s.receivedAmounts, 2) : '暂无到账记录') + '</strong>' +
       (s.includesAutoReceipts ? '<small>含自动登记的税前估算</small>' : '') + '</button></div>' +
       /* 当日参考盈亏：现价相对【昨收】的浮动（人民币口径，跨币种已折算）。
@@ -216,9 +214,8 @@ XJ.views.overview = (function () {
       todayPnlLine(s) +
       (s.missingFx ? '<div class="hd-today-note">部分持仓缺少汇率，人民币合计不完整</div>' : '') +
       (collapsed ? '' : '<div class="hd-metrics">' + metrics + '</div>') +
-      '<div class="hd-collapsed-hint">已收起 · 点下方「展开」查看全部指标</div>' +
       '<div class="hd-actions">' + actions + '</div>' +
-      '</div>';
+      '</section>';
   }
 
   /* ---------------- 深色卡「测算带」 ----------------
@@ -534,9 +531,9 @@ XJ.views.overview = (function () {
     }
 
     html += heroCard(st, s);
-    html += '<div class="hero-dark forecast-card"><button class="fold-head" data-act="toggleOverviewForecast" aria-expanded="' +
-      !!st.ui.overviewForecast + '"><span>分红试算</span><span class="spacer"></span>' + UI.icon('chevron', 16) + '</button>' +
-      (st.ui.overviewForecast ? (s.missingFx ? '<p>补齐汇率后可计算组合预测。</p>' : forecastStrip(st, s)) : '') + '</div>';
+    html += '<div class="card forecast-card"><button class="fold-head" data-act="toggleOverviewForecast" aria-expanded="' +
+      !!st.ui.overviewForecast + '"><span>分红试算</span>' + UI.icon('chevron', 16) + '</button>' +
+      (st.ui.overviewForecast ? (s.missingFx ? '<p class="forecast-unavailable">补齐汇率后可计算组合预测。</p>' : forecastStrip(st, s)) : '') + '</div>';
     if (!s.missingFx) html += coverageCard(st, cov, ms);
 
     /* ---- 资产走势（市值 / 净资产曲线，卡片自带标题与折叠） ---- */
@@ -552,12 +549,13 @@ XJ.views.overview = (function () {
       costYield: '成本息率', pl: '盈亏', holdDays: '持股天数',
     }[st.ui.sortMode] || '预测分红';
 
-    html += '<div class="section-title" style="display:flex;align-items:center">' +
-      '<span>我的持仓 · ' + all.length + ' 只</span><span style="flex:1"></span>' +
+    html += '<div class="overview-holdings-head"><h2>我的持仓 <span>' + all.length + ' 只</span></h2>' +
       '<span class="tiny">按' + sortLabel + '排序</span></div>';
 
-    html += '<div class="chips">' + [['dividend', '分红'], ['marketValue', '市值'], ['yield', '股价息'], ['costYield', '成本息率'], ['pl', '盈亏']].map(function (o) {
-      return '<button class="chip' + (st.ui.sortMode === o[0] ? ' active' : '') + '" data-act="setSort" data-mode="' + o[0] + '">' + o[1] + '</button>';
+    html += '<div class="chips overview-sort" role="group" aria-label="持仓排序">' + [['dividend', '分红'], ['marketValue', '市值'], ['yield', '股价息'], ['costYield', '成本息率'], ['pl', '盈亏']].map(function (o) {
+      var selected = st.ui.sortMode === o[0];
+      return '<button class="chip' + (selected ? ' active' : '') + '" data-act="setSort" data-mode="' + o[0] +
+        '" aria-pressed="' + selected + '">' + o[1] + '</button>';
     }).join('') + '</div>';
 
     html += marketChips(st, all);
@@ -568,9 +566,6 @@ XJ.views.overview = (function () {
     } else {
       html += '<div class="hold-list">' + rows.map(holdingCard).join('') + '</div>';
     }
-
-    html += '<div style="margin-top:12px"><button class="btn-block ghost" data-act="openAddHolding">' +
-      UI.icon('plus', 16) + ' 添加持仓</button></div>';
 
     html += renderAboutCard();
     return html;
