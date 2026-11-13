@@ -210,7 +210,9 @@ const PROBE = `
   XJ.ui.closeSheet();
   try {
     XJ.store.setUI({ tab: 'overview', subPage: null, floatOpen: false });   // 个股已改为独立页，先退回主界面
-    document.querySelector('[data-act="openAddHolding"]').click();
+    document.querySelector('[data-act="toggleFloat"]').click();
+    document.querySelector('[data-act="floatManual"]').click();
+    await sleep(250);
     out.sheets.addHolding = measure();
     /* 三步表单：切到「自定义」输入代码（离线可用的路径），步骤 2/3 应自动展开 */
     document.querySelector('[data-act="pickMarket"][data-key="custom"]').click();
@@ -1703,10 +1705,12 @@ async function shot(name, tab, w, h) {
       }, sessionId);
       if (tab === 'addForm') {
         await browser.send('Runtime.evaluate', {
-          expression: "document.querySelector('[data-act=\"openAddHolding\"]').click();" +
+          expression: "(async function(){ document.querySelector('[data-act=\"toggleFloat\"]').click();" +
+            "document.querySelector('[data-act=\"floatManual\"]').click(); await new Promise(function(r){setTimeout(r,250)});" +
             "document.querySelector('[data-act=\"pickMarket\"][data-key=\"custom\"]').click();" +
             "var q=document.querySelector('.sheet [data-k=\"query\"]');" +
-            "q.value='sh600023'; q.dispatchEvent(new Event('input',{bubbles:true}));",
+            "q.value='sh600023'; q.dispatchEvent(new Event('input',{bubbles:true})); })()",
+          awaitPromise: true,
         }, sessionId);
       } else {
         await browser.send('Runtime.evaluate', {
