@@ -201,9 +201,15 @@ XJ.views.overview = (function () {
       '<div class="lbl">预测年度分红</div>' +
       '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
       '</div>' +
-      '<div class="hd-badge">今年确认实收<br><b>' + XJ.calc.dividendAmountText(s.confirmedThisYear, 0) + '</b>' +
-      ((s.autoThisYear.total || s.autoThisYear.missing) ? '<br>自动估算 ' + XJ.calc.dividendAmountText(s.autoThisYear, 0) : '') + '</div>' +
       '</div>' +
+      '<div class="hd-dividends">' +
+      '<div class="hd-dividend"><span class="hd-dividend-label">每日到账约</span>' +
+      '<strong class="hd-daily-amount">' + U.moneySign(s.totalPredicted / 365, 2) + '</strong>' +
+      '<small>按年度预测折算' + (s.missingFx ? ' · 合计不完整' : '') + '</small></div>' +
+      '<button class="hd-dividend hd-receipts" data-act="openDivSum" data-range="all">' +
+      '<span class="hd-dividend-label">累计到账分红' + UI.icon('chevron', 13) + '</span>' +
+      '<strong class="hd-receipts-amount">' + (s.receivedCount ? XJ.calc.dividendAmountText(s.receivedAmounts, 2) : '暂无到账记录') + '</strong>' +
+      (s.includesAutoReceipts ? '<small>含自动登记的税前估算</small>' : '') + '</button></div>' +
       /* 当日参考盈亏：现价相对【昨收】的浮动（人民币口径，跨币种已折算）。
          刻意放在 hd-row 下方独立一行、不塞进 HERO_METRICS —— 老用户的
          settings.heroMetrics 里没有这个 key，塞进去会导致它默认不显示。 */
@@ -518,7 +524,8 @@ XJ.views.overview = (function () {
     html += C.statusBanner();
     html += C.accountSwitcher();
 
-    if (!st.hasAnyData()) {
+    if (!st.hasAnyData() && !s.receivedCount) {
+      html += heroCard(st, s);
       html += UI.emptyState('🌱', '还没有持仓记录',
         '添加第一只持仓，开始记录你的每一笔股息收入。只需股票代码、持有数量和成本价。',
         '<button class="ghost-btn primary" data-act="openAddHolding">' + UI.icon('plus', 15) + ' 添加持仓</button>');
