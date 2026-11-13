@@ -106,7 +106,7 @@ XJ.views.divsummary = (function () {
     html += C.statusBanner();
     html += C.accountSwitcher();
 
-    if (!st.hasAnyData()) {
+    if (!st.hasAnyData() && !st.state.received.length) {
       html += UI.emptyState('📒', '还没有数据',
         '先添加持仓。分红到账后系统会自动登记，这里就会汇总出来。',
         '<button class="ghost-btn primary" data-act="openAddHolding">添加持仓</button>');
