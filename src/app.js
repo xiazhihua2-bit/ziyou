@@ -2074,7 +2074,14 @@
     navTo({ subPage: 'divsummary', floatOpen: false });
   });
 
-  UI.on('openDivSum', function () { navTo({ subPage: 'divsummary', floatOpen: false }); });
+  UI.on('openDivSum', function (node) {
+    var patch = { subPage: 'divsummary', floatOpen: false };
+    if (node.getAttribute('data-range') === 'all') {
+      patch.divsumRange = 'all';
+      patch.divsumOpen = '';
+    }
+    navTo(patch);
+  });
 
   UI.on('setDivsumRange', function (node) {
     var v = node.getAttribute('data-v');
