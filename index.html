@@ -617,6 +617,18 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   font-size:11.5px; color:var(--hero-dim);
 }
 .hd-badge b{ color:var(--hero-card-accent); font-weight:700; font-size:13px; }
+.hd-dividends{
+  display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.25fr); gap:8px;
+  margin:12px 0 4px; position:relative; z-index:1;
+}
+.hd-dividend{
+  display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0;
+  min-height:44px; padding:9px 10px; border-radius:12px; background:rgba(255,255,255,.08); text-align:left;
+}
+.hd-receipts:active{ background:rgba(255,255,255,.16); }
+.hd-dividend-label{ display:flex; align-items:center; gap:4px; font-size:12px; color:var(--hero-dim); }
+.hd-dividend strong{ font-size:16px; color:var(--hero-card-accent); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.hd-dividend small{ font-size:11px; color:var(--hero-dim); }
 .hd-metrics{
   display:grid; grid-template-columns:repeat(3,1fr); gap:2px;
   margin-top:14px; position:relative; z-index:1;
@@ -10052,27 +10064,11 @@ XJ.calc = (function () {
       }
     });
 
-    /* 分红同样按「该标的的币种」折算（港币分红不能当人民币加） */
-    var missingReceiptFx = false;
-    var recvCny = function (r) {
-      var amount = historicalReceiptCny(state, r);
-      if (amount === null) missingReceiptFx = true;
-      return amount;
-    };
-
-    var receivedThisYear = U.sum(state.received.filter(function (r) {
-      if (acc !== ALL && r.accountId !== acc) return false;
-      return (r.year || U.yearOf(r.exDividendDate)) === curYear;
-    }), recvCny);
-    var yearRecords = state.received.filter(function (r) {
-      return (acc === ALL || r.accountId === acc) && (r.year || U.yearOf(r.exDividendDate)) === curYear;
-    });
-    var confirmedThisYear = dividendAmounts(state, yearRecords.filter(function (r) { return r.source !== 'AUTO'; }), true);
-    var autoThisYear = dividendAmounts(state, yearRecords.filter(function (r) { return r.source === 'AUTO'; }), true);
-
-    var receivedTotal = U.sum(state.received.filter(function (r) {
-      return acc === ALL || r.accountId === acc;
-    }), recvCny);
+    var receipts = receiptsInRange(state, acc, null, today);
+    var receivedAmounts = dividendAmounts(state, receipts, true);
+    var thisYearAmounts = dividendAmounts(state, receipts.filter(function (r) {
+      return U.yearOf(r.exDividendDate) === curYear;
+    }), true);
 
     var missingFx = hs.some(function (h) { return h.fxRate === null; });
     var compositeYield = !missingFx && totalMarketValue > 0 ? totalPredicted / totalMarketValue * 100 : null;
@@ -10106,10 +10102,11 @@ XJ.calc = (function () {
       totalUnrealizedPct: !missingFx && totalCost > 0 ? (totalMarketValue - totalCost) / totalCost * 100 : null,
       totalPredicted: totalPredicted,
       totalRealized: totalRealized,
-      receivedThisYear: receivedThisYear,
-      confirmedThisYear: confirmedThisYear,
-      autoThisYear: autoThisYear,
-      receivedTotal: receivedTotal,
+      receivedThisYear: thisYearAmounts.total,
+      receivedTotal: receivedAmounts.total,
+      receivedAmounts: receivedAmounts,
+      receivedCount: receipts.length,
+      includesAutoReceipts: receipts.some(function (r) { return r.source === 'AUTO'; }),
       compositeYield: compositeYield,
       /* 成本息率：预测年度分红 ÷ 总成本（成本非正时不显示） */
       costYield: !missingFx && totalCost > 0 ? totalPredicted / totalCost * 100 : null,
@@ -10121,7 +10118,7 @@ XJ.calc = (function () {
       byAssetType: assetTypeList,
       missingQuote: missingQuote,
       missingFx: missingFx,
-      missingReceiptFx: missingReceiptFx,
+      missingReceiptFx: thisYearAmounts.missing > 0,
       nextPayout: nextPayout,
       upcomingCount: ups.length,
       /* 当日参考盈亏：现价相对【昨收】的浮动，人民币口径；不含当日已到账分红。
@@ -11035,17 +11032,22 @@ XJ.calc = (function () {
    *   total        —— 已到账（只可能 ≤ 今天），主数字用它，保证与「我的·分红流水」逐笔对得上
    *   pendingTotal —— 区间内还没到账的预计，界面上单独一行，绝不混进主数字
    */
+  function receiptsInRange(state, accountId, begin, end) {
+    return state.received.filter(function (record) {
+      var date = record.exDividendDate;
+      return (accountId === ALL || record.accountId === accountId) && !!date &&
+        (!begin || date >= begin) && date <= end;
+    });
+  }
+
   function dividendSummary(state, accountId, range, today) {
     var acc = accountId || ALL;
     var t = today || U.today();
     var rg = dividendRange(state, acc, range, t);
     var endCap = rg.end < t ? rg.end : t;          // 已到账的上界还受「今天」约束
 
-    var records = state.received.filter(function (r) {
-      if (acc !== ALL && r.accountId !== acc) return false;
-      var d = r.exDividendDate;
-      return !!d && d >= rg.beg && d <= endCap;
-    }).sort(function (a, b) { return a.exDividendDate < b.exDividendDate ? -1 : 1; });
+    var records = receiptsInRange(state, acc, rg.beg, endCap)
+      .sort(function (a, b) { return a.exDividendDate.localeCompare(b.exDividendDate); });
 
     var bySymbol = {};
     var byYear = {};
@@ -11628,7 +11630,7 @@ XJ.calc = (function () {
   }
 
   function dividendAmounts(state, rows, historical) {
-    var total = 0, missing = 0, native = {};
+    var total = 0, missing = 0, converted = 0, native = {}, unconverted = {};
     rows.forEach(function (row) {
       if (row.amount === null || row.amount === undefined) { missing++; return; }
       var currency = XJ.market.currency(row.symbol);
@@ -11636,18 +11638,25 @@ XJ.calc = (function () {
       native[currency] = (native[currency] || 0) + amount;
       var rate = historical ? null : cnyRateOf(state, row.symbol);
       var value = historical ? historicalReceiptCny(state, row) : (rate === null ? null : amount * rate);
-      if (value === null) missing++;
-      else total += value;
+      if (value === null) {
+        missing++;
+        unconverted[currency] = (unconverted[currency] || 0) + amount;
+      } else {
+        total += value;
+        converted++;
+      }
     });
-    return { total: total, missing: missing, native: native };
+    return { total: total, missing: missing, converted: converted, native: native, unconverted: unconverted };
   }
 
   function dividendAmountText(amounts, decimals) {
     var text = U.moneySign(amounts.total, decimals);
     if (!amounts.missing) return text;
-    var native = Object.keys(amounts.native).filter(function (code) { return code !== 'CNY'; })
-      .map(function (code) { return code + ' ' + U.money(amounts.native[code], decimals); });
-    return text + '（合计不完整' + (native.length ? ' · 原币 ' + native.join(' / ') : '') + '）';
+    var native = Object.keys(amounts.unconverted).map(function (code) {
+      return code + ' ' + U.money(amounts.unconverted[code], decimals);
+    }).join(' / ');
+    if (!amounts.converted) return native ? native + '（待折算）' : '金额待核对';
+    return text + '（合计不完整' + (native ? ' · 待折算 ' + native : '') + '）';
   }
 
   /**
@@ -14873,9 +14882,15 @@ XJ.views.overview = (function () {
       '<div class="lbl">预测年度分红</div>' +
       '<div class="hd-amount" data-anim="S"><span class="cur">¥</span>' + U.money(s.totalPredicted) + '</div>' +
       '</div>' +
-      '<div class="hd-badge">今年确认实收<br><b>' + XJ.calc.dividendAmountText(s.confirmedThisYear, 0) + '</b>' +
-      ((s.autoThisYear.total || s.autoThisYear.missing) ? '<br>自动估算 ' + XJ.calc.dividendAmountText(s.autoThisYear, 0) : '') + '</div>' +
       '</div>' +
+      '<div class="hd-dividends">' +
+      '<div class="hd-dividend"><span class="hd-dividend-label">每日到账约</span>' +
+      '<strong class="hd-daily-amount">' + U.moneySign(s.totalPredicted / 365, 2) + '</strong>' +
+      '<small>按年度预测折算' + (s.missingFx ? ' · 合计不完整' : '') + '</small></div>' +
+      '<button class="hd-dividend hd-receipts" data-act="openDivSum" data-range="all">' +
+      '<span class="hd-dividend-label">累计到账分红' + UI.icon('chevron', 13) + '</span>' +
+      '<strong class="hd-receipts-amount">' + (s.receivedCount ? XJ.calc.dividendAmountText(s.receivedAmounts, 2) : '暂无到账记录') + '</strong>' +
+      (s.includesAutoReceipts ? '<small>含自动登记的税前估算</small>' : '') + '</button></div>' +
       /* 当日参考盈亏：现价相对【昨收】的浮动（人民币口径，跨币种已折算）。
          刻意放在 hd-row 下方独立一行、不塞进 HERO_METRICS —— 老用户的
          settings.heroMetrics 里没有这个 key，塞进去会导致它默认不显示。 */
@@ -15190,7 +15205,8 @@ XJ.views.overview = (function () {
     html += C.statusBanner();
     html += C.accountSwitcher();
 
-    if (!st.hasAnyData()) {
+    if (!st.hasAnyData() && !s.receivedCount) {
+      html += heroCard(st, s);
       html += UI.emptyState('🌱', '还没有持仓记录',
         '添加第一只持仓，开始记录你的每一笔股息收入。只需股票代码、持有数量和成本价。',
         '<button class="ghost-btn primary" data-act="openAddHolding">' + UI.icon('plus', 15) + ' 添加持仓</button>');
@@ -16855,7 +16871,7 @@ XJ.views.divsummary = (function () {
     html += C.statusBanner();
     html += C.accountSwitcher();
 
-    if (!st.hasAnyData()) {
+    if (!st.hasAnyData() && !st.state.received.length) {
       html += UI.emptyState('📒', '还没有数据',
         '先添加持仓。分红到账后系统会自动登记，这里就会汇总出来。',
         '<button class="ghost-btn primary" data-act="openAddHolding">添加持仓</button>');
@@ -21838,7 +21854,14 @@ XJ.views.symbol = (function () {
     navTo({ subPage: 'divsummary', floatOpen: false });
   });
 
-  UI.on('openDivSum', function () { navTo({ subPage: 'divsummary', floatOpen: false }); });
+  UI.on('openDivSum', function (node) {
+    var patch = { subPage: 'divsummary', floatOpen: false };
+    if (node.getAttribute('data-range') === 'all') {
+      patch.divsumRange = 'all';
+      patch.divsumOpen = '';
+    }
+    navTo(patch);
+  });
 
   UI.on('setDivsumRange', function (node) {
     var v = node.getAttribute('data-v');
