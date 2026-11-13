@@ -617,17 +617,24 @@ table.tbl tbody tr:active{ background:var(--card-2); }
   font-size:11.5px; color:var(--hero-dim);
 }
 .hd-badge b{ color:var(--hero-card-accent); font-weight:700; font-size:13px; }
+.overview-hero::after{ pointer-events:none; }
+.overview-hero .hd-row{ margin-top:1px; }
+.overview-hero .hd-row > div{ min-width:0; }
+.overview-hero .hd-amount{ overflow-wrap:anywhere; }
 .hd-dividends{
-  display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.25fr); gap:8px;
-  margin:12px 0 4px; position:relative; z-index:1;
+  display:grid; grid-template-columns:minmax(0, 1fr) minmax(0, 1.16fr); gap:8px;
+  margin:14px 0 4px; position:relative; z-index:1;
 }
 .hd-dividend{
   display:flex; flex-direction:column; align-items:flex-start; gap:3px; min-width:0;
-  min-height:44px; padding:9px 10px; border-radius:12px; background:rgba(255,255,255,.08); text-align:left;
+  min-height:44px; padding:10px; border:1px solid rgba(255,255,255,.08); border-radius:12px;
+  background:rgba(255,255,255,.06); text-align:left;
 }
+.hd-receipts{ position:relative; padding-right:25px; background:rgba(255,255,255,.10); }
+.hd-receipts > svg{ position:absolute; top:11px; right:9px; color:var(--hero-card-accent); }
 .hd-receipts:active{ background:rgba(255,255,255,.16); }
-.hd-dividend-label{ display:flex; align-items:center; gap:4px; font-size:12px; color:var(--hero-dim); }
-.hd-dividend strong{ font-size:16px; color:var(--hero-card-accent); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.hd-dividend-label{ font-size:12px; color:var(--hero-dim); }
+.hd-dividend strong{ font-size:17px; line-height:1.22; color:var(--hero-card-accent); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .hd-dividend small{ font-size:11px; color:var(--hero-dim); }
 .hd-metrics{
   display:grid; grid-template-columns:repeat(3,1fr); gap:2px;
@@ -637,16 +644,16 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .hd-metric .k{ font-size:11px; color:var(--hero-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hd-metric .v{ font-size:16px; font-weight:700; letter-spacing:-.4px; margin-top:2px; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hd-metric.accent .v{ color:var(--hero-card-accent); }
-.hd-actions{ display:flex; gap:14px; justify-content:center; margin-top:10px; position:relative; z-index:1; }
-.hd-actions button{ font-size:12px; color:var(--hero-dim); display:inline-flex; align-items:center; gap:4px; }
+.hd-actions{ display:flex; justify-content:space-between; gap:8px; margin-top:10px; border-top:1px solid rgba(255,255,255,.11); position:relative; z-index:1; }
+.hd-actions button{ min-height:44px; padding:0 4px; font-size:12px; font-weight:600; color:var(--hero-dim); display:inline-flex; align-items:center; gap:5px; }
+.hd-metrics-toggle svg{ transform:rotate(-90deg); }
+.hd-metrics-toggle[aria-expanded="false"] svg{ transform:rotate(90deg); }
 .hd-actions button:active{ opacity:.6; }
 /* 收起态：只隐藏指标网格。
    ⚠️ 这里**不能**把 .hd-actions 一起隐藏 —— 早先就是这条规则把「展开」按钮也藏了，
    导致点完收起之后再也找不到展开入口（把自己锁死在收起态）。 */
 .hero-dark.collapsed .hd-metrics{ display:none; }
 .hero-dark.collapsed .hd-actions{ margin-top:8px; }
-.hero-dark.collapsed .hd-collapsed-hint{ display:block; }
-.hd-collapsed-hint{ display:none; font-size:11.5px; color:var(--hero-dim); margin-top:8px; position:relative; z-index:1; }
 
 /* ---- 深色卡内的「测算带」：每年投入 × 股息率 → N 年后月均分红 ----
    月均是派生量，只能通过点开参数或反解来改变；数字做成「点开才能改」的胶囊。 */
@@ -2041,9 +2048,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 }
 .sheet:focus { outline: none; }
 .tab, .segmented button, .ghost-btn, .float-item, .fold-head { min-height: 44px; }
-.forecast-card { margin: 12px 0; }
-.forecast-card > .fold-head { width: 100%; }
-.forecast-card .hd-forecast { margin-top: 4px; }
+.forecast-card { margin: 12px 0; padding: 5px 14px; --hero-dim:var(--text-2); }
+.forecast-card > .fold-head { width: 100%; justify-content:space-between; font-size:14px; font-weight:650; }
+.forecast-card > .fold-head > svg { color:var(--text-2); flex-shrink:0; }
+.forecast-card > .fold-head[aria-expanded="true"] > svg { transform:rotate(90deg); }
+.forecast-card .hd-forecast { margin:0; padding:10px 0 9px; border-color:var(--line); }
+.forecast-card .hf-num, .forecast-card .hf-chip { background:var(--fill); color:var(--blue); border-color:var(--line); }
+.forecast-card .hf-chip.active { background:var(--blue); color:#fff; }
+.forecast-card .hf-link { color:var(--blue); }
+.forecast-unavailable { color:var(--text-2); margin:0 0 10px; }
+.overview-holdings-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 10px; margin:18px 0 7px; }
+.overview-holdings-head h2 { margin:0; font-size:18px; }
+.overview-holdings-head h2 span { margin-left:3px; font-size:12px; font-weight:500; color:var(--text-2); }
+.overview-sort .chip { min-height:44px; }
 .ledger-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 8px 16px 12px; }
 .ledger-filters label { min-width: 0; display: grid; gap: 4px; font-size: 12px; color: var(--text-2); }
 .ledger-filters label:first-child, .ledger-actions { grid-column: 1 / -1; }
@@ -14866,17 +14883,15 @@ XJ.views.overview = (function () {
 
     /* 收起态必须保留一个「展开」按钮 —— 早先的实现把 .hd-actions 一起隐藏了，
        于是点「收起」之后再也没有入口能展开，等于把自己锁死。 */
-    var actions = collapsed
-      ? '<button class="hd-expand" data-act="toggleHero">展开 ⌄ 查看全部指标</button>' +
-        '<button data-act="openMetricSettings">⚙ 设置指标</button>'
-      : '<button data-act="toggleHero">收起 ⌃</button>' +
-        '<button data-act="openMetricSettings">⚙ 设置指标</button>';
+    var actions = '<button class="hd-metrics-toggle" data-act="toggleHero" aria-expanded="' + !collapsed + '">' +
+      (collapsed ? '查看全部指标' : '收起指标') + UI.icon('chevron', 14) + '</button>' +
+      '<button data-act="openMetricSettings">' + UI.icon('gear', 15) + ' 指标设置</button>';
 
     /* 配色由 settings.heroColor 决定（本机偏好、不同步）；非法值已在 model.normalize 兜底 */
     var heroColor = XJ.model.HERO_COLORS.some(function (c) { return c.key === cfg.heroColor; })
       ? cfg.heroColor : XJ.model.HERO_COLOR_DEFAULT;
 
-    return '<div class="hero-dark' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '">' +
+    return '<section class="hero-dark overview-hero' + (collapsed ? ' collapsed' : '') + '" data-hero="' + U.esc(heroColor) + '" aria-label="分红总览">' +
       '<div class="hd-row">' +
       '<div>' +
       '<div class="lbl">预测年度分红</div>' +
@@ -14888,7 +14903,7 @@ XJ.views.overview = (function () {
       '<strong class="hd-daily-amount">' + U.moneySign(s.totalPredicted / 365, 2) + '</strong>' +
       '<small>按年度预测折算' + (s.missingFx ? ' · 合计不完整' : '') + '</small></div>' +
       '<button class="hd-dividend hd-receipts" data-act="openDivSum" data-range="all">' +
-      '<span class="hd-dividend-label">累计到账分红' + UI.icon('chevron', 13) + '</span>' +
+      '<span class="hd-dividend-label">累计到账分红</span>' + UI.icon('chevron', 14) +
       '<strong class="hd-receipts-amount">' + (s.receivedCount ? XJ.calc.dividendAmountText(s.receivedAmounts, 2) : '暂无到账记录') + '</strong>' +
       (s.includesAutoReceipts ? '<small>含自动登记的税前估算</small>' : '') + '</button></div>' +
       /* 当日参考盈亏：现价相对【昨收】的浮动（人民币口径，跨币种已折算）。
@@ -14897,9 +14912,8 @@ XJ.views.overview = (function () {
       todayPnlLine(s) +
       (s.missingFx ? '<div class="hd-today-note">部分持仓缺少汇率，人民币合计不完整</div>' : '') +
       (collapsed ? '' : '<div class="hd-metrics">' + metrics + '</div>') +
-      '<div class="hd-collapsed-hint">已收起 · 点下方「展开」查看全部指标</div>' +
       '<div class="hd-actions">' + actions + '</div>' +
-      '</div>';
+      '</section>';
   }
 
   /* ---------------- 深色卡「测算带」 ----------------
@@ -15215,9 +15229,9 @@ XJ.views.overview = (function () {
     }
 
     html += heroCard(st, s);
-    html += '<div class="hero-dark forecast-card"><button class="fold-head" data-act="toggleOverviewForecast" aria-expanded="' +
-      !!st.ui.overviewForecast + '"><span>分红试算</span><span class="spacer"></span>' + UI.icon('chevron', 16) + '</button>' +
-      (st.ui.overviewForecast ? (s.missingFx ? '<p>补齐汇率后可计算组合预测。</p>' : forecastStrip(st, s)) : '') + '</div>';
+    html += '<div class="card forecast-card"><button class="fold-head" data-act="toggleOverviewForecast" aria-expanded="' +
+      !!st.ui.overviewForecast + '"><span>分红试算</span>' + UI.icon('chevron', 16) + '</button>' +
+      (st.ui.overviewForecast ? (s.missingFx ? '<p class="forecast-unavailable">补齐汇率后可计算组合预测。</p>' : forecastStrip(st, s)) : '') + '</div>';
     if (!s.missingFx) html += coverageCard(st, cov, ms);
 
     /* ---- 资产走势（市值 / 净资产曲线，卡片自带标题与折叠） ---- */
@@ -15233,12 +15247,13 @@ XJ.views.overview = (function () {
       costYield: '成本息率', pl: '盈亏', holdDays: '持股天数',
     }[st.ui.sortMode] || '预测分红';
 
-    html += '<div class="section-title" style="display:flex;align-items:center">' +
-      '<span>我的持仓 · ' + all.length + ' 只</span><span style="flex:1"></span>' +
+    html += '<div class="overview-holdings-head"><h2>我的持仓 <span>' + all.length + ' 只</span></h2>' +
       '<span class="tiny">按' + sortLabel + '排序</span></div>';
 
-    html += '<div class="chips">' + [['dividend', '分红'], ['marketValue', '市值'], ['yield', '股价息'], ['costYield', '成本息率'], ['pl', '盈亏']].map(function (o) {
-      return '<button class="chip' + (st.ui.sortMode === o[0] ? ' active' : '') + '" data-act="setSort" data-mode="' + o[0] + '">' + o[1] + '</button>';
+    html += '<div class="chips overview-sort" role="group" aria-label="持仓排序">' + [['dividend', '分红'], ['marketValue', '市值'], ['yield', '股价息'], ['costYield', '成本息率'], ['pl', '盈亏']].map(function (o) {
+      var selected = st.ui.sortMode === o[0];
+      return '<button class="chip' + (selected ? ' active' : '') + '" data-act="setSort" data-mode="' + o[0] +
+        '" aria-pressed="' + selected + '">' + o[1] + '</button>';
     }).join('') + '</div>';
 
     html += marketChips(st, all);
@@ -15249,9 +15264,6 @@ XJ.views.overview = (function () {
     } else {
       html += '<div class="hold-list">' + rows.map(holdingCard).join('') + '</div>';
     }
-
-    html += '<div style="margin-top:12px"><button class="btn-block ghost" data-act="openAddHolding">' +
-      UI.icon('plus', 16) + ' 添加持仓</button></div>';
 
     html += renderAboutCard();
     return html;
