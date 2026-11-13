@@ -173,6 +173,32 @@ const PROBE = `(async () => {
     out.layout.forecastOpened = !!document.querySelector('.forecast-card .hd-forecast');
   }
 
+  var calc = XJ.calc;
+  var before = XJ.store.state.received;
+  var today = XJ.util.today();
+  XJ.store.state.received = [{ accountId: 'acc_1', symbol: 'sh600036', source: 'AUTO',
+    amount: 234.56, exDividendDate: today }];
+  XJ.store.setUI({ accountId: 'acc_1', divsumRange: 'year' });
+  var collapsed = XJ.store.state.settings.heroCollapsed;
+  XJ.store.state.settings.heroCollapsed = true;
+  XJ.store.notify();
+  var daily = document.querySelector('.hd-daily-amount');
+  var receipts = document.querySelector('.hd-receipts');
+  var receiptAmount = document.querySelector('.hd-receipts-amount');
+  var expected = XJ.util.moneySign(calc.summary(XJ.store.state, 'acc_1').totalPredicted / 365, 2);
+  out.dividends = {
+    daily: !!daily && daily.textContent === expected && daily.getClientRects().length > 0,
+    received: !!receiptAmount && receiptAmount.textContent === '¥234.56' && receiptAmount.getClientRects().length > 0,
+    estimated: !!receipts && receipts.textContent.includes('含自动登记的税前估算'),
+    oldLabelGone: !document.querySelector('.hero-dark').textContent.includes('今年确认实收'),
+  };
+  if (receipts) receipts.click();
+  out.dividends.detail = XJ.store.ui.subPage === 'divsummary' && XJ.store.ui.divsumRange === 'all' &&
+    XJ.store.acc() === 'acc_1' && document.querySelector('.ds-total').textContent === '¥234.56';
+  XJ.store.state.received = before;
+  XJ.store.state.settings.heroCollapsed = collapsed;
+  XJ.store.setUI({ subPage: null, accountId: calc.ALL });
+
   /* 顶部大卡片：默认配色 + 红字 + 切到藏青 */
   var hero = document.querySelector('.hero-dark');
   var amt = document.querySelector('.hd-amount');
@@ -340,6 +366,9 @@ try {
     if (layout.toolbarAdd && layout.noOverlay && layout.forecastClosed && layout.forecastOpened)
       ok('⑤ 工具栏添加持仓，分红试算独立展开，首屏没有浮动遮挡');
     else bad('首屏操作布局异常 ' + JSON.stringify(layout));
+    if (Object.values(out.dividends || {}).length === 5 && Object.values(out.dividends).every(Boolean))
+      ok('⑥ 收起时每日到账和累计到账仍可见，累计进入当前账户历史汇总');
+    else bad('持仓分红总览异常 ' + JSON.stringify(out.dividends));
 
     const hd = out.hero || {};
     if (hd.exists && hd.dataHero === 'graphite') ok('③ 大卡片默认配色 = 经典石墨'); else bad('默认配色异常 ' + hd.dataHero);
