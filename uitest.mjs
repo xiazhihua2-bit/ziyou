@@ -599,11 +599,11 @@ const PROBE = `
       out.subviews.logoImgRendered = !!(card && card.querySelector('.avatar .av-img'));
       out.subviews.logoImgSrc = card && card.querySelector('.avatar .av-img')
         ? card.querySelector('.avatar .av-img').getAttribute('src') : '';
-      /* 另一个没有 logoUrl 的标的应显示两字简称 */
+      /* 另一个没有缓存图标或内嵌图标的标的应显示两字简称 */
       var other = Array.prototype.slice.call(document.querySelectorAll('.hold-card')).filter(function (c) {
         var b = c.querySelector('[data-act="openSymbol"]');
         var s = b ? b.getAttribute('data-symbol') : null;
-        return s && s !== sym0 && !(XJ.store.state.symbols[s] && XJ.store.state.symbols[s].logoUrl);
+        return s && s !== sym0 && !XJ.fetcher.bundledLogo(s) && !(XJ.store.state.symbols[s] && XJ.store.state.symbols[s].logoUrl);
       })[0];
       out.subviews.logoFallbackText = other ? (other.querySelector('.avatar .av-txt') || {}).textContent : '';
       out.subviews.logoFallbackImg = !!(other && other.querySelector('.avatar .av-img'));
@@ -2401,7 +2401,7 @@ try {
     /* 公司图标：有 logoUrl 的叠加 img，没有的用两字中文简称
        （用 example.invalid 做 src，必然加载失败 → 由 onerror 隐藏，不影响「有 img」的判定） */
     if (r.subviews && r.subviews.logoImgRendered === true &&
-      /example\.invalid/.test(r.subviews.logoImgSrc || '')) {
+      /^(https:\/\/example\.invalid\/logo\.png$|data:image\/png;base64,)/.test(r.subviews.logoImgSrc || '')) {
       console.log('      ✓ 解析到公司图标的标的会渲染官方图标 <img>');
       if (r.subviews.logoFallbackImg === false && /[\u4e00-\u9fa5]{2}/.test(r.subviews.logoFallbackText || '')) {
         console.log('      ✓ 没有图标的标的回退两字中文简称：' + r.subviews.logoFallbackText);
@@ -2411,7 +2411,7 @@ try {
       }
     } else {
       bad('公司图标未渲染: ' + JSON.stringify({
-        rendered: r.subviews && r.subviews.logoImgRendered, src: r.subviews && r.subviews.logoImgSrc }));
+        rendered: r.subviews && r.subviews.logoImgRendered, src: String(r.subviews && r.subviews.logoImgSrc || '').slice(0, 100) }));
     }
 
     /* 持仓卡片内的当日分时（口径已改：收盘后照样画，脏数据不画） */
