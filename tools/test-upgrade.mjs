@@ -34,6 +34,29 @@ assert.equal(events('late')[0].needsReview, true);
 assert.equal(C.applyAutoReceived(ledger), 0);
 plan.exDividendDate = originalEx;
 
+const receipt = ledger.received[0];
+const date = ctx.XJ.util.today();
+const future = ctx.XJ.util.addDays(date, 1);
+const another = { accountId: 'late', symbol: 'sh600036', amount: 6, exDividendDate: date, source: 'MANUAL' };
+const foreign = { accountId: 'late', symbol: 'hk00700', amount: 12, exDividendDate: date, source: 'MANUAL' };
+ledger.received.push(another, foreign, { ...another, exDividendDate: future, amount: 500 });
+const sold = C.summary(ledger, 'sold');
+assert.equal(sold.count, 0);
+assert.equal(sold.receivedTotal, 70);
+assert.equal(sold.includesAutoReceipts, true);
+const combined = C.summary(ledger, C.ALL);
+assert.equal(combined.receivedTotal, C.dividendSummary(ledger, C.ALL, 'all').total);
+assert.equal(combined.receivedTotal, 76);
+assert.equal(combined.receivedCount, 3);
+assert.equal(combined.receivedThisYear, 6);
+assert.equal(C.dividendAmountText(combined.receivedAmounts, 2), '¥76.00（合计不完整 · 待折算 HKD 12.00）');
+assert.equal(C.dividendAmountText(C.dividendAmounts(ledger, [foreign], true), 2), 'HKD 12.00（待折算）');
+ledger.received[0] = { ...receipt, source: 'MANUAL', amount: 8 };
+assert.equal(C.applyAutoReceived(ledger), 0);
+assert.equal(C.summary(ledger, 'sold').receivedTotal, 56);
+assert.equal(C.summary(ledger, 'sold').receivedCount, 1);
+assert.equal(C.summary(ledger, 'sold').includesAutoReceipts, false);
+
 async function storageFixture(primary, fallback, { abort = false, pending = false } = {}) {
   const key = 'ziyou_state_v1';
   const local = new Map([[key, JSON.stringify(fallback)]]);
