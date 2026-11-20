@@ -15,7 +15,7 @@
   --text-3:#A1A1A6;
   --line:#E5E5EA;
   --line-2:#F0F0F3;
-  --blue:#007AFF;
+  --on-blue:#fff; --blue:#006A8B;
   --blue-soft:rgba(0,122,255,.10);
   --up:#E0312F;          /* 涨 · 红（中国习惯） */
   --down:#12A150;        /* 跌 · 绿 */
@@ -53,13 +53,13 @@
   /* ---- 中性填充 / 反转字色 / 语义软底 ---- */
   --fill:rgba(120,120,128,.12);
   --fill-2:rgba(120,120,128,.20);
-  --tab-accent:#00B578;               /* Tab 选中态品牌绿（图一参考；与行情跌绿 #12A150 各司其职） */
+  --tab-accent:#006A8B;               /* Tab 选中态品牌绿（图一参考；与行情跌绿 #12A150 各司其职） */
   --tab-pill:rgba(120,120,128,.12);   /* 选中项药丸底 */
   --invert-fg:#FFFFFF;              /* 压在 var(--text) 底上的字色（chip 选中/FAB） */
   --up-soft:rgba(224,49,47,.10);
   --down-soft:rgba(18,161,80,.10);
   --scrollbar:rgba(0,0,0,.15);
-  --hero-grad:linear-gradient(155deg,#FFFFFF 0%,#FBFAF6 60%,#FDF6E9 100%);
+  --hero-grad:linear-gradient(155deg,#FFFFFF 0%,#F2F8FA 60%,#E2F3F9 100%);
   --hero-glow:rgba(240,163,10,.14);
   --slogan-grad:linear-gradient(150deg,#FFF8F6,#FFF1EC);
   --slogan-warm-fg:#9A3A22;
@@ -88,17 +88,17 @@
 /* ==================== 深色模式（跟随系统） ==================== */
 @media (prefers-color-scheme: dark){
   :root{
-    --bg:#0E0E11;
+    --bg:#101318;
     --bg-elev:#1C1C20;
-    --card:#1C1C20;
+    --card:#1A2028;
     --card-2:#28282E;
     --text:#F2F2F7;
     --text-2:#AEAEB4;
     --text-3:#78787E;
     --line:rgba(255,255,255,.12);
     --line-2:rgba(255,255,255,.07);
-    --blue:#0A84FF;
-    --blue-soft:rgba(10,132,255,.20);
+    --on-blue:#101318; --blue:#72D9FF;
+    --blue-soft:rgba(114,217,255,.14);
     /* 语义色不动：涨红/跌绿/分红橙红在深浅两态下保持同一色相 */
     --dividend-soft:rgba(232,70,31,.16);
     --hero-bg:#1A1A1F;
@@ -113,9 +113,9 @@
     --pend-tag-fg:#E0B878;
     --pend-text:#C9AE8C;
     --pend-text-2:#8A745C;
-    --glass-bg:rgba(30,30,36,.62);
+    --glass-bg:#1A2028;
     --glass-bg-2:rgba(30,30,36,.46);
-    --glass-bg-strong:rgba(22,22,27,.72);
+    --glass-bg-strong:rgba(21,27,34,.96);
     --glass-border:rgba(255,255,255,.14);
     --glass-edge:rgba(0,0,0,.42);
     --glass-highlight:rgba(255,255,255,.10);
@@ -124,13 +124,13 @@
     --scrim:rgba(0,0,0,.55);
     --fill:rgba(120,120,128,.24);
     --fill-2:rgba(120,120,128,.34);
-    --tab-accent:#00C98B;
+    --tab-accent:#72D9FF;
     --tab-pill:rgba(120,120,128,.26);
     --invert-fg:#0E0E11;
     --up-soft:rgba(240,82,82,.20);
     --down-soft:rgba(48,191,120,.20);
     --scrollbar:rgba(255,255,255,.22);
-    --hero-grad:linear-gradient(155deg,#232329 0%,#1E1E24 60%,#26221A 100%);
+    --hero-grad:linear-gradient(155deg,#243846 0%,#1A242E 60%,#191F26 100%);
     --hero-glow:rgba(240,163,10,.10);
     --slogan-grad:linear-gradient(150deg,#2E2320,#2B1E1A);
     --slogan-warm-fg:#E89A80;
@@ -305,7 +305,7 @@ body.dnd-active{ -webkit-user-select:none; user-select:none; }
   display:inline-flex; align-items:center; gap:5px;
 }
 .ghost-btn:active{ transform:scale(.95); }
-.ghost-btn.primary{ background:var(--blue); color:#fff; border-color:transparent; }
+.ghost-btn.primary{ background:var(--blue); color:var(--on-blue); border-color:transparent; }
 
 /* ==================== 指标网格 ==================== */
 .metric-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:12px; }
@@ -423,7 +423,7 @@ body.dnd-active{ -webkit-user-select:none; user-select:none; }
 }
 .cal-cell.blank{ visibility:hidden; }
 .cal-cell.other{ color:var(--text-3); opacity:.45; }
-.cal-cell.today{ background:var(--blue); color:#fff; font-weight:700; }
+.cal-cell.today{ background:var(--blue); color:var(--on-blue); font-weight:700; }
 .cal-cell.today .cal-dot{ background:rgba(255,255,255,.95); }
 .cal-cell.has{ background:var(--card-2); cursor:pointer; }
 .cal-cell.has:active{ background:var(--line); }
@@ -502,7 +502,7 @@ table.tbl tbody tr:active{ background:var(--card-2); }
 .switch input{ width:auto; }
 .btn-block{
   width:100%; padding:13px; border-radius:13px;
-  background:var(--blue); color:#fff; font-weight:600; font-size:15.5px;
+  background:var(--blue); color:var(--on-blue); font-weight:600; font-size:15.5px;
   margin-top:6px; transition:transform .15s ease, opacity .15s ease;
 }
 .btn-block:active{ transform:scale(.98); opacity:.9; }
@@ -2036,7 +2036,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .forecast-card > .fold-head[aria-expanded="true"] > svg { transform:rotate(90deg); }
 .forecast-card .hd-forecast { margin:0; padding:10px 0 9px; border-color:var(--line); }
 .forecast-card .hf-num, .forecast-card .hf-chip { background:var(--fill); color:var(--blue); border-color:var(--line); }
-.forecast-card .hf-chip.active { background:var(--blue); color:#fff; }
+.forecast-card .hf-chip.active { background:var(--blue); color:var(--on-blue); }
 .forecast-card .hf-link { color:var(--blue); }
 .forecast-unavailable { color:var(--text-2); margin:0 0 10px; }
 .overview-holdings-head { display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:4px 10px; margin:18px 0 7px; }
@@ -2051,3 +2051,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
   padding: 5px 8px; background: var(--fill); box-sizing: border-box;
 }
 .ledger-actions { display: flex; gap: 8px; }
+
+.recent-div header,.recent-event{display:flex;align-items:center;gap:10px}
+.recent-div header{justify-content:space-between}
+.recent-event{padding:10px 0;border-top:1px solid var(--line-2);font-size:13px}
+.recent-event time,.hc-grid,.hc-right,.hero{font-variant-numeric:tabular-nums}
+.recent-event span{margin-left:auto;color:var(--text-2);white-space:nowrap}
+.recent-event time{color:var(--text-2)}
+.hc-name .nm{white-space:normal;overflow-wrap:anywhere}
+.overview-holdings-head button{flex-shrink:0}
+.overview-sort{flex-wrap:nowrap;overflow-x:auto}
+.overview-sort .chip{flex-shrink:0}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
