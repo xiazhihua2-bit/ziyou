@@ -166,7 +166,7 @@ try {
     }, sessionId);
     const v = probe.result.value;
     console.log('  [' + mode + '] --bg=' + v.bg + ' bodyBg=' + v.bodyBg);
-    if (mode === 'dark' && v.bg !== '#0E0E11') bad('深色 --bg token 未生效: ' + v.bg);
+    if (mode === 'dark' && v.bg !== '#101318') bad('深色 --bg token 未生效: ' + v.bg);
     if (mode === 'light' && v.bg !== '#F2F2F7') bad('浅色 --bg token 异常: ' + v.bg);
     for (const [name, action] of Object.entries(VIEWS)) {
       await browser.send('Runtime.evaluate', { expression: action }, sessionId);
@@ -178,7 +178,7 @@ try {
     ok(mode + ' 截图 x' + Object.keys(VIEWS).length + ' -> shots/theme/');
   }
   /* ---- 手动主题三态：手动档必须盖住系统偏好（走真实点击链路） ---- */
-  for (const [scheme, forced, want] of [['light', 'dark', '#0E0E11'], ['dark', 'light', '#F2F2F7']]) {
+  for (const [scheme, forced, want] of [['light', 'dark', '#101318'], ['dark', 'light', '#F2F2F7']]) {
     await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, sessionId);
     await sleep(200);
     await browser.send('Runtime.evaluate', { expression: `XJ.store.setUI({ tab: 'mine' })` }, sessionId);
