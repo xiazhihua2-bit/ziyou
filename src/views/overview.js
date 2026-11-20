@@ -472,14 +472,14 @@ XJ.views.overview = (function () {
       '</div>' +
       '</div>' +
       '<div class="hc-right">' +
-      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':div">' + XJ.usdiv.moneyText(state, h.symbol, h.predictedDividend) + '</div>' +
-      '<div class="hc-div-lbl">预测分红</div>' +
+      '<div class="hc-div" data-anim="A" data-anim-key="' + U.esc(h.symbol) + ':market">' + XJ.usdiv.moneyText(state, h.symbol, h.marketValue, mvDec) + '</div>' +
+      '<div class="hc-div-lbl">市值</div>' +
       '</div>' +
       '</div>' +
       intra +
       '<div class="hc-grid">' +
       '<div class="hc-cell"><div class="k">持仓</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':qty">' + U.qtyText(h.qty) + '股</div></div>' +
-      '<div class="hc-cell"><div class="k">市值</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':mv">' + XJ.usdiv.moneyText(state, h.symbol, h.marketValue, mvDec) + '</div></div>' +
+      '<div class="hc-cell"><div class="k">预测分红</div><div class="v" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':div">' + XJ.usdiv.moneyText(state, h.symbol, h.predictedDividend) + '</div></div>' +
       '<div class="hc-cell"><div class="k">成本</div><div class="v' + (h.avgCost < 0 ? ' c-div' : '') + '" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':cost">' + U.money(h.avgCost, 4) + '</div></div>' +
       '<div class="hc-cell"><div class="k">股价息</div><div class="v c-div" data-anim="B" data-anim-key="' + U.esc(h.symbol) + ':yld">' + (h.dividendYield === null ? '—' : U.pct(h.dividendYield)) + pctBadge + '</div></div>' +
       '</div>' +
@@ -509,6 +509,23 @@ XJ.views.overview = (function () {
       return '<button class="chip' + (o.key === cur ? ' active' : '') + '" data-act="setMarketFilter" data-key="' + o.key + '">' +
         '<span class="dotm"></span>' + U.esc(o.label) + ' ' + (counts[o.key] || 0) + '</button>';
     }).join('') + '</div>';
+  }
+
+  function recentDividends(st, holdings) {
+    var symbols = new Set(holdings.map(function (h) { return h.symbol; }));
+    var order = { payout: 0, register: 1, exdiv: 2 };
+    var labels = { payout: '派息日', register: '股权登记日', exdiv: '除权除息日' };
+    var events = XJ.calc.calendarEvents(st.state, st.acc(), U.today(), null).filter(function (e) {
+      return symbols.has(e.symbol) && !e.isEstimate;
+    }).sort(function (a, b) {
+      return a.date.localeCompare(b.date) || order[a.type] - order[b.type];
+    }).slice(0, 3);
+    return '<section class="card recent-div"><header><strong>近期分红</strong>' +
+      '<button class="ghost-btn" data-act="openRecentCalendar" data-date="' + (events.length ? events[0].date : U.today()) + '">查看日历</button></header>' +
+      (events.length ? events.map(function (e) {
+        return '<div class="recent-event"><time>' + U.esc(e.date) + '</time><b>' + U.esc(e.name) +
+          '</b><span>' + labels[e.type] + '</span></div>';
+      }).join('') : '<p class="tiny">暂无已披露的近期分红日期</p>') + '</section>';
   }
 
   function render() {
@@ -544,13 +561,9 @@ XJ.views.overview = (function () {
     var filter = st.ui.marketFilter || 'all';
     var rows = filter === 'all' ? all : all.filter(function (h) { return h.assetType === filter; });
 
-    var sortLabel = {
-      dividend: '预测分红', marketValue: '市值', yield: '股价息',
-      costYield: '成本息率', pl: '盈亏', holdDays: '持股天数',
-    }[st.ui.sortMode] || '预测分红';
-
     html += '<div class="overview-holdings-head"><h2>我的持仓 <span>' + all.length + ' 只</span></h2>' +
-      '<span class="tiny">按' + sortLabel + '排序</span></div>';
+      '<button class="ghost-btn primary" data-act="openAddHolding">' + UI.icon('plus', 15) + ' 添加持仓</button></div>';
+    if (all.length) html += recentDividends(st, all);
 
     html += '<div class="chips overview-sort" role="group" aria-label="持仓排序">' + [['dividend', '分红'], ['marketValue', '市值'], ['yield', '股价息'], ['costYield', '成本息率'], ['pl', '盈亏']].map(function (o) {
       var selected = st.ui.sortMode === o[0];
