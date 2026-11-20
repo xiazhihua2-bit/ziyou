@@ -2863,6 +2863,11 @@
     UI.openSheet({ title: '添加持仓', html: addHoldingHtml() });
   }
 
+  UI.on('openRecentCalendar', function (node) {
+    var date = node.getAttribute('data-date');
+    navTo({ tab: 'calendar', subPage: null, calView: 'calendar', calYear: Number(date.slice(0, 4)),
+      calMonth: Number(date.slice(5, 7)), selDate: date, floatOpen: false });
+  });
   UI.on('openAddHolding', function () { showAddHolding(); });
 
   UI.on('pickMarket', function (node) {
@@ -2982,6 +2987,14 @@
     });
 
     UI.closeSheet();
+    var filter = S.ui.marketFilter;
+    navTo({ tab: 'overview', subPage: null, floatOpen: false,
+      accountId: S.acc() === XJ.calc.ALL ? XJ.calc.ALL : accId,
+      marketFilter: filter === XJ.market.assetType(sym) ? filter : 'all' });
+    requestAnimationFrame(function () {
+      var card = document.querySelector('.hc-main[data-symbol="' + CSS.escape(sym) + '"]');
+      if (card) card.scrollIntoView({ block: 'nearest' });
+    });
     UI.toast('已添加 ' + (draft.name || sym) + '，正在同步行情…');
     draft = newDraft();
 
