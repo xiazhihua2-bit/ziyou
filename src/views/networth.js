@@ -117,6 +117,22 @@ XJ.views.networth = (function () {
   }
 
   /** ns = '' 首页实例；ns = 'an' 账户分析实例（两套控件状态互不影响） */
+  var pendingSummaries = {};
+  function scheduleSummary(ns) {
+    if (pendingSummaries[ns]) return;
+    pendingSummaries[ns] = true;
+    requestAnimationFrame(function () {
+      var idle = window.requestIdleCallback || function (fn) { setTimeout(fn, 30); };
+      idle(function () {
+        delete pendingSummaries[ns];
+        var node = document.querySelector('.nw-card.collapsed[data-ns="' + ns + '"]');
+        if (!node) return;
+        build(XJ.store, ns);
+        node.outerHTML = render(ns);
+      }, {timeout: 1000});
+    });
+  }
+
   function render(ns) {
     ns = ns || '';
     var st = XJ.store;
@@ -131,7 +147,11 @@ XJ.views.networth = (function () {
     var collapsed = XJ.store.folded(keyOf(ns, 'collapsed'));   // 默认折叠（util.FOLD.collapsed）
     var beg = getUI(ns, 'beg') || '';
     var end = getUI(ns, 'end') || '';
-    var b = build(st, ns);
+    var range = getUI(ns, 'range') || defaultRange(st.state, st.acc());
+    var cached = cache[fingerprint(st, st.acc(), range, gran, beg, end)];
+    var delayed = collapsed && !cached;
+    if (delayed) scheduleSummary(ns);
+    var b = cached || (delayed ? {range: range, series: []} : build(st, ns));
     var series = b.series;
 
     var rangeLabel = (RANGES.filter(function (r) { return r[0] === b.range; })[0] || ['', '全部'])[1];
@@ -167,7 +187,7 @@ XJ.views.networth = (function () {
       }
       html += '<div class="nw-mini">' + mini +
         '<span class="nw-mini-l">' + U.esc(metricLabel) +
-        (lastC ? ' · 截至 ' + U.esc(lastC.date) : ' · 暂无数据') + '</span></div>';
+        (lastC ? ' · 截至 ' + U.esc(lastC.date) : delayed ? '' : ' · 暂无数据') + '</span></div>';
       html += '</div>';
       return html;
     }
