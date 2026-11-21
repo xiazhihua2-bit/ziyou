@@ -20908,19 +20908,21 @@ XJ.views.symbol = (function () {
       xj: 1, id: id || 'nav',
       tab: S.ui.tab, sub: S.ui.subPage || null, arg: S.ui.subArg || null,
       sheet: XJ.ui.sheetHistId(), sheetArg: XJ.ui.sheetHistArg(),
-      scrollY: window.scrollY,
+      scrollY: window.scrollY, scrollKey: U.uid('nav'),
     };
   }
   function navPush() {
     try { var s = navSnap('nav'); history.pushState(s, ''); navTop = s; } catch (e) { /* 降级 */ }
   }
-  function saveNavScroll() {
+  var navScrollPositions = Object.create(null);
+  function saveNavScroll(persist) {
     var current = history.state;
     if (!current || !current.xj || current.tab !== S.ui.tab ||
         current.sub !== (S.ui.subPage || null) || current.arg !== (S.ui.subArg || null)) return;
     try {
       var saved = Object.assign({}, current, { scrollY: window.scrollY });
-      history.replaceState(saved, '');
+      navScrollPositions[current.scrollKey] = saved.scrollY;
+      if (persist) history.replaceState(saved, '');
       navTop = saved;
     } catch (e) { /* 无历史权限时继续使用页面内导航 */ }
   }
@@ -20949,7 +20951,7 @@ XJ.views.symbol = (function () {
   });
 
   function navTo(patch) {
-    saveNavScroll();
+    saveNavScroll(true);
     pendingNavScroll = null;
     S.setUI(patch);
     window.scrollTo(0, 0);
@@ -20964,7 +20966,8 @@ XJ.views.symbol = (function () {
   };
   function applyNav(s) {
     navTop = s;
-    pendingNavScroll = Object.assign({}, s, { scrollY: Math.max(0, Number(s.scrollY) || 0) });
+    var savedY = navScrollPositions[s.scrollKey];
+    pendingNavScroll = Object.assign({}, s, { scrollY: Math.max(0, Number(savedY === undefined ? s.scrollY : savedY) || 0) });
     S.setUI({ tab: s.tab, subPage: s.sub, subArg: s.arg });
     restoreNavScroll();
     requestAnimationFrame(restoreNavScroll);
@@ -20997,7 +21000,7 @@ XJ.views.symbol = (function () {
      同一 sheet 被就地重建（管理分组拖拽排序后重开等）不重复入栈 */
   function onSheetOpen(id) {
     if (navTop && navTop.sheet === id) return;
-    saveNavScroll();
+    saveNavScroll(true);
     navPush();
   }
   /* sheet 被 UI 关闭（点遮罩/按钮）时，栈顶若仍是它则弹掉，保持栈与画面同步 */
