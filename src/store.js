@@ -98,7 +98,9 @@ XJ.store = (function () {
       divsumOpen: '',
     },
 
+    revision: 0,
     init: function (state) {
+      this.revision++;
       this.state = state;
       var now = new Date();
       this.ui.calYear = now.getFullYear();
@@ -109,6 +111,7 @@ XJ.store = (function () {
 
     /** 提交变更：mutate(state) 后落盘并通知视图 */
     commit: function (mutator, opts) {
+      this.revision++;
       if (mutator) mutator(this.state);
       if (!opts || opts.save !== false) XJ.storage.saveSoon(this.state);
       this.notify();
@@ -116,6 +119,7 @@ XJ.store = (function () {
 
     /** 立即落盘（导入/清空等关键节点） */
     commitNow: function (mutator) {
+      this.revision++;
       if (mutator) mutator(this.state);
       XJ.storage.save(this.state);
       this.notify();
