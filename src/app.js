@@ -273,7 +273,7 @@
       var planCount = 0;
       Object.keys(planMap).forEach(function (sym) {
         planMap[sym].forEach(function (p) {
-          S.state.plans[p.planId] = p;
+          storePlan(p);
           planCount++;
         });
       });
@@ -845,11 +845,29 @@
   /**
    * 按市场拉取单只标的的分红方案并落库。无公开分红源的市场（日股）直接返回空数组。
    */
+  function storePlan(p) {
+    var previous = S.state.plans[p.planId];
+    if (previous) {
+      p.fiscalHistory = previous.fiscalHistory;
+      p.fiscalEffective = previous.fiscalEffective;
+      if (previous.pretaxBonusPer10 !== p.pretaxBonusPer10 ||
+          !!previous.amountUnknown !== !!p.amountUnknown ||
+          /取消/.test(previous.assignProgress) !== /取消/.test(p.assignProgress)) {
+        var old = Object.assign({}, previous);
+        delete old.fiscalHistory;
+        p.fiscalHistory = (previous.fiscalHistory || []).concat([old]);
+        var earlier = previous.fiscalEffective || previous.noticeDate || previous.planNoticeDate;
+        p.fiscalEffective = p.noticeDate && p.noticeDate > earlier ? p.noticeDate : U.today();
+      }
+    }
+    S.state.plans[p.planId] = p;
+  }
+
   function pullPlansFor(sym) {
     if (!XJ.market.dividendSource(sym)) return Promise.resolve([]);
     return XJ.fetcher.fetchDividends([sym]).then(function (res) {
       var plans = (res && res.plans && res.plans[sym]) || [];
-      plans.forEach(function (p) { S.state.plans[p.planId] = p; });
+      plans.forEach(function (p) { storePlan(p); });
       C.applyAutoReceived(S.state);
       S.commitNow(null);
       return plans;
@@ -887,7 +905,7 @@
     if (!S.state || !sym) return;
     if (!XJ.market.dividendSource(sym)) return;
     if (divPending[sym]) return;
-    if ((C.plansOf(S.state, sym) || []).length) return;
+    if (C.plansOf(S.state, sym).some(function (p) { return String(p.fetchedAt || '').slice(0, 10) === U.today(); })) return;
     divPending[sym] = 1;
     S.setUI({ symLoading: sym });
     var ycodes = {};
