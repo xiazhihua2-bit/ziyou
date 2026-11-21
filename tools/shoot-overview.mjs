@@ -280,13 +280,14 @@ const PROBE = `(async () => {
   stock.scrollIntoView({block:'center'});
   await sleep(100);
   var listY = window.scrollY;
+  var listTop = stock.getBoundingClientRect().top;
   assert(listY > 50, '测试列表未滚动');
   stock.click();
   await sleep(200);
   assert(S.ui.subPage === 'symbol' && window.scrollY === 0, '个股详情未从顶部打开');
   document.querySelector('[data-act="closeSubPage"]').click();
   await sleep(300);
-  assert(!S.ui.subPage && Math.abs(window.scrollY - listY) < 12, '返回持仓时丢失滚动位置：' + window.scrollY + '/' + listY);
+  assert(!S.ui.subPage && Math.abs(document.querySelector('.hc-main').getBoundingClientRect().top - listTop) < 12, '返回持仓时丢失滚动位置：' + window.scrollY + '/' + listY);
   document.querySelector('.hc-main').click();
   await sleep(200);
   window.scrollTo(0, 350);
@@ -294,7 +295,7 @@ const PROBE = `(async () => {
   var detailY = window.scrollY;
   history.back();
   await sleep(300);
-  assert(!S.ui.subPage && Math.abs(window.scrollY - listY) < 12, '浏览器返回丢失持仓位置');
+  assert(!S.ui.subPage && Math.abs(document.querySelector('.hc-main').getBoundingClientRect().top - listTop) < 12, '浏览器返回丢失持仓位置');
   history.forward();
   await sleep(300);
   assert(S.ui.subPage === 'symbol' && Math.abs(window.scrollY - detailY) < 12, '浏览器前进未恢复详情页位置');
@@ -311,6 +312,49 @@ const PROBE = `(async () => {
   assert(!document.querySelector('.sheet') && S.ui.tab === 'watchlist' && !S.ui.subPage, '关闭弹层时错误返回上一页');
   document.querySelector('.tab[data-tab="overview"]').click();
   await sleep(150);
+  var now = XJ.util.today(), ym = now.slice(0, 7), year = Number(now.slice(0, 4)), month = Number(now.slice(5, 7));
+  S.commit(function(state) {
+    var p = Object.values(state.plans)[0];
+    p.equityRecordDate = ym + '-05';
+    p.exDividendDate = ym + '-06';
+    p.payoutDate = ym + '-07';
+    p.source = 'fund';
+  });
+  S.setUI({tab:'calendar',subPage:null,calView:'calendar',calYear:year,calMonth:month,selDate:null,calType:'all'});
+  assert(document.querySelectorAll('.cal-day-group h3 time').length === 3, '全月事件缺少三个日期分组');
+  assert(document.querySelector('.cal-day-group h3 time').textContent === ym + '-05', '全月日期排序错误');
+  assert(document.querySelector('[data-act="calPrev"] svg').innerHTML.includes('14.8'), '上月箭头方向错误');
+  document.querySelector('[data-act="setCalType"][data-type="payout"]').click();
+  assert(document.querySelectorAll('.calendar-event').length === 1 &&
+    document.querySelector('.calendar-event').getAttribute('data-type') === 'payout', '派息筛选未生效');
+  assert(document.querySelectorAll('.cal-grid [data-act="selDate"]').length === 1, '月历标记未随类型更新');
+  document.querySelector('.cal-grid [data-act="selDate"]').click();
+  assert(S.ui.selDate === ym + '-07', '筛选后日期选择错误');
+  document.querySelector('[data-act="setCalType"][data-type="register"]').click();
+  assert(document.querySelector('.calendar-empty').textContent.includes('没有这类'), '筛选无结果错误提示');
+  document.querySelector('.calendar-empty button').click();
+  assert(S.ui.calType === 'all' && document.querySelector('.calendar-event'), '恢复全部类型失败');
+  document.querySelector('[data-act="selDate"][data-date=""]').click();
+  assert(document.querySelectorAll('.calendar-event').length === 3, '恢复全月失败');
+  document.querySelector('[data-act="calPrev"]').click();
+  document.querySelector('[data-act="calNext"]').click();
+  assert(S.ui.calYear === year && S.ui.calMonth === month && S.ui.selDate === null, '跨月往返失败');
+  S.commit(function(state) { delete Object.values(state.plans)[0].source; });
+  assert(document.querySelector('.calendar-event[data-type="payout"]').textContent.includes('预计派息日'), '推算派息日期缺少预计标记');
+  document.querySelector('.calendar-event').click();
+  assert(S.ui.subPage === 'symbol', '日历分组事件无法进入个股详情');
+  history.back();
+  await sleep(250);
+  S.commit(function(state) {
+    state.received.push({recId:'calendar_test',accountId:'acc_1',symbol:'sh600036',
+      exDividendDate:ym+'-07',amount:10,perShareAmount:0.005,qtyAtRecord:2000,source:'MANUAL'});
+  });
+  S.setUI({tab:'calendar',subPage:null,calView:'annual',annualYear:year,annualMonth:month});
+  assert(document.querySelector('[data-act="openSymbol"]'), '年度分红记录未显示');
+  assert(document.querySelector('[data-act="setCalView"][data-v="calendar"]'), '年度总览渲染失败');
+  S.setUI({calView:'calendar',calType:'all',selDate:null});
+  assert(document.documentElement.scrollWidth <= innerWidth, '日历在手机上横向溢出');
+  out.calendar = true;
   out.holdingSearch = true;
   return out;
 })()`;
@@ -397,6 +441,7 @@ try {
   const r = await browser.send('Runtime.evaluate', { expression: PROBE, awaitPromise: true, returnByValue: true }, sessionId);
   const out = r.result ? (r.result.value || {}) : (r || {});
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+  if (!out.calendar) throw new Error('日历日期分组和筛选未通过');
   if (!out.holdingSearch) throw new Error('持仓搜索和事件跳转未通过');
   const errs = browser.events.filter((m) => (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') || m.method === 'Runtime.exceptionThrown');
   if (errs.length) bad('控制台错误: ' + JSON.stringify(errs.slice(0, 2)).slice(0, 300)); else ok('控制台零错误');
@@ -476,7 +521,7 @@ try {
     if (ha.sheetClosed) ok('④ 选完自动关闭弹层'); else bad('弹层未关闭');
   }
 
-  await browser.send('Runtime.evaluate', {expression:"document.querySelector('.overview-holdings-head').scrollIntoView({block:'start'});"}, sessionId);
+  await browser.send('Runtime.evaluate', {expression:"document.querySelector('.overview-holdings-head, .cal-col').scrollIntoView({block:'start'});"}, sessionId);
   await browser.send('Page.captureScreenshot', {}, sessionId).then(async (shot) => {
     const dir = path.join(PROJ, 'shots', 'overview');
     fs.mkdirSync(dir, { recursive: true });
@@ -493,4 +538,3 @@ try {
 
 console.log(fail ? '\\n[overview] 失败 ' + fail + ' 项 ✗' : '\\n[overview] 全部通过 ✓');
 process.exit(fail ? 1 : 0);
-
