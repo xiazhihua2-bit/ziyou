@@ -411,6 +411,69 @@ const PROBE = `(async () => {
     field('quantity').value === '1200', '更换标的后原币预览错误或输入丢失');
   var sheetBox = document.querySelector('.sheet');
   assert(sheetBox.scrollWidth <= sheetBox.clientWidth + 1, '新增持仓表单横向溢出');
+  XJ.ui.closeSheet();
+  S.commit(function(state) {
+    state.symbols.usAAPL = XJ.model.symbolRecord('usAAPL', {name:'苹果'});
+    state.quoteCache.usAAPL = {symbol:'usAAPL',name:'苹果',price:100,prevClose:99};
+    state.settings.fx = Object.assign({}, state.settings.fx, {USD:7});
+    state.transactions.push({txId:'editor_us',accountId:'acc_1',symbol:'usAAPL',action:'BUY',
+      date:'2025-01-03',quantity:2,price:100,fee:1,note:'原始备注',createdAt:'2025-01-03T09:01:00Z',sourceTag:'imported'});
+  });
+  S.setUI({tab:'overview',subPage:'symbol',subArg:'usAAPL'});
+  document.querySelector('[data-act="addTxFor"]').click();
+  await sleep(250);
+  assert(field('price').closest('.field').textContent.includes('USD') &&
+    field('fee').closest('.field').textContent.includes('USD'), '美股交易表单币种标注错误');
+  assert(field('code').value === 'usAAPL' && field('quantity').inputMode === 'decimal', '交易代码或小数键盘错误');
+  field('quantity').value = '0.5'; field('price').value = '100'; field('fee').value = '1';
+  field('price').dispatchEvent(new Event('input', {bubbles:true}));
+  assert(document.querySelector('#tx-preview').textContent.includes('USD 51.00'), '买入支出预览错误');
+  field('action').value = 'SELL';
+  field('action').dispatchEvent(new Event('input', {bubbles:true}));
+  assert(document.querySelector('#tx-preview').textContent.includes('USD 49.00') &&
+    document.querySelector('#tx-preview').textContent.includes('卖出净额') && field('quantity').value === '0.5',
+    '卖出净额预览错误或切换方向丢失数量');
+  var txCount = S.state.transactions.length;
+  field('fee').value = '无效费用';
+  document.querySelector('.sheet [data-act="saveTx"]').click();
+  assert(S.state.transactions.length === txCount, '交易编辑器将无效费用记为0');
+  field('fee').value = '1';
+  var originalDate = field('date').value;
+  field('date').value = '';
+  document.querySelector('.sheet [data-act="saveTx"]').click();
+  assert(S.state.transactions.length === txCount, '空交易日期误记为今天');
+  field('date').value = originalDate;
+  document.querySelector('.sheet [data-act="saveTx"]').click();
+  var sold = S.state.transactions[S.state.transactions.length - 1];
+  assert(sold.symbol === 'usAAPL' && sold.action === 'SELL' && sold.quantity === 0.5 && sold.price === 100 && sold.fee === 1,
+    '美股交易保存与预览不一致');
+  S.commit(function(state) {
+    state.transactions.push({txId:'editor_same_day',accountId:'acc_1',symbol:'usAAPL',action:'SELL',
+      date:'2025-01-03',quantity:1,price:105,fee:0,note:'同日后续卖出',createdAt:'2025-01-03T09:02:00Z'});
+  });
+  S.setUI({foldTx:false});
+  var oldQuantity = XJ.calc.position(S.state.transactions.filter(function(t){return t.symbol === 'usAAPL';})).qty;
+  document.querySelector('.tx-row[data-id="editor_us"]').click();
+  field('price').value = '101';
+  field('note').value = '修改备注';
+  document.querySelector('.sheet [data-act="saveTx"]').click();
+  var updated = S.state.transactions.find(function(t){return t.txId === 'editor_us';});
+  assert(updated.createdAt === '2025-01-03T09:01:00Z' && updated.sourceTag === 'imported' &&
+    updated.price === 101 && updated.note === '修改备注', '编辑交易重写创建时间或丢失原始信息');
+  assert(XJ.calc.position(S.state.transactions.filter(function(t){return t.symbol === 'usAAPL';})).qty === oldQuantity,
+    '编辑价格改变了同日交易顺序和持股数量');
+  S.commit(function(state) {
+    state.symbols.of000001 = XJ.model.symbolRecord('of000001', {name:'测试基金'});
+    state.transactions.push({txId:'editor_fund',accountId:'acc_1',symbol:'of000001',action:'BUY',
+      date:'2025-01-03',quantity:10,price:1,fee:0,note:'',createdAt:'2025-01-03T09:00:00Z'});
+  });
+  S.setUI({subPage:'symbol',subArg:'of000001'});
+  document.querySelector('.tx-row[data-id="editor_fund"]').click();
+  assert(field('code').value === 'of000001', '基金交易丢失市场前缀');
+  document.querySelector('.sheet [data-act="saveTx"]').click();
+  assert(S.state.transactions.find(function(t){return t.txId === 'editor_fund';}).symbol === 'of000001',
+    '编辑基金后误识别为同代码股票');
+  document.querySelector('.tx-row[data-id="editor_fund"]').click();
   out.holdingSearch = true;
   return out;
 })()`;
@@ -577,7 +640,7 @@ try {
     if (ha.sheetClosed) ok('④ 选完自动关闭弹层'); else bad('弹层未关闭');
   }
 
-  await browser.send('Runtime.evaluate', {expression:"(document.getElementById('add-holding-preview') || document.querySelector('.overview-holdings-head, .cal-col')).scrollIntoView({block:'start'});"}, sessionId);
+  await browser.send('Runtime.evaluate', {expression:"(document.getElementById('tx-preview') || document.getElementById('add-holding-preview') || document.querySelector('.overview-holdings-head, .cal-col')).scrollIntoView({block:'start'});"}, sessionId);
   await browser.send('Page.captureScreenshot', {}, sessionId).then(async (shot) => {
     const dir = path.join(PROJ, 'shots', 'overview');
     fs.mkdirSync(dir, { recursive: true });
