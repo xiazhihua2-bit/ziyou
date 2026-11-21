@@ -74,7 +74,7 @@ XJ.views.pool = (function () {
   function yieldHtml(m) {
     var v = m.pct === null ? null : Math.round(m.pct);
     var out = '<i class="wl-yld">';
-    if (m.yld !== null) out += '<em class="wl-yld-t">息 ' + U.pct(m.yld) + '</em>';
+    out += '<em class="wl-yld-t">息 ' + (m.yld === null ? '—' : U.pct(m.yld)) + '</em>';
     if (v === null) {
       out += '<u class="wl-pct lo" title="近 ' + winOf() + ' 年样本不足 120 个交易日">样本不足</u>';
     } else {
@@ -114,7 +114,7 @@ XJ.views.pool = (function () {
     return '<div class="card pool-head">' +
       '<div class="pool-h1">股票池 <span>' + U.esc(P.FUND) + '</span></div>' +
       '<div class="tiny">南方标普中国A股大盘红利低波50ETF · ' + P.items().length + ' 只成分股</div>' +
-      '<div class="tiny">数据截至 ' + U.esc(P.AS_OF) + '（半年报全量持仓） · 近 ' + winOf() + ' 年股息率分位</div>' +
+      '<div class="tiny">数据截至 ' + U.esc(P.AS_OF) + ' · 披露 ' + P.DISCLOSED + ' 只 · 更新 ' + U.esc(P.UPDATED) + ' · 近 ' + winOf() + ' 年股息率分位</div>' +
       '<div class="tiny">息率与分位按实时价重算 · 价格每 60 秒跟随刷新</div>' +
       '</div>';
   }
