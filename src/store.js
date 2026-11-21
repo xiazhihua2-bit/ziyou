@@ -45,6 +45,7 @@ XJ.store = (function () {
       calMonth: null,
       selDate: null,
       sortMode: 'dividend',     // dividend | marketValue | yield | costYield | pl | holdDays
+      holdingQuery: '',
       marketFilter: 'all',      // all | stock | etf | of | hk | us
       annualYear: null,         // 年度总览选中年份
       annualMonth: null,        // 年度总览选中月份
