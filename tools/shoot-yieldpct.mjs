@@ -147,6 +147,10 @@ const PROBE = `(async () => {
 
   /* 切 5 年 */
   var b5 = document.querySelector('[data-act="setYieldPctWin"][data-y="5"]');
+  var year = document.querySelector('.fiscal-bars details');
+  if (!year) throw Error('年度分红柱缺失');
+  year.querySelector('summary').click();
+  if (!year.open || !year.querySelector('p').textContent.includes('/股')) throw Error('年度分红明细未展开');
   if (b5) b5.click();
   await sleep(600);
   out.win5 = XJ.store.state.settings.yieldPctWin;
@@ -286,6 +290,7 @@ try {
   await browser.send('Runtime.evaluate', { expression: 'window.SEED_JSON = ' + JSON.stringify(seed) + ';', returnByValue: true }, sessionId);
 
   const r = await browser.send('Runtime.evaluate', { expression: PROBE, awaitPromise: true, returnByValue: true }, sessionId);
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
   const out = r.result ? (r.result.value || {}) : (r || {});
   if (!r.result || r.result.value === undefined) console.log('RAW=' + JSON.stringify(r).slice(0, 900));
   console.log(JSON.stringify(out, null, 2));
