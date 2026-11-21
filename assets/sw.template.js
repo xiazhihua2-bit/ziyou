@@ -2,7 +2,7 @@
  * build.mjs 会把 __XJ_VERSION__ 替换成产物内容的短 hash 后写入 dist/pwa/sw.js。
  *
  * 策略：
- *   · 导航请求（HTML）→ network-first，3 秒内网络没回来就用缓存（弱网不白屏）
+ *   · 导航请求（HTML）→ 当前完整版本的本机首页优先
  *   · 同源静态资源   → cache-first
  *   · 跨域请求一律不拦截（行情/分红/搜索/OCR 必须实时，缓存它们只会给出过期数据）
  * 注意：SW 缓存的是**应用外壳**，与 IndexedDB 里的持仓数据无关，不会影响记录。
@@ -10,23 +10,22 @@
 const VERSION = '__XJ_VERSION__';
 const PREFIX = 'ziyou:' + self.registration.scope + ':';
 const CACHE = PREFIX + VERSION;
-const SHELL = [
-  './', './index.html', './manifest.webmanifest',
-  './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png',
-];
-const NAV_TIMEOUT = 3000;
+const SNAPSHOTS = JSON.parse('__XJ_SNAPSHOTS__');
+const SHELL = ['./manifest.webmanifest', './icon-192.png', './icon-512.png',
+  './icon-maskable-512.png', './apple-touch-icon.png'];
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(async (c) => {
-        const response = await fetch(new URL('./index.html', self.registration.scope), { cache: 'reload' });
-        if (!response.ok || !(response.headers.get('content-type') || '').includes('text/html')) throw new Error('Missing app shell');
-        await c.put('./index.html', response);
-        await Promise.allSettled(SHELL.filter((u) => u !== './index.html').map((u) => c.add(u)));
-      })
-      .then(() => self.skipWaiting())
-  );
+self.addEventListener('install', e => {
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    const resources = [{url:'./index.html', integrity:'__XJ_HTML_SRI__'}, ...SNAPSHOTS];
+    await Promise.all(resources.map(async asset => {
+      const res = await fetch(new URL(asset.url, self.registration.scope),
+        {cache:'reload', integrity:asset.integrity});
+      if (!res.ok) throw new Error('Missing ' + asset.url);
+      await cache.put(asset.url, res);
+    }));
+    await Promise.allSettled(SHELL.map(url => cache.add(url)));
+  })());
 });
 
 self.addEventListener('activate', (e) => {
@@ -48,27 +47,11 @@ self.addEventListener('fetch', (e) => {
 
   if (req.mode === 'navigate' && (url.pathname === new URL('./', self.registration.scope).pathname ||
       url.pathname === new URL('./index.html', self.registration.scope).pathname)) {
-    e.respondWith(
-      (async () => {
-        const cache = await caches.open(CACHE);
-        const cached = await cache.match('./index.html');
-        let timer;
-        const network = fetch(req).then((res) => {
-          if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) {
-            cache.put('./index.html', res.clone()).catch(() => {});
-            return res;
-          }
-          return cached || res;
-        }).catch(() => cached || Response.error());
-        if (!cached) return network;
-        const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve(cached), NAV_TIMEOUT); });
-        try { return await Promise.race([network, timeout]); }
-        finally { clearTimeout(timer); }
-      })()
-    );
+    e.respondWith(caches.open(CACHE).then(async cache =>
+      (await cache.match('./index.html')) || fetch(req)));
     return;
   }
-  if (!SHELL.some((u) => new URL(u, self.registration.scope).pathname === url.pathname)) return;
+  if (!SHELL.concat(SNAPSHOTS.map(asset => asset.url)).some((u) => new URL(u, self.registration.scope).pathname === url.pathname)) return;
 
   e.respondWith(
     caches.open(CACHE).then((cache) => cache.match(req)).then((hit) => hit || fetch(req).then((res) => {
