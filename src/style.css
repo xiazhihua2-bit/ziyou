@@ -2063,3 +2063,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .overview-sort{flex-wrap:nowrap;overflow-x:auto}
 .overview-sort .chip{flex-shrink:0}
 :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+
+.exp-group .exp-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,8.2rem),1fr));gap:8px}
+.exp-group .exp-item{min-width:0;text-align:start;display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:center}
+.exp-group .exp-item .top{grid-row:span 2}
+.fiscal-bars{margin-bottom:12px}
+.fiscal-bars summary{display:grid;grid-template-columns:4ch 1fr 7ch;gap:12px;align-items:center;padding:8px 0;cursor:pointer;font-variant-numeric:tabular-nums}
+.fiscal-bars summary i{background:var(--line-2);border-radius:3px;overflow:hidden}
+.fiscal-bars em{display:block;background:var(--blue);height:10px}
+.fiscal-bars strong{text-align:right}
