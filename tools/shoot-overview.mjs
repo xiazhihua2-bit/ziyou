@@ -269,8 +269,9 @@ const PROBE = `(async () => {
   var event = document.querySelector('.recent-event');
   assert(event && event.tagName === 'BUTTON', '分红事件不可点击');
   var eventDate = event.getAttribute('data-date');
+  event.scrollIntoView({block: 'center'});
   event.click();
-  assert(S.ui.tab === 'calendar' && S.ui.selDate === eventDate, '分红事件日期跳转失败');
+  assert(S.ui.tab === 'calendar' && S.ui.selDate === eventDate && window.scrollY === 0, '分红事件日期跳转失败');
   S.setUI({tab:'overview',subPage:null,holdingQuery:''});
   assert(document.documentElement.scrollWidth <= innerWidth, '手机页面横向溢出');
   out.holdingSearch = true;
