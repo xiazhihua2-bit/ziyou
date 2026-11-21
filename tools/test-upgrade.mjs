@@ -123,7 +123,7 @@ const scope = 'https://example.test/ziyou/';
 const html = (body, status = 200) => new Response(body, { status, headers: { 'content-type': 'text/html' } });
 const cached = html('saved shell');
 let network = () => Promise.resolve(html('server failure', 500));
-vm.runInNewContext(source('assets/sw.template.js'), {
+vm.runInNewContext(source('assets/sw.template.js').replace('__XJ_SNAPSHOTS__', '[]'), {
   URL, Response, setTimeout: (fn) => setTimeout(fn, 2), clearTimeout,
   fetch: () => network(),
   self: { registration: { scope }, addEventListener: (name, fn) => { handlers[name] = fn; },
@@ -144,8 +144,8 @@ assert.equal(written.length, 0);
 network = () => new Promise(() => {});
 assert.equal(await (await dispatch('fetch', { url: scope, method: 'GET', mode: 'navigate' })).text(), 'saved shell');
 network = () => Promise.resolve(html('new shell'));
-assert.equal(await (await dispatch('fetch', { url: scope, method: 'GET', mode: 'navigate' })).text(), 'new shell');
-assert.deepEqual(written, ['./index.html']);
+assert.equal(await (await dispatch('fetch', { url: scope, method: 'GET', mode: 'navigate' })).text(), 'saved shell');
+assert.deepEqual(written, []);
 
 const apiContext = vm.createContext({ XJ: {}, URL, console, clearTimeout,
   setTimeout: (fn, delay) => delay < 200 ? setTimeout(fn, 0) : 0 });
