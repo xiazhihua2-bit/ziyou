@@ -157,7 +157,21 @@
 
   var prevRenderedTab = null;   // Tab 切换动效：记录上一次渲染的视图
 
+  var holdingSearchComposing = false, holdingSearchRenderPending = false;
+  document.addEventListener('compositionstart', function (event) {
+    if (event.target.id === 'holding-search') holdingSearchComposing = true;
+  });
+  document.addEventListener('compositionend', function (event) {
+    if (event.target.id !== 'holding-search') return;
+    holdingSearchComposing = false;
+    XJ.views.overview.updateSearch(event.target);
+    if (holdingSearchRenderPending) {
+      holdingSearchRenderPending = false;
+      render();
+    }
+  });
   function render() {
+    if (holdingSearchComposing) { holdingSearchRenderPending = true; return; }
     var top = document.getElementById('view-top');
     var body = document.getElementById('view-body');
     var tabs = document.getElementById('view-tabs');
@@ -166,9 +180,19 @@
     var tabSwitched = prevRenderedTab !== null && !S.ui.subPage && prevRenderedTab !== S.ui.tab;
     prevRenderedTab = S.ui.subPage ? null : S.ui.tab;
     var prevAnim = XJ.anim ? XJ.anim.snapshot() : null;   // ① 重建前快照（值比对动效）
+    var search = document.activeElement;
+    var searching = search && search.id === 'holding-search';
+    var selection = searching ? [search.selectionStart, search.selectionEnd] : null;
     top.innerHTML = topHtml();
     body.innerHTML = viewHtml();
     tabs.innerHTML = tabsHtml();
+    if (searching) {
+      var nextSearch = document.getElementById('holding-search');
+      if (nextSearch) {
+        nextSearch.focus({ preventScroll: true });
+        try { nextSearch.setSelectionRange(selection[0], selection[1]); } catch (e) {}
+      }
+    }
     if (XJ.dnd) {
       XJ.dnd.bind(tabs, {
         itemSel: '.tab',
@@ -1446,6 +1470,15 @@
   });
 
   /* 「资产变动」快照曲线已被账户分析里的「资产走势」卡取代，setChartRange 动作随之移除 */
+
+  UI.on('searchHoldings', function (node) { XJ.views.overview.updateSearch(node); });
+  UI.on('clearHoldingSearch', function () {
+    var input = document.getElementById('holding-search');
+    if (!input) return;
+    input.value = '';
+    XJ.views.overview.updateSearch(input);
+    input.focus({ preventScroll: true });
+  });
 
   UI.on('setMarketFilter', function (node) {
     S.setUI({ marketFilter: node.getAttribute('data-key') });
@@ -3032,7 +3065,7 @@
     var filter = S.ui.marketFilter;
     navTo({ tab: 'overview', subPage: null, floatOpen: false,
       accountId: S.acc() === XJ.calc.ALL ? XJ.calc.ALL : accId,
-      marketFilter: filter === XJ.market.assetType(sym) ? filter : 'all' });
+      holdingQuery: '', marketFilter: filter === XJ.market.assetType(sym) ? filter : 'all' });
     requestAnimationFrame(function () {
       var card = document.querySelector('.hc-main[data-symbol="' + CSS.escape(sym) + '"]');
       if (card) card.scrollIntoView({ block: 'nearest' });
