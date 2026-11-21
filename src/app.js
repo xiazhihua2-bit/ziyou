@@ -2824,7 +2824,7 @@
     return {
       symbol: null, name: '', mkTab: 'a', query: '', results: '',
       costMethod: M.DEFAULT_COST_METHOD, negative: false, basis: { type: 'years', value: 1 },
-      basisPreview: '--', basisHint: '', focusQuery: false,
+      basisPreview: '--', basisHint: '', focusQuery: false, fields: {},
     };
   }
   var draft = newDraft();
@@ -2872,12 +2872,13 @@
       ? { type: 'custom', startYear: U.n0(draft.basis.startYear) || (U.yearOf(U.today()) - 4) }
       : draft.basis;
     var a = C.annualBasePerShare(plans, b);
-    draft.basisPreview = '¥' + U.money(a.perShare, 4);
+    var currency = XJ.market.currency(draft.symbol);
+    draft.basisPreview = currency + ' ' + U.money(a.perShare, 4);
     if (a.basis === 'fiscal') {
       draft.basisHint = a.years > 1
-        ? ('近 ' + a.years + ' 个完整财年（' + a.fromYear + '–' + a.year + '）合计 ¥' +
+        ? ('近 ' + a.years + ' 个完整财年（' + a.fromYear + '–' + a.year + '）合计 ' + currency + ' ' +
           U.money(a.total, 4) + ' ÷ ' + a.years)
-        : ('最近一财年（' + a.year + '）方案合计 ¥' + U.money(a.total, 4));
+        : ('最近一财年（' + a.year + '）方案合计 ' + currency + ' ' + U.money(a.total, 4));
       if (a.capped) draft.basisHint += '（数据只有 ' + a.available + ' 年，按实际年数计算）';
     } else if (a.basis === 'fundTtm') {
       draft.basisHint = '基金按近 12 个月已分配金额年化';
@@ -2890,6 +2891,7 @@
 
   function addHoldingHtml() {
     var today = U.today();
+    var fields = draft.fields;
     var picked = !!draft.symbol;
     var accNow = S.acc() === C.ALL ? S.state.settings.defaultAccountId : S.acc();
     var dis = picked ? '' : ' disabled';
@@ -2925,12 +2927,12 @@
     html += stepHead(2, '持仓信息', picked ? '' : '选股后自动展开');
     html += '<fieldset' + dis + ' style="border:0;padding:0;margin:0;' + dim + '">';
     html += '<div class="field-row">' +
-      UI.field('持仓数量 *', UI.inputHtml('quantity', '', { inputmode: 'numeric', placeholder: '股数' })) +
-      UI.field('买入日期 *', UI.inputHtml('date', today, { type: 'date' })) +
+      UI.field('持仓数量 *', UI.inputHtml('quantity', fields.quantity || '', { inputmode: 'decimal', placeholder: '股数', dataInput: 'addHoldingPreview' })) +
+      UI.field('买入日期 *', UI.inputHtml('date', fields.date === undefined ? today : fields.date, { type: 'date' })) +
       '</div>';
     html += '<div class="field-row">' +
-      UI.field('交易费用（可选）', UI.inputHtml('fee', '', { inputmode: 'decimal', placeholder: '元' })) +
-      UI.field('所属账户', '<select data-k="accountId">' + accountOptions(accNow) + '</select>') +
+      UI.field('交易费用（可选）', UI.inputHtml('fee', fields.fee || '', { inputmode: 'decimal', placeholder: XJ.market.currency(draft.symbol || 'sh000000'), dataInput: 'addHoldingPreview' })) +
+      UI.field('所属账户', '<select data-k="accountId">' + accountOptions(fields.accountId || accNow) + '</select>') +
       '</div>';
     html += '<div class="field"><label>当前成本 *' + qmark('成本口径决定「成本息率」「分红回本进度」怎么算。摊薄口径下卖出回款会直接冲减投入，成本可能为负。') + '</label>' +
       '<div class="segmented" style="margin-bottom:8px">' +
@@ -2939,11 +2941,12 @@
           '" data-act="pickCostMethod" data-key="' + o[0] + '">' + o[1] + '</button>';
       }).join('') + '</div>' +
       '<div style="display:flex;align-items:center;gap:8px">' +
-      '<input type="text" inputmode="decimal" data-k="price" placeholder="成本价" style="flex:1">' +
+      '<input type="text" inputmode="decimal" data-k="price" data-input="addHoldingPreview" value="' + U.esc(fields.price || '') + '" placeholder="成本价" style="flex:1">' +
       '<span class="tiny" style="white-space:nowrap;flex:0 0 auto">' + U.esc(XJ.market.curSymbol(draft.symbol || 'sh000000')) + '/股</span>' +
       '</div>' +
       '<div class="tiny" style="margin-top:6px">支持正数与零（送股填 0）。若成本为负，是「卖出回款超过买入支出」的结果，' +
       '系统会按所选口径自动算出，无需手填。</div></div>';
+    html += '<output id="add-holding-preview" class="holding-entry-preview" aria-live="polite">' + holdingEntryPreview(fields) + '</output>';
     html += '<label class="switch tiny" style="margin:4px 0 6px"><input type="checkbox" data-k="negativeCost"' +
       (draft.negative ? ' checked' : '') + '> 标记为负成本（成本已通过卖出全部收回）</label>';
     html += '</fieldset>';
@@ -2975,9 +2978,34 @@
     return html;
   }
 
+  function holdingEntryPreview(fields) {
+    var quantity = U.num(fields.quantity), price = U.num(fields.price);
+    var fee = String(fields.fee || '').trim() ? U.num(fields.fee) : 0;
+    if (!(quantity > 0) || price === null || price < 0 || fee === null || fee < 0) {
+      return '<span class="tiny">填写数量、成本价后可核对本次记账金额。</span>';
+    }
+    var amount = quantity * price;
+    var total = amount + fee;
+    if (!isFinite(total)) return '<span class="tiny">请检查数量与金额。</span>';
+    var currency = XJ.market.currency(draft.symbol || 'sh000000');
+    return '<span>本次记账投入 <strong>' + currency + ' ' + U.money(total, 2) + '</strong></span>' +
+      '<span class="tiny">数量 × 成本价 ' + U.money(amount, 2) + ' + 费用 ' + U.money(fee, 2) + '</span>';
+  }
+  UI.on('addHoldingPreview', function (node) {
+    var sheet = node.closest('.sheet');
+    var preview = sheet.querySelector('#add-holding-preview');
+    if (preview) preview.innerHTML = holdingEntryPreview(UI.readFields(sheet));
+  });
+
   function paintAddHolding() {
     var sheet = document.querySelector('.sheet');
     if (!sheet) return;
+    var fields = UI.readFields(sheet);
+    ['quantity', 'price', 'fee', 'date', 'accountId'].forEach(function (key) {
+      draft.fields[key] = fields[key];
+    });
+    var negative = sheet.querySelector('[data-k="negativeCost"]');
+    draft.negative = !!(negative && negative.checked);
     sheet.innerHTML = '<div class="sheet-grip"></div><h3>添加持仓</h3>' + addHoldingHtml();
     if (draft.focusQuery) {
       var q = sheet.querySelector('[data-k="query"]');
@@ -2985,6 +3013,7 @@
         q.focus();
         try { q.setSelectionRange(q.value.length, q.value.length); } catch (e) {}
       }
+      draft.focusQuery = false;
     }
   }
 
@@ -3096,11 +3125,13 @@
     if (price === null) return UI.toast('请输入成本价（送股填 0）');
     if (price < 0) return UI.toast('成本价不能为负；负成本请通过「摊薄口径 + 卖出回款」或勾选「标记为负成本」实现');
 
+    var fee = String(f.fee || '').trim() ? U.num(f.fee) : 0;
+    if (fee === null || fee < 0) return UI.toast('请输入有效的非负交易费用');
     var accId = f.accountId || S.state.settings.defaultAccountId;
     var tx = {
       txId: U.uid('tx'), accountId: accId, symbol: sym, action: 'BUY',
-      date: /^\d{4}-\d{2}-\d{2}$/.test(f.date || '') ? f.date : U.today(),
-      quantity: U.num(f.quantity), price: price, fee: U.n0(f.fee),
+      date: f.date,
+      quantity: U.num(f.quantity), price: price, fee: fee,
       note: '', createdAt: U.nowStamp(),
     };
     var errs = M.validateTransaction(tx);
