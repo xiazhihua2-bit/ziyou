@@ -21,7 +21,7 @@ $node = 'C:\Users\29699\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\
 & $node verify.mjs
 & $node tools/test-wl-sort.mjs           # 自选排序相关改动才需要
 & $node tools/shoot-yieldpct.mjs         # 浏览器级冒烟（分位/自选息率）
-& $node tools/shoot-pool.mjs            # 股票池 50 行 / 两字段排序 / 实时联动
+& $node tools/shoot-pool.mjs            # 股票池按当期披露行数 / 两字段排序 / 实时联动
 & $node tools/shoot-holder.mjs          # 股东持股 19 家 / 8 期切换 / 四列排序 / 展开图拖动
 
 # 3) 部署（幂等：内容没变的文件会自动跳过）
@@ -187,12 +187,12 @@ $blob = Invoke-RestMethod -Uri "https://api.github.com/repos/xiazhihua2-bit/ziyo
 
 取数口径与坑（改脚本前先读 `tools/build-pool-515450.mjs` 头注释）：
 
-- **季报只披露 31 只**，覆盖不了 50 只成分股 → 用 `year=2026&month=6` 返回的**半年报全量表（72 行）**按权重取前 50，
-  数据日期标注 `2026-06-30`。`FundArchivesDatas.aspx` 必须带 `Referer: .../ccmx_515450.html`，否则 404；返回是 UTF-8。
+- **报告期按北京时间取上一个自然季末**，一月取上年四季度。数据表必须同时匹配基金代码和截止日；按权重排序后展示当期实际披露的前 50 只。2026 三季度披露 31 只。页头显示截止日、披露数和更新日。
+- 每年北京时间 1 月 23 日、4 月 23 日、7 月 22 日和 10 月 28 日上午 9 点各检查一次。目标表尚未披露时记录「本期报告待披露」，保留旧快照，可手动重跑。报告期、持仓和权重均相同时跳过。
 - 历史收盘走 `push2his.eastmoney.com` 且 **`fqt=0` 不复权**（与 `src/fetcher.js` 的 `fetchKline` / 分位口径同源；用 `fqt=1` 前复权会算错）。
 - 财年派现按 `RPT_SHAREBONUS_DET` 聚合成「每年一条等效年报方案」，直接喂 `calc.yieldFiscalSteps` / `yieldNow` / `yieldPercentile`，零新公式。
 - 官方 logo 走同花顺 F10 `basic.10jqka.com.cn/<code>/company.html` 内嵌 PNG，下载转 data URI；
-  **50/50 全齐是硬校验**，缺一只直接报错退出、不产出降级快照（页面不生成中文首字母文字层）。
+  **本期所列股票的图标全齐是硬校验**，缺一只直接报错退出、不产出降级快照（页面不生成中文首字母文字层）。
 - 价格序列按全局交易日历对齐，uint32（分）base64 内嵌，停牌日为 0（`calc.yieldPercentile` 会跳过）。
   快照约 928 KB，单文件约 1.94 MB —— Contents API 对 `index.html` 已走 blob 比对，脚本能正确处理。
 - 新增的 5 个文件（`src/pool-515450.js`、`src/views/pool.js`、`tools/build-pool-515450.mjs`、
