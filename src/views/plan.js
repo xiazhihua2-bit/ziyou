@@ -336,14 +336,14 @@ XJ.views.plan = (function () {
   function expensesCardHtml(st) {
     function group(cat, title, hint) {
       var list = st.state.expenses.filter(function (e) {
-        return e.enabled && (e.category === 'quality' ? 'quality' : 'essential') === cat;
+        return (e.category === 'quality' ? 'quality' : 'essential') === cat;
       }).sort(function (a, b) { return a.sortOrder - b.sortOrder; });
-      var total = U.sum(list, function (e) { return e.monthlyAmount; });
+      var total = U.sum(list, function (e) { return e.enabled ? e.monthlyAmount : 0; });
       var items = list.map(function (e) {
         return '<button class="exp-item" data-act="openExpenseEditor" data-key="' + U.esc(e.key) + '">' +
           '<div class="top">' + U.esc(e.icon || '🏷️') + '</div>' +
           '<div class="name">' + U.esc(e.label) + '</div>' +
-          '<div class="amt">' + U.moneySign(e.monthlyAmount, 0) + '/月</div>' +
+          '<div class="amt">' + U.moneySign(e.monthlyAmount, 0) + '/月' + (e.enabled ? '' : ' · 已停用') + '</div>' +
           '</button>';
       }).join('');
       return '<div class="exp-group">' +
