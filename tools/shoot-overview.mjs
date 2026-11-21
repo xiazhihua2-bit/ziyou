@@ -355,6 +355,62 @@ const PROBE = `(async () => {
   S.setUI({calView:'calendar',calType:'all',selDate:null});
   assert(document.documentElement.scrollWidth <= innerWidth, '日历在手机上横向溢出');
   out.calendar = true;
+  S.setUI({tab:'overview',subPage:null});
+  document.querySelector('.overview-holdings-head [data-act="openAddHolding"]').click();
+  document.querySelector('.sheet [data-act="pickMarket"][data-key="custom"]').click();
+  var query = document.querySelector('.sheet [data-k="query"]');
+  query.value = 'sh600036'; query.dispatchEvent(new Event('input', {bubbles:true}));
+  var field = function(key) { return document.querySelector('.sheet [data-k="' + key + '"]'); };
+  field('quantity').value = '1200';
+  field('price').value = '10.25';
+  field('fee').value = '2.50';
+  field('date').value = '2025-04-02';
+  field('accountId').value = 'acc_1';
+  field('negativeCost').checked = true;
+  document.querySelector('.sheet [data-act="pickCostMethod"][data-key="weighted"]').click();
+  assert(field('quantity').value === '1200' && field('price').value === '10.25' &&
+    field('fee').value === '2.50' && field('date').value === '2025-04-02' && field('negativeCost').checked,
+    '切换成本算法清空了持仓输入');
+  assert(document.querySelector('#add-holding-preview').textContent.includes('12,302.50'), '记账金额预览错误');
+  document.querySelector('.sheet [data-act="pickBasis"][data-v="5"]').click();
+  assert(field('price').value === '10.25' && field('quantity').value === '1200' &&
+    field('date').value === '2025-04-02' && field('accountId').value === 'acc_1', '切换预测口径丢失持仓输入');
+  field('quantity').value = '0.5';
+  field('quantity').dispatchEvent(new Event('input', {bubbles:true}));
+  assert(field('quantity').inputMode === 'decimal' &&
+    document.querySelector('#add-holding-preview').textContent.includes('7.63'), '小数持仓金额预览错误');
+  var beforeAdd = S.state.transactions.length;
+  field('date').value = '';
+  document.querySelector('.sheet [data-act="saveAddHolding"]').click();
+  assert(S.state.transactions.length === beforeAdd && field('price').value === '10.25', '空日期误记为今天或输入丢失');
+  field('date').value = '2025-04-02';
+  field('fee').value = '错误费用';
+  document.querySelector('.sheet [data-act="saveAddHolding"]').click();
+  assert(S.state.transactions.length === beforeAdd, '无效费用被作为0保存');
+  field('fee').value = '-2';
+  document.querySelector('.sheet [data-act="saveAddHolding"]').click();
+  assert(S.state.transactions.length === beforeAdd, '负费用保存成功');
+  assert(document.querySelectorAll('#toast-root .toast').length === 1, '多次校验提示叠加遮挡表单');
+  field('fee').value = '2.50';
+  field('negativeCost').checked = false;
+  document.querySelector('.sheet [data-act="saveAddHolding"]').click();
+  var added = S.state.transactions[S.state.transactions.length - 1];
+  assert(S.state.transactions.length === beforeAdd + 1 && added.quantity === 0.5 && added.price === 10.25 &&
+    added.fee === 2.5 && added.date === '2025-04-02' && added.accountId === 'acc_1', '新增持仓流水与表单不一致');
+  document.querySelector('.overview-holdings-head [data-act="openAddHolding"]').click();
+  assert(!field('quantity').value && !field('price').value && field('date').value === XJ.util.today() &&
+    !field('negativeCost').checked, '新一笔持仓沿用了上一笔输入');
+  document.querySelector('.sheet [data-act="pickMarket"][data-key="custom"]').click();
+  field('query').value = 'sh600036';
+  field('query').dispatchEvent(new Event('input', {bubbles:true}));
+  field('quantity').value = '1200'; field('price').value = '10.25'; field('fee').value = '2.50';
+  field('price').dispatchEvent(new Event('input', {bubbles:true}));
+  field('query').value = 'usAAPL';
+  field('query').dispatchEvent(new Event('input', {bubbles:true}));
+  assert(document.querySelector('#add-holding-preview').textContent.includes('USD 12,302.50') &&
+    field('quantity').value === '1200', '更换标的后原币预览错误或输入丢失');
+  var sheetBox = document.querySelector('.sheet');
+  assert(sheetBox.scrollWidth <= sheetBox.clientWidth + 1, '新增持仓表单横向溢出');
   out.holdingSearch = true;
   return out;
 })()`;
@@ -521,7 +577,7 @@ try {
     if (ha.sheetClosed) ok('④ 选完自动关闭弹层'); else bad('弹层未关闭');
   }
 
-  await browser.send('Runtime.evaluate', {expression:"document.querySelector('.overview-holdings-head, .cal-col').scrollIntoView({block:'start'});"}, sessionId);
+  await browser.send('Runtime.evaluate', {expression:"(document.getElementById('add-holding-preview') || document.querySelector('.overview-holdings-head, .cal-col')).scrollIntoView({block:'start'});"}, sessionId);
   await browser.send('Page.captureScreenshot', {}, sessionId).then(async (shot) => {
     const dir = path.join(PROJ, 'shots', 'overview');
     fs.mkdirSync(dir, { recursive: true });
