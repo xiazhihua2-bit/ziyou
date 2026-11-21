@@ -225,8 +225,8 @@ try {
     else bad('胶囊宽度异常 ' + tb.barWidth + ' @ ' + tb.viewport);
 
     const st = out.style || {};
-    if (st.activeId === 'overview' && st.activeColor && st.activeColor.replace(/\s/g, '') === 'rgb(0,181,120)')
-      ok('★ 选中态 = 品牌绿 #00B578（' + st.activeColor + '）');
+    if (st.activeId === 'overview' && st.activeColor && st.activeColor.replace(/\s/g, '') === 'rgb(0,106,139)')
+      ok('★ 选中态 = 品牌色 #006A8B（' + st.activeColor + '）');
     else bad('选中态颜色异常 ' + st.activeColor);
     if (st.activeBg && st.activeBg !== 'rgba(0, 0, 0, 0)')
       ok('★ 选中项有药丸底（' + st.activeBg + '）');
