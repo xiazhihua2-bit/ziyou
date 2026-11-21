@@ -156,6 +156,7 @@ XJ.views.holder = (function () {
   }
 
   function render() {
+    H = XJ.holder515450;
     var end = periodOf(), rows = rowsOf();
     var open = S.ui.holderExpand || null;
     return headHtml() +
