@@ -224,6 +224,56 @@ const PROBE = `(async () => {
     persisted: XJ.store.state.settings.heroColor,
     sheetClosed: !document.querySelector('.sheet'),
   };
+  var assert = function (value, message) { if (!value) throw Error(message); };
+  var S = XJ.store;
+  S.setUI({ tab: 'overview', subPage: null, marketFilter: 'all' });
+  var input = document.getElementById('holding-search');
+  function searchFor(value) {
+    input = document.getElementById('holding-search');
+    input.focus();
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    assert(document.activeElement === input, '持仓搜索丢失焦点');
+  }
+  searchFor('招商');
+  assert(document.querySelectorAll('#holding-results .hc-main').length === 1, '中文名称搜索失败');
+  searchFor('SH600036');
+  assert(document.querySelectorAll('#holding-results .hc-main').length === 1, '代码搜索失败');
+  searchFor('无匹配 <test>');
+  assert(document.querySelectorAll('#holding-results .hc-main').length === 0 &&
+    document.getElementById('holding-results').textContent.includes('没有找到'), '搜索空态失败');
+  document.querySelector('.holding-search button').click();
+  assert(!S.ui.holdingQuery && document.querySelector('#holding-results .hc-main'), '清除搜索失败');
+  searchFor('600');
+  input.setSelectionRange(1, 1);
+  S.setUI({ sortMode: 'marketValue' });
+  input = document.getElementById('holding-search');
+  assert(document.activeElement === input && input.selectionStart === 1 && input.value === '600', '刷新后光标或查询丢失');
+  input.dispatchEvent(new CompositionEvent('compositionstart', {bubbles:true}));
+  S.setUI({ sortMode: 'dividend' });
+  assert(input === document.getElementById('holding-search'), '输入法组合过程中替换了输入框');
+  input.value = '招商';
+  input.dispatchEvent(new CompositionEvent('compositionend', {bubbles:true}));
+  assert(S.ui.holdingQuery === '招商' && document.querySelectorAll('#holding-results .hc-main').length === 1, '输入法结束搜索失败');
+  S.setUI({ marketFilter: 'us' });
+  assert(!document.querySelector('#holding-results .hc-main'), '搜索忽略市场筛选');
+  S.setUI({ marketFilter: 'all' });
+  document.querySelector('.holding-search button').click();
+  S.commit(function(state) {
+    var p = Object.values(state.plans)[0];
+    p.equityRecordDate = XJ.util.today();
+    p.exDividendDate = XJ.util.today();
+    p.payoutDate = XJ.util.today();
+    p.source = 'fund';
+  });
+  var event = document.querySelector('.recent-event');
+  assert(event && event.tagName === 'BUTTON', '分红事件不可点击');
+  var eventDate = event.getAttribute('data-date');
+  event.click();
+  assert(S.ui.tab === 'calendar' && S.ui.selDate === eventDate, '分红事件日期跳转失败');
+  S.setUI({tab:'overview',subPage:null,holdingQuery:''});
+  assert(document.documentElement.scrollWidth <= innerWidth, '手机页面横向溢出');
+  out.holdingSearch = true;
   return out;
 })()`;
 
@@ -308,6 +358,8 @@ try {
 
   const r = await browser.send('Runtime.evaluate', { expression: PROBE, awaitPromise: true, returnByValue: true }, sessionId);
   const out = r.result ? (r.result.value || {}) : (r || {});
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
+  if (!out.holdingSearch) throw new Error('持仓搜索和事件跳转未通过');
   const errs = browser.events.filter((m) => (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') || m.method === 'Runtime.exceptionThrown');
   if (errs.length) bad('控制台错误: ' + JSON.stringify(errs.slice(0, 2)).slice(0, 300)); else ok('控制台零错误');
 
@@ -386,10 +438,11 @@ try {
     if (ha.sheetClosed) ok('④ 选完自动关闭弹层'); else bad('弹层未关闭');
   }
 
+  await browser.send('Runtime.evaluate', {expression:"document.querySelector('.overview-holdings-head').scrollIntoView({block:'start'});"}, sessionId);
   await browser.send('Page.captureScreenshot', {}, sessionId).then(async (shot) => {
     const dir = path.join(PROJ, 'shots', 'overview');
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, 'overview.png'), Buffer.from(shot.result.data, 'base64'));
+    fs.writeFileSync(path.join(dir, 'overview.png'), Buffer.from(shot.data, 'base64'));
     console.log('  📸 shots/overview/overview.png');
   }).catch(() => {});
 
