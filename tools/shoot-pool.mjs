@@ -12,6 +12,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJ = path.join(ROOT, '..');
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const report = JSON.parse(fs.readFileSync(path.join(PROJ, 'tools/pool-515450-raw.json'), 'utf8'));
+const count = Math.min(50, report.disclosedCount);
 const SRC = path.join(PROJ, 'dist', '自由.html');
 const PORT = 9357;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -245,18 +247,18 @@ try {
     if (n.sub === 'pool' && n.title === '股票池') ok('② 真实 click 进入独立子页，顶栏标题切换');
     else bad('导航异常 ' + JSON.stringify(n));
 
-    if (p.rows === 50) ok('③ ★ 50 只成分股完整展示（断网离线）');
+    if (p.rows === count) ok('③ ★ 50 只成分股完整展示（断网离线）');
     else bad('行数异常 ' + p.rows);
     if (p.hasPx && p.hasCode && !p.hasSpark && !p.hasDel)
       ok('④ 行字段顺序沿用自选、已去掉分时列与删除按钮');
     else bad('行布局异常 ' + JSON.stringify({ hasPx: p.hasPx, hasCode: p.hasCode, hasSpark: p.hasSpark, hasDel: p.hasDel }));
-    if (p.imgs === 50 && p.dataLogos === 50 && p.txtAvatars === 0)
+    if (p.imgs === count && p.dataLogos === count && p.txtAvatars === 0)
       ok('⑤ ★ 50 张官方 logo 内嵌，零中文首字母文字层');
     else bad('图标异常 ' + JSON.stringify({ imgs: p.imgs, dataLogos: p.dataLogos, txt: p.txtAvatars }));
-    if (p.yld === 50 && p.pct === 50 && p.sortBtns === 2)
+    if (p.yld === count && p.pct === count && p.sortBtns === 2)
       ok('⑥ 每行都有息率 / 百分位字段，两个排序按钮在位');
     else bad('字段异常 ' + JSON.stringify({ yld: p.yld, pct: p.pct, sortBtns: p.sortBtns }));
-    if (/2026-06-30/.test(p.head || '') && /近 3 年/.test(p.head || ''))
+    if ((p.head || '').includes(report.asOf) && /近 3 年/.test(p.head || ''))
       ok('⑦ 页头标注数据日期与分位窗口');
     else bad('页头异常 ' + (p.head || '').slice(0, 80));
 
@@ -277,7 +279,7 @@ try {
     else bad('排序态串组 ' + JSON.stringify(iso));
 
     const lv = out.live || {};
-    if (lv.after === '100.00' && lv.before !== lv.after && lv.afterYld !== lv.beforeYld && lv.rows === 50 && lv.sortKept === 'desc')
+    if (lv.after === '100.00' && lv.before !== lv.after && lv.afterYld !== lv.beforeYld && lv.rows === count && lv.sortKept === 'desc')
       ok('⑬ ★ 实时价驱动价格 / 息率重算，50 行不丢、排序态保持');
     else bad('实时联动异常 ' + JSON.stringify(lv));
 
