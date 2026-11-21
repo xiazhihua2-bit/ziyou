@@ -8,14 +8,13 @@
  *   tools/pool-515450-raw.json    原始明细，供复算与核验（不内嵌进单文件）
  *
  * 口径（与 src/calc.js 完全同源）：
- *   · 成分股 = 天天基金【最近一次全量披露】2026 年半年报股票投资明细（72 行），
- *             按权重降序严格取前 50。季报只披露前 31 只，不足以覆盖 50 只成分股。
+ *   · 上一自然季度实际披露的股票按权重取前 50，只接受对应基金及报告期。
  *   · 派现   = RPT_SHAREBONUS_DET 全部方案（含预案），按财年聚合；只认有年报方案的财年
  *             effectiveFrom = 该财年年报方案最早公告日（与 yieldFiscalSteps 一致）
  *   · 收盘   = 东财 push2his fqt=0 不复权真实收盘价（项目 fetchKline 同口径）
  *   · logo   = 同花顺 F10 公司资料页内嵌的公司官方标识，失败换源重试
  *
- * 硬性校验：50 只成分股、50 张官方 logo 全部到齐；缺一只立即报错退出，不产出降级快照。
+ * 硬性校验：当期披露的股票及其官方 logo 全部到齐；缺一只立即报错退出，不产出降级快照。
  * ========================================================================== */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,10 +22,13 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const AS_OF = '2026-06-30';
 const FUND = '515450';
-const TODAY = '2026-11-07';
-const BEG = '20161107';
+const TODAY = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+const year = Number(TODAY.slice(0, 4));
+const quarter = Math.floor((Number(TODAY.slice(5, 7)) - 1) / 3);
+const AS_OF = new Date(Date.UTC(year, quarter * 3, 0)).toISOString().slice(0, 10);
+const BEG = String(year - 10) + TODAY.slice(5).replace('-', '');
+let disclosedCount;
 
 function curl(url, referer) {
   const args = ['-s', '--max-time', '30', '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'];
@@ -67,11 +69,14 @@ const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
 async function holdings() {
   /* month=6 → 返回 2026 Q3/Q2/Q1 三张表，其中 Q2（半年报）是全量披露 72 行。
      month=9 → Q3 只有 31 行，覆盖不了 50 只成分股。 */
-  const url = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=${FUND}&topline=200&year=2026&month=6`;
+  const url = `https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code=${FUND}&topline=200&year=${AS_OF.slice(0, 4)}&month=${Number(AS_OF.slice(5, 7))}`;
   const s = await text(url, `https://fundf10.eastmoney.com/ccmx_${FUND}.html`);
   if (!/apidata/.test(s)) throw new Error('基金持仓接口未返回 apidata');
-  const tables = s.match(/<table[^>]*>[\s\S]*?<\/table>/g) || [];
-  if (!tables.length) throw new Error('未找到持仓表格');
+  const sections = s.split('<h4');
+  const section = sections.find(part => part.split('</h4>')[0].includes('/' + FUND + '.html') &&
+    part.split('</h4>')[0].includes('>' + AS_OF + '<'));
+  if (!section) throw new Error('本期报告待披露：' + AS_OF);
+  const tables = section.match(/<table[^>]*>[\s\S]*?<\/table>/g) || [];
   let best = null;
   for (const t of tables) {
     /* 用表头文字定位列索引，兼容半年报 7 列 / 季报 9 列两种结构 */
@@ -105,7 +110,9 @@ async function holdings() {
     }
     if (!best || parsed.length > best.length) best = parsed;
   }
-  if (!best || best.length < 50) throw new Error(`全量持仓不足 50 只（最多 ${best ? best.length : 0} 只）`);
+  if (!best?.length || new Set(best.map(x => x.code)).size !== best.length || best.some(x => x.weight === null))
+    throw new Error('本期持仓数据不完整');
+  disclosedCount = best.length;
   return best.sort((a, b) => (b.weight || 0) - (a.weight || 0)).slice(0, 50);
 }
 
@@ -212,7 +219,12 @@ async function main() {
   console.log(`[pool] 基金 ${FUND} · 报告期 ${AS_OF} · 取数日 ${TODAY}`);
   const hs = await holdings();
   console.log(`[pool] 成分股 ${hs.length} 只`);
-  if (hs.length !== 50) throw new Error(`成分股应为 50 只，实际 ${hs.length} 只`);
+  const previous = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/pool-515450-raw.json'), 'utf8'));
+  const fields = x => [x.symbol, x.name, x.weight, x.shares, x.value];
+  if (previous.asOf === AS_OF && previous.disclosedCount === disclosedCount &&
+      JSON.stringify(previous.items.map(fields)) === JSON.stringify(hs.map(fields))) {
+    console.log('本期持仓未变化'); return;
+  }
 
   const plans = await mapLimit(hs, 6, (h) => plansOf(h.code));
   const closes = await mapLimit(hs, 6, (h) => closesOf(h.code));
@@ -225,7 +237,7 @@ async function main() {
   const missingLogo = [], missingData = [];
   hs.forEach((h, i) => {
     if (!logos[i] || logos[i].__error || !logos[i].data) missingLogo.push(`${h.code} ${h.name}`);
-    if (closes[i] && closes[i].__error) missingData.push(`${h.code} ${h.name} K线`);
+    if (!Array.isArray(closes[i]) || !closes[i].length) missingData.push(`${h.code} ${h.name} K线`);
     if (plans[i] && plans[i].__error) missingData.push(`${h.code} ${h.name} 分红`);
   });
   if (missingLogo.length) {
@@ -255,9 +267,9 @@ async function main() {
   const shortDays = dates.map((d) => d.replace(/-/g, '')).join(',');
   const js = `/* ==================== 515450 股票池静态快照（生成物，勿手改） ====================
  * 由 tools/build-pool-515450.mjs 生成；原始明细见 tools/pool-515450-raw.json。
- * 成分股 = 天天基金 ${AS_OF} 半年报全量持仓按权重前 50（季报只披露 31 只，不足以覆盖）；
+ * 成分股 = 天天基金 ${AS_OF} 季度披露持仓按权重取前 50（本期披露 ${disclosedCount}）；
  * 收盘价为不复权真实收盘（与项目 fetchKline / 分位口径同源）。
- * 官方 logo 为构建期内嵌的 data URI，50/50 全齐；行渲染不生成任何文字头像层。
+ * 官方 logo 为构建期内嵌的 data URI，全数校验；行渲染不生成任何文字头像层。
  */
 XJ.pool515450 = (function () {
   var AS_OF = '${AS_OF}';
@@ -284,14 +296,14 @@ XJ.pool515450 = (function () {
   }
   function items() { return ITEMS; }
   function symbols() { return ITEMS.map(function (x) { return x.s; }); }
-  return { AS_OF: AS_OF, FUND: FUND, DAYS: DAYS, ITEMS: ITEMS,
+  return { AS_OF: AS_OF, UPDATED: '${TODAY}', DISCLOSED: ${disclosedCount}, FUND: FUND, DAYS: DAYS, ITEMS: ITEMS,
     items: items, symbols: symbols, closesOf: closesOf };
 })();
 `;
   fs.writeFileSync(path.join(ROOT, 'src/pool-515450.js'), js, 'utf8');
 
   const raw = {
-    fund: FUND, asOf: AS_OF, fetchedOn: TODAY, dates,
+    fund: FUND, asOf: AS_OF, disclosedCount, fetchedOn: TODAY, dates,
     items: hs.map((h, i) => ({
       code: h.code, symbol: h.symbol, name: h.name, weight: h.weight,
       shares: h.shares, value: h.value,
@@ -302,7 +314,7 @@ XJ.pool515450 = (function () {
   fs.writeFileSync(path.join(ROOT, 'tools/pool-515450-raw.json'), JSON.stringify(raw), 'utf8');
 
   const bytes = Buffer.byteLength(js, 'utf8');
-  console.log(`[pool] ✓ 50/50 官方 logo 全齐`);
+  console.log(`[pool] ✓ ${hs.length}/${hs.length} 官方 logo 全齐`);
   console.log(`[pool] ✓ src/pool-515450.js  ${bytes} B (${(bytes / 1024).toFixed(1)} KB)`);
   console.log(`[pool] ✓ tools/pool-515450-raw.json  ${fs.statSync(path.join(ROOT, 'tools/pool-515450-raw.json')).size} B`);
   console.log(`[pool] 财年方案总数 ${items.reduce((n, x) => n + x.plans.length, 0)}，价序列 ${items.reduce((n, x) => n + (x._c ? 0 : 1), 0)} 只待解码`);
@@ -310,6 +322,7 @@ XJ.pool515450 = (function () {
   const first = items[0], fcloses = closes[0];
   const lastClose = fcloses[fcloses.length - 1][1];
   const lastPlan = first.plans[first.plans.length - 1];
+  if (!lastPlan) return;
   console.log(`[pool] 抽样 ${first.n} 最新收盘 ${lastClose} 元 / 财年派现 ${lastPlan.pretaxBonusPer10} 元每10股 → 息率约 ${(lastPlan.pretaxBonusPer10 / 10 / lastClose * 100).toFixed(2)}%`);
 }
 
