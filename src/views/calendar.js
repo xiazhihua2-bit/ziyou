@@ -79,19 +79,17 @@ XJ.views.calendar = (function () {
     var right = e.amount === null || e.amount === undefined
       ? ''
       : '<div class="row-v c-div">' + amtTxt + '</div>';
-    var sub = e.needsReview ? '分红资格待核对，可按券商记录补录' : (e.type === 'payout')
-      ? '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股 · ' +
-      (e.isEstimate ? '预计派息日到账 ' : '派息日到账 ') + amtTxt +
-      (XJ.usdiv.isUs(e.symbol) ? '（税前 USD）' : '')
-      : '每股派息 ' + U.money(e.perShare, 4) + ' · 登记数量 ' + U.qtyText(e.qty) + ' 股';
-    return '<button class="list-row" data-act="openSymbol" data-symbol="' + U.esc(e.symbol) + '">' +
+    var sub = e.needsReview ? '分红资格待核对，可按券商记录补录'
+      : '每股 ' + U.money(e.perShare, 4) + ' ' + XJ.market.currency(e.symbol) + ' · ' +
+        (e.estimatedQty ? '预计持股 ' : '登记数量 ') + U.qtyText(e.qty) + ' 股';
+    return '<button class="list-row calendar-event" data-date="' + U.esc(e.date) + '" data-type="' + e.type + '" data-act="openSymbol" data-symbol="' + U.esc(e.symbol) + '">' +
       UI.avatar(e.name, e.symbol, 38, C.logoFor(e.symbol)) +
       '<div class="row-main">' +
       '<div class="row-t"><span class="nm">' + U.esc(e.name) + '</span>' +
       (e.isImplemented ? '' : '<span class="pill gray">预案</span>') +
       '</div>' +
       '<div class="row-s">' + U.esc(XJ.market.displayCode(e.symbol)) + ' · ' +
-      '<span style="color:' + m.color + ';font-weight:600">' + U.esc(m.label) + '</span> · ' + sub + '</div>' +
+      '<span style="color:' + m.color + ';font-weight:600">' + U.esc(e.isEstimate ? '预计派息日' : m.label) + '</span> · ' + sub + '</div>' +
       '</div>' +
       '<div class="row-right">' + right +
       '<div class="row-v2">' + U.esc(e.reportDate.slice(0, 7)) + ' ' + U.esc(e.reportType) + '</div>' +
@@ -136,6 +134,11 @@ XJ.views.calendar = (function () {
   function renderCalendar(st, acc) {
     var y = st.ui.calYear, m = st.ui.calMonth;
     var mv = XJ.calc.monthView(st.state, acc, y, m);
+    var type = TYPE_META[st.ui.calType] ? st.ui.calType : 'all';
+    var visibleEvents = mv.events.filter(function (e) { return type === 'all' || e.type === type; });
+    var visibleDates = {};
+    visibleEvents.forEach(function (e) { (visibleDates[e.date] || (visibleDates[e.date] = [])).push(e); });
+    var visibleMonth = Object.assign({}, mv, { events: visibleEvents, byDate: visibleDates });
     var pend = XJ.calc.pendingExDiv(st.state, acc);
     var html = '';
 
@@ -150,44 +153,58 @@ XJ.views.calendar = (function () {
         '当前没有等待除权的分红方案。</div>';
     }
 
+    html += '<div class="chips calendar-types" role="group" aria-label="分红事件类型">' +
+      [['all', '全部'], ['payout', '派息'], ['register', '登记'], ['exdiv', '除息']].map(function (item) {
+        var count = mv.events.filter(function (e) { return item[0] === 'all' || e.type === item[0]; }).length;
+        return '<button class="chip' + (type === item[0] ? ' active' : '') + '" data-act="setCalType" data-type="' +
+          item[0] + '" aria-pressed="' + (type === item[0]) + '">' + item[1] + ' <span>' + count + '</span></button>';
+      }).join('') + '</div>';
+
     /* 月历（平板横屏时与右侧事件区并排，见 style.css 的 .cal-split） */
     html += '<div class="cal-split">';
     html += '<div class="card">' +
       '<div class="cal-head">' +
-      '<button class="icon-btn" data-act="calPrev">' + UI.icon('chevron', 16) + '</button>' +
+      '<button class="icon-btn" data-act="calPrev" aria-label="上一个月">' + UI.icon('back', 16) + '</button>' +
       '<div class="ym">' + y + ' 年 ' + m + ' 月</div>' +
-      '<button class="icon-btn" data-act="calNext">' + UI.icon('chevron', 16) + '</button>' +
+      '<button class="icon-btn" data-act="calNext" aria-label="下一个月">' + UI.icon('chevron', 16) + '</button>' +
       '</div>' +
       '<div style="text-align:center;margin:-6px 0 10px"><button class="tiny" style="color:var(--blue);font-weight:600" data-act="calToday">点击回今天</button></div>' +
       '<div class="cal-week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>' +
-      '<div class="cal-grid">' + monthGrid(mv, st.ui.selDate) + '</div>' +
+      '<div class="cal-grid">' + monthGrid(visibleMonth, st.ui.selDate) + '</div>' +
       '<div class="cal-legend">' +
       '<span><i style="background:var(--blue)"></i>股权登记</span>' +
       '<span><i style="background:var(--up)"></i>除权除息</span>' +
       '<span><i style="background:var(--payout)"></i>派息日</span>' +
       '</div>' +
-      '<div class="note-line" style="justify-content:center;margin-top:12px">' +
-      UI.icon('info', 13) +
-      '<span>分红数据已更新至上一个交易日，新披露的方案次日排入日历；A 股口径为「派息日 = 除权除息日」（数据源无独立派息日字段），基金 / 港股 / 美股为数据源给出的真实发放日。美股实施状态按除息日推断，单笔金额按实时汇率折人民币（税前，未计入境外预扣税）；跨市场合计沿用原有口径</span>' +
-      '</div>' +
+      '<details class="cal-note"><summary>日期与金额说明</summary>' +
+      '<p>日历根据已同步的分红方案生成。A 股派息日沿用除权除息日，为预计日期；基金、港股、美股使用数据源提供的发放日。' +
+      '方案金额与券商实际到账可能有差异，实际到账请按券商记录核对。美股金额为税前，按实时汇率折人民币；汇率缺失时显示原币。</p></details>' +
       '</div>';
 
     /* 当日 / 当月事件（右侧一列，与左侧月历并排，见 .cal-split） */
     html += '<div class="cal-col">';
     var sel = st.ui.selDate;
-    var listEvents = sel ? (mv.byDate[sel] || []) : mv.events;
-    var title = sel ? (sel + ' · ' + listEvents.length + ' 个事件') : ('本月全部事件 · ' + mv.events.length);
-
-    html += '<div class="section-title" style="display:flex;align-items:center"><span>' + U.esc(title) + '</span>' +
-      '<span style="flex:1"></span>' +
-      (sel ? '<button class="tiny" style="color:var(--blue);font-weight:600" data-act="selDate" data-date="">显示全月</button>' : '') +
-      '</div>';
+    var listEvents = sel ? (visibleDates[sel] || []) : visibleEvents;
+    var title = sel ? (sel + ' · ' + listEvents.length + ' 个事件') : ('本月安排 · ' + visibleEvents.length + ' 个事件');
+    html += '<div class="section-title calendar-event-heading"><span role="status">' + U.esc(title) + '</span>' +
+      (sel ? '<button class="ghost-btn" data-act="selDate" data-date="">显示全月</button>' : '') + '</div>';
 
     if (!listEvents.length) {
-      html += '<div class="card"><div class="tiny" style="text-align:center;padding:14px 0">' +
-        (sel ? '这一天没有分红安排。' : '本月没有分红安排。') + '</div></div>';
+      var hasOtherTypes = (sel ? (mv.byDate[sel] || []) : mv.events).length > 0;
+      html += '<div class="card calendar-empty"><p class="tiny">' +
+        (hasOtherTypes ? '当前日期范围内没有这类事件。' : sel ? '这一天没有分红安排。' : '本月暂无已同步的分红安排。') + '</p>' +
+        (hasOtherTypes ? '<button class="ghost-btn" data-act="setCalType" data-type="all">查看全部类型</button>' : '') + '</div>';
     } else {
-      html += '<div class="list">' + listEvents.map(function (e) { return eventLine(e, st); }).join('') + '</div>';
+      var grouped = {};
+      listEvents.forEach(function (e) { (grouped[e.date] || (grouped[e.date] = [])).push(e); });
+      Object.keys(grouped).sort().forEach(function (date) {
+        var dateText = U.esc(date);
+        var weekday = '日一二三四五六'.charAt(new Date(date + 'T12:00:00').getDay());
+        html += '<section class="cal-day-group"' + (sel ? ' aria-label="' + dateText + '"' : ' aria-labelledby="cal-day-' + dateText + '"') + '>' +
+          (sel ? '' : '<h3 id="cal-day-' + dateText + '"><time datetime="' + dateText + '">' + dateText +
+            '</time><span>周' + weekday + (date === U.today() ? ' · 今天' : '') + '</span></h3>') +
+          '<div class="list">' + grouped[date].map(function (e) { return eventLine(e, st); }).join('') + '</div></section>';
+      });
     }
     html += '</div>';                 // 收 .cal-col
     html += '</div>';                 // 收 .cal-split
