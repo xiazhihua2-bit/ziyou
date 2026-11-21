@@ -111,7 +111,7 @@ XJ.ui = (function () {
     var d = document.createElement('div');
     d.className = 'toast';
     d.textContent = msg;
-    root.appendChild(d);
+    root.replaceChildren(d);
     setTimeout(function () {
       d.style.transition = 'opacity .2s ease';
       d.style.opacity = '0';
@@ -258,6 +258,7 @@ XJ.ui = (function () {
     opts = opts || {};
     return '<input type="' + (opts.type || 'text') + '"' +
       (opts.inputmode ? ' inputmode="' + opts.inputmode + '"' : '') +
+      (opts.dataInput ? ' data-input="' + U.esc(opts.dataInput) + '"' : '') +
       (opts.placeholder ? ' placeholder="' + U.esc(opts.placeholder) + '"' : '') +
       ' data-k="' + name + '" value="' + U.esc(value === undefined || value === null ? '' : value) + '"' +
       (opts.autofocus ? ' autofocus' : '') + '>';
