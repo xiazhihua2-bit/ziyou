@@ -3136,6 +3136,11 @@ section('【31】股息率曲线：财年分子 · 预案公告日生效 · 含�
     mk('2024-12-31', 20, '2025-04-30'),                // FY2024 年报 → 每股 2.0（生效日 2025-04-30）
     mk('2025-12-31', 22, '2026-04-30', false),         // FY2025 年报【预案】→ 每股 2.2
   ];
+  const annual = mk('2024-12-31', 20, '2025-04-01');
+  const late = mk('2024-06-30', 10, '2025-05-01');
+  close('后披露中期方案不穿越：4月仍是2元/股', XJ.calc.yieldNow([annual, late], 40, '2025-04-18'), 5, 1e-12);
+  close('后披露中期方案：5月合计3元/股', XJ.calc.yieldNow([annual, late], 40, '2025-05-01'), 7.5, 1e-12);
+  close('确认全年零分红后切换到零', XJ.calc.yieldNow([annual, mk('2025-12-31', 0, '2026-04-01')], 40, '2026-04-01'), 0, 1e-12);
   const steps31 = XJ.calc.yieldFiscalSteps(plans31);
   eq('两个财年（含只有预案的 FY2025）', JSON.stringify(steps31.map((s) => s.year)), JSON.stringify([2024, 2025]));
   eq('★ 生效日取年报预案公告日', JSON.stringify(steps31.map((s) => s.effectiveFrom)), JSON.stringify(['2025-04-30', '2026-04-30']));
@@ -4185,14 +4190,16 @@ section('【37】FIRE：三档分母 · fireNumber 双口径 · 时间反解 · 
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/wl-sort.js'), 'utf8'), sandbox,
     { filename: 'src/wl-sort.js' });
   const PL = XJ.pool515450, WS = XJ.wlSort;
-  eq('41.1 ★ 成分股严格 50 只', PL.items().length, 50);
+  const report = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/pool-515450-raw.json'), 'utf8'));
+  const count = Math.min(report.disclosedCount, 50);
+  eq('41.1 ★ 按披露数量取前 50', PL.items().length, count);
   eq('41.2 基金代码 515450', PL.FUND, '515450');
-  eq('41.3 数据日期 = 2026-06-30 半年报全量披露', PL.AS_OF, '2026-06-30');
+  eq('41.3 报告期与原始披露一致', PL.AS_OF, report.asOf);
   eq('41.4 ★ 50/50 官方 logo 内嵌（不回退中文文字头像）',
-    PL.items().filter((x) => /^data:image\/png;base64,/.test(x.logo)).length, 50);
-  eq('41.5 ★ 每只都有财年派现方案', PL.items().filter((x) => x.plans && x.plans.length).length, 50);
-  eq('41.6 ★ 每只都有 ≥120 个交易日的收盘价',
-    PL.items().filter((x) => PL.closesOf(x).length >= 120).length, 50);
+    PL.items().filter((x) => /^data:image\/png;base64,/.test(x.logo)).length, count);
+  eq('41.5 ★ 各股财年方案与原始明细一致', PL.items().every((x,i) => JSON.stringify(x.plans) === JSON.stringify(report.items[i].effectivePlans)), true);
+  eq('41.6 ★ 每只历史交易日数量与原始数据一致',
+    PL.items().every((x,i) => PL.closesOf(x).length > 0 && PL.closesOf(x).length === report.items[i].closes.length), true);
   eq('41.7 交易日历覆盖约 10 年', PL.DAYS.length > 2000, true);
   const first = PL.items()[0], cs = PL.closesOf(first);
   const lastPx = cs[cs.length - 1][1];
