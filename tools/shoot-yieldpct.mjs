@@ -191,6 +191,7 @@ const PROBE = `(async () => {
     (syms || []).forEach(function (s) { o[s] = { day: base }; });
     return Promise.resolve(o);
   };
+  XJ.store.ui.pctTriedAt = XJ.store.ui.pctTriedAt || {};
   XJ.store.ui.pctTriedAt['sh601288'] = Date.now() - 21 * 60000;   // 假装上次失败已过冷却
   XJ.app.ensurePctData('sh601288');
   await sleep(900);
