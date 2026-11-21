@@ -49,6 +49,7 @@ XJ.store = (function () {
       marketFilter: 'all',      // all | stock | etf | of | hk | us
       annualYear: null,         // 年度总览选中年份
       annualMonth: null,        // 年度总览选中月份
+      calType: 'all',
       calView: 'calendar',      // calendar | annual
       /* ---- 以下折叠态一律取 FOLD.collapsed / FOLD.open（全站默认「折叠」） ---- */
       pendCollapsed: FOLD.collapsed,        // 分红日历「待除权」卡片
