@@ -326,6 +326,27 @@ XJ.views.symbol = (function () {
       '</div></div>';
   }
 
+  function fiscalBars(symbol, plans, price) {
+    var title = '<section class="card fiscal-bars"><h2>年度每股分红</h2>';
+    var source = XJ.market.dividendSource(symbol);
+    var steps = (source === 'cn' || source === 'hk') ? XJ.calc.yieldFiscalSteps(plans).filter(function (s) {
+      return s.effectiveFrom <= U.today();
+    }) : [];
+    if (!steps.length) return title + '<p class="tiny">暂无可核实的完整财年数据</p></section>';
+    var max = Math.max.apply(null, steps.map(function (s) { return s.perShare; }));
+    var current = XJ.calc.yieldNow(plans, price, U.today());
+    return title + '<p class="tiny">税前 · ' + U.esc(XJ.market.currency(symbol)) + '/股 · ' +
+      steps[steps.length - 1].year + ' 财年股息率 ' + (current === null ? '—' : U.pct(current)) + '</p>' +
+      steps.slice().reverse().map(function (s) {
+        return '<details><summary><b>' + s.year + '</b><i><em style="width:' +
+          (max ? s.perShare / max * 100 : 0) + '%"></em></i><strong>' + U.money(s.perShare, 4) + '</strong></summary>' +
+          plans.filter(function (p) { return Number(p.reportDate.slice(0, 4)) === s.year && !/取消/.test(p.assignProgress); }).map(function (p) {
+            return '<p class="tiny">' + U.esc(p.reportType || p.reportDate) + ' · ' + U.money(p.pretaxBonusPer10 / 10, 4) +
+              ' /股 · ' + U.esc(p.assignProgress || '状态待核实') + ' · 公告 ' + U.esc(p.planNoticeDate || p.noticeDate || '待补') + '</p>';
+          }).join('') + '</details>';
+      }).join('') + '</section>';
+  }
+
   function render() {
     var st = XJ.store;
     var symbol = st.ui.subArg;
@@ -414,6 +435,7 @@ XJ.views.symbol = (function () {
 
     /* ★ 股息率曲线（财年口径）—— 紧跟当前市值，位置最醒目。
        无持仓也照常渲染：这是标的的基本面属性，与是否持有无关。 */
+    html += fiscalBars(symbol, plans, price);
     html += yieldCard(symbol, plans, st, h);
 
     if (h) {
