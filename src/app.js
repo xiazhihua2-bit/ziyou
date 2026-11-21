@@ -2942,6 +2942,7 @@
     var date = node.getAttribute('data-date');
     navTo({ tab: 'calendar', subPage: null, calView: 'calendar', calYear: Number(date.slice(0, 4)),
       calMonth: Number(date.slice(5, 7)), selDate: date, floatOpen: false });
+    window.scrollTo(0, 0);
   });
   UI.on('openAddHolding', function () { showAddHolding(); });
 
