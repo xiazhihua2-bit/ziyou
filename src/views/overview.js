@@ -523,9 +523,37 @@ XJ.views.overview = (function () {
     return '<section class="card recent-div"><header><strong>近期分红</strong>' +
       '<button class="ghost-btn" data-act="openRecentCalendar" data-date="' + (events.length ? events[0].date : U.today()) + '">查看日历</button></header>' +
       (events.length ? events.map(function (e) {
-        return '<div class="recent-event"><time>' + U.esc(e.date) + '</time><b>' + U.esc(e.name) +
-          '</b><span>' + labels[e.type] + '</span></div>';
+        return '<button class="recent-event" data-act="openRecentCalendar" data-date="' + U.esc(e.date) + '"><time>' + U.esc(e.date) + '</time><b>' + U.esc(e.name) +
+          '</b><span>' + labels[e.type] + '</span>' + UI.icon('chevron', 14) + '</button>';
       }).join('') : '<p class="tiny">暂无已披露的近期分红日期</p>') + '</section>';
+  }
+
+  function holdingResults(st, all) {
+    var filter = st.ui.marketFilter || 'all';
+    var query = String(st.ui.holdingQuery || '').trim().toLocaleLowerCase();
+    var marketRows = filter === 'all' ? all : all.filter(function (h) { return h.assetType === filter; });
+    var rows = marketRows.filter(function (h) {
+      return !query || [h.name, h.symbol, XJ.market.displayCode(h.symbol)].join(' ').toLocaleLowerCase().indexOf(query) >= 0;
+    });
+    var html = '<div class="holding-result-count tiny" role="status">' +
+      (query ? '找到 ' + rows.length + ' / ' + marketRows.length + ' 只持仓' : '') + '</div>';
+    if (!rows.length) {
+      return html + (query
+        ? UI.emptyState('🔎', '没有找到这只持仓', '可修改名称或代码，或清除搜索后查看当前市场的持仓。',
+          '<button class="ghost-btn" data-act="clearHoldingSearch">清除搜索</button>')
+        : UI.emptyState('📭', '当前市场暂无持仓', '切换市场，或添加一笔新的持仓。',
+          '<button class="ghost-btn primary" data-act="openAddHolding">添加持仓</button>'));
+    }
+    return html + '<div class="hold-list">' + rows.map(holdingCard).join('') + '</div>';
+  }
+
+  function updateSearch(node) {
+    var st = XJ.store;
+    st.ui.holdingQuery = node.value;
+    var region = document.getElementById('holding-results');
+    if (region) region.innerHTML = holdingResults(st, sortHoldings(XJ.calc.summary(st.state, st.acc()).holdings, st.ui.sortMode));
+    var clear = document.querySelector('.holding-search [data-act="clearHoldingSearch"]');
+    if (clear) clear.hidden = !node.value;
   }
 
   function render() {
@@ -563,8 +591,6 @@ XJ.views.overview = (function () {
 
     /* ---- 我的持仓 ---- */
     var all = sortHoldings(s.holdings, st.ui.sortMode);
-    var filter = st.ui.marketFilter || 'all';
-    var rows = filter === 'all' ? all : all.filter(function (h) { return h.assetType === filter; });
 
     html += '<div class="overview-holdings-head"><h2>我的持仓 <span>' + all.length + ' 只</span></h2>' +
       '<button class="ghost-btn primary" data-act="openAddHolding">' + UI.icon('plus', 15) + ' 添加持仓</button></div>';
@@ -578,12 +604,12 @@ XJ.views.overview = (function () {
 
     html += marketChips(st, all);
 
-    if (!rows.length) {
-      html += UI.emptyState('📭', '没有符合条件的持仓', '换个筛选条件，或添加一笔新的持仓。',
-        '<button class="ghost-btn primary" data-act="openAddHolding">添加持仓</button>');
-    } else {
-      html += '<div class="hold-list">' + rows.map(holdingCard).join('') + '</div>';
-    }
+    if (all.length) html += '<div class="holding-search">' + UI.icon('search', 18) +
+      '<input id="holding-search" type="search" autocomplete="off" aria-label="搜索当前账户持仓" ' +
+      'placeholder="搜索持仓名称或代码" data-input="searchHoldings" value="' + U.esc(st.ui.holdingQuery || '') + '">' +
+      '<button class="ghost-btn" data-act="clearHoldingSearch"' + (st.ui.holdingQuery ? '' : ' hidden') +
+      ' aria-label="清除持仓搜索">清除</button></div>';
+    html += '<div id="holding-results">' + holdingResults(st, all) + '</div>';
 
     html += renderAboutCard();
     return html;
@@ -599,6 +625,7 @@ XJ.views.overview = (function () {
 
   return {
     render: render,
+    updateSearch: updateSearch,
     sortHoldings: sortHoldings,
     holdingCard: holdingCard,
     heroCard: heroCard,
