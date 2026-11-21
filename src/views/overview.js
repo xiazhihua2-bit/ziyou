@@ -548,6 +548,11 @@ XJ.views.overview = (function () {
     }
 
     html += heroCard(st, s);
+    var quoteAt = new Date(st.state.settings.lastQuoteAt || '');
+    if (isFinite(quoteAt.getTime())) {
+      html += '<div class="tiny" style="text-align:right;margin:0 2px 8px">行情上次更新 ' +
+        U.esc(quoteAt.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })) + '</div>';
+    }
     html += '<div class="card forecast-card"><button class="fold-head" data-act="toggleOverviewForecast" aria-expanded="' +
       !!st.ui.overviewForecast + '"><span>分红试算</span>' + UI.icon('chevron', 16) + '</button>' +
       (st.ui.overviewForecast ? (s.missingFx ? '<p class="forecast-unavailable">补齐汇率后可计算组合预测。</p>' : forecastStrip(st, s)) : '') + '</div>';
