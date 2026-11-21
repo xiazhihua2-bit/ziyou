@@ -219,6 +219,7 @@
       try { curView.bind(); } catch (e) { console.error('[bind]', e); }
     }
     if (prevAnim && XJ.anim) XJ.anim.diffAndPlay(prevAnim);   // ③④ 比对 → 分档播放
+    restoreNavScroll();
   }
 
   /* ---------------- 行情与分红数据刷新（与跨设备同步无关） ---------------- */
@@ -1127,12 +1128,53 @@
       xj: 1, id: id || 'nav',
       tab: S.ui.tab, sub: S.ui.subPage || null, arg: S.ui.subArg || null,
       sheet: XJ.ui.sheetHistId(), sheetArg: XJ.ui.sheetHistArg(),
+      scrollY: window.scrollY,
     };
   }
   function navPush() {
     try { var s = navSnap('nav'); history.pushState(s, ''); navTop = s; } catch (e) { /* 降级 */ }
   }
-  function navTo(patch) { S.setUI(patch); navPush(); }
+  function saveNavScroll() {
+    var current = history.state;
+    if (!current || !current.xj || current.tab !== S.ui.tab ||
+        current.sub !== (S.ui.subPage || null) || current.arg !== (S.ui.subArg || null)) return;
+    try {
+      var saved = Object.assign({}, current, { scrollY: window.scrollY });
+      history.replaceState(saved, '');
+      navTop = saved;
+    } catch (e) { /* 无历史权限时继续使用页面内导航 */ }
+  }
+  var scrollSaveFrame = null, pendingNavScroll = null;
+  window.addEventListener('scroll', function () {
+    if (scrollSaveFrame !== null || pendingNavScroll) return;
+    scrollSaveFrame = requestAnimationFrame(function () {
+      scrollSaveFrame = null;
+      if (!pendingNavScroll) saveNavScroll();
+    });
+  }, { passive: true });
+
+  function restoreNavScroll() {
+    if (!pendingNavScroll) return;
+    var saved = pendingNavScroll;
+    if (saved.tab !== S.ui.tab || saved.sub !== (S.ui.subPage || null) ||
+        saved.arg !== (S.ui.subArg || null)) { pendingNavScroll = null; return; }
+    var maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    window.scrollTo(0, Math.min(saved.scrollY, maxY));
+    var dataLoading = S.ui.subPage && snapshotLoads[S.ui.subPage] === 'loading';
+    if (!dataLoading) pendingNavScroll = null;
+  }
+  function cancelNavScroll() { pendingNavScroll = null; }
+  ['pointerdown', 'touchstart', 'wheel', 'keydown'].forEach(function (type) {
+    window.addEventListener(type, cancelNavScroll, { passive: true });
+  });
+
+  function navTo(patch) {
+    saveNavScroll();
+    pendingNavScroll = null;
+    S.setUI(patch);
+    window.scrollTo(0, 0);
+    navPush();
+  }
   function mkGuard() { return navSnap('guard'); }
 
   /* 内容型 sheet 的「按 id 重开」注册表（popstate 还原栈上 sheet 用） */
@@ -1142,7 +1184,10 @@
   };
   function applyNav(s) {
     navTop = s;
+    pendingNavScroll = Object.assign({}, s, { scrollY: Math.max(0, Number(s.scrollY) || 0) });
     S.setUI({ tab: s.tab, subPage: s.sub, subArg: s.arg });
+    restoreNavScroll();
+    requestAnimationFrame(restoreNavScroll);
     var cur = XJ.ui.sheetHistId();
     var want = s.sheet || null;
     if (cur !== want) {
@@ -1172,6 +1217,7 @@
      同一 sheet 被就地重建（管理分组拖拽排序后重开等）不重复入栈 */
   function onSheetOpen(id) {
     if (navTop && navTop.sheet === id) return;
+    saveNavScroll();
     navPush();
   }
   /* sheet 被 UI 关闭（点遮罩/按钮）时，栈顶若仍是它则弹掉，保持栈与画面同步 */
@@ -4676,6 +4722,7 @@
       /* 侧滑返回栈基线：base 条目 + 其上压一条 guard（首页第一次侧滑被 guard 接住） */
       NAV_BASE = navSnap('base');
       try {
+        history.scrollRestoration = 'manual';
         history.replaceState(NAV_BASE, '');
         var navGuard = mkGuard();
         history.pushState(navGuard, '');
