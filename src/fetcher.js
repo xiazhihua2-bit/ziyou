@@ -172,7 +172,7 @@ XJ.fetcher = (function () {
     var reportDate = d10(row.REPORT_DATE);
     if (!reportDate) return null;
     var progress = row.ASSIGN_PROGRESS || '';
-    if (rankOf(progress) === 0) return null;               // 已取消分配，不展示
+    // 保留撤销公告，以便清除已缓存的旧方案。
 
     var pretax = U.num(row.PRETAX_BONUS_RMB);
     var profile = row.IMPL_PLAN_PROFILE || '';
@@ -186,6 +186,7 @@ XJ.fetcher = (function () {
       securityName: row.SECURITY_NAME_ABBR || '',
       reportDate: reportDate,
       reportType: reportTypeOf(reportDate),
+      amountUnknown: pretax === null && !/不分配|不派现|不进行.*分配/.test(profile),
       pretaxBonusPer10: pretax === null ? 0 : pretax,
       afterTaxPer10: afterTax,
       implPlanProfile: profile,
@@ -208,6 +209,9 @@ XJ.fetcher = (function () {
       var cur = map[p.planId];
       if (!cur) { map[p.planId] = p; return; }
       var win = (p.progressRank || 0) > (cur.progressRank || 0) ? p : cur;
+      if (/取消/.test(p.assignProgress) || /取消/.test(cur.assignProgress)) {
+        win = String(p.noticeDate || p.planNoticeDate) >= String(cur.noticeDate || cur.planNoticeDate) ? p : cur;
+      }
       var lose = win === p ? cur : p;
       ['equityRecordDate', 'exDividendDate', 'planNoticeDate', 'noticeDate',
         'afterTaxPer10', 'implPlanProfile'].forEach(function (k) {
