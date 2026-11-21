@@ -2092,6 +2092,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .fiscal-bars em{display:block;background:var(--blue);height:10px}
 .fiscal-bars strong{text-align:right}
 
+.holding-search{display:flex;align-items:center;gap:10px;padding:4px 10px 4px 14px;margin:8px 0;background:var(--card);border:1px solid var(--line);border-radius:14px;color:var(--text-2)}
+.holding-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--text);font:inherit;font-size:16px;padding:10px 0;outline:none}
+.holding-search:focus-within{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue-soft)}
+.holding-search [hidden]{display:none}
+.holding-result-count:empty{display:none}
+.holding-result-count{padding:4px 2px 10px}
+.recent-div .recent-event{width:100%;text-align:left;background:transparent;color:var(--text);border:0;border-top:1px solid var(--line-2);cursor:pointer;font:inherit;font-size:13px;min-height:44px}
+.recent-div .recent-event b{min-width:0;overflow-wrap:anywhere}
+.recent-div .recent-event time{flex-shrink:0;font-size:12px}
+.recent-div .recent-event:active{background:var(--blue-soft)}
+.recent-div .recent-event svg{flex-shrink:0;color:var(--text-3)}
+@media(prefers-reduced-motion:no-preference){.holding-search{transition:border-color .16s,box-shadow .16s}}
+
 
 /* ==================== 手动主题（build 自动派生，勿手改） ====================
  * 由「浅色 :root」与「@media (prefers-color-scheme: dark) 里的 :root」各复制一份，
@@ -12833,6 +12846,7 @@ XJ.store = (function () {
       calMonth: null,
       selDate: null,
       sortMode: 'dividend',     // dividend | marketValue | yield | costYield | pl | holdDays
+      holdingQuery: '',
       marketFilter: 'all',      // all | stock | etf | of | hk | us
       annualYear: null,         // 年度总览选中年份
       annualMonth: null,        // 年度总览选中月份
@@ -15132,9 +15146,37 @@ XJ.views.overview = (function () {
     return '<section class="card recent-div"><header><strong>近期分红</strong>' +
       '<button class="ghost-btn" data-act="openRecentCalendar" data-date="' + (events.length ? events[0].date : U.today()) + '">查看日历</button></header>' +
       (events.length ? events.map(function (e) {
-        return '<div class="recent-event"><time>' + U.esc(e.date) + '</time><b>' + U.esc(e.name) +
-          '</b><span>' + labels[e.type] + '</span></div>';
+        return '<button class="recent-event" data-act="openRecentCalendar" data-date="' + U.esc(e.date) + '"><time>' + U.esc(e.date) + '</time><b>' + U.esc(e.name) +
+          '</b><span>' + labels[e.type] + '</span>' + UI.icon('chevron', 14) + '</button>';
       }).join('') : '<p class="tiny">暂无已披露的近期分红日期</p>') + '</section>';
+  }
+
+  function holdingResults(st, all) {
+    var filter = st.ui.marketFilter || 'all';
+    var query = String(st.ui.holdingQuery || '').trim().toLocaleLowerCase();
+    var marketRows = filter === 'all' ? all : all.filter(function (h) { return h.assetType === filter; });
+    var rows = marketRows.filter(function (h) {
+      return !query || [h.name, h.symbol, XJ.market.displayCode(h.symbol)].join(' ').toLocaleLowerCase().indexOf(query) >= 0;
+    });
+    var html = '<div class="holding-result-count tiny" role="status">' +
+      (query ? '找到 ' + rows.length + ' / ' + marketRows.length + ' 只持仓' : '') + '</div>';
+    if (!rows.length) {
+      return html + (query
+        ? UI.emptyState('🔎', '没有找到这只持仓', '可修改名称或代码，或清除搜索后查看当前市场的持仓。',
+          '<button class="ghost-btn" data-act="clearHoldingSearch">清除搜索</button>')
+        : UI.emptyState('📭', '当前市场暂无持仓', '切换市场，或添加一笔新的持仓。',
+          '<button class="ghost-btn primary" data-act="openAddHolding">添加持仓</button>'));
+    }
+    return html + '<div class="hold-list">' + rows.map(holdingCard).join('') + '</div>';
+  }
+
+  function updateSearch(node) {
+    var st = XJ.store;
+    st.ui.holdingQuery = node.value;
+    var region = document.getElementById('holding-results');
+    if (region) region.innerHTML = holdingResults(st, sortHoldings(XJ.calc.summary(st.state, st.acc()).holdings, st.ui.sortMode));
+    var clear = document.querySelector('.holding-search [data-act="clearHoldingSearch"]');
+    if (clear) clear.hidden = !node.value;
   }
 
   function render() {
@@ -15172,8 +15214,6 @@ XJ.views.overview = (function () {
 
     /* ---- 我的持仓 ---- */
     var all = sortHoldings(s.holdings, st.ui.sortMode);
-    var filter = st.ui.marketFilter || 'all';
-    var rows = filter === 'all' ? all : all.filter(function (h) { return h.assetType === filter; });
 
     html += '<div class="overview-holdings-head"><h2>我的持仓 <span>' + all.length + ' 只</span></h2>' +
       '<button class="ghost-btn primary" data-act="openAddHolding">' + UI.icon('plus', 15) + ' 添加持仓</button></div>';
@@ -15187,12 +15227,12 @@ XJ.views.overview = (function () {
 
     html += marketChips(st, all);
 
-    if (!rows.length) {
-      html += UI.emptyState('📭', '没有符合条件的持仓', '换个筛选条件，或添加一笔新的持仓。',
-        '<button class="ghost-btn primary" data-act="openAddHolding">添加持仓</button>');
-    } else {
-      html += '<div class="hold-list">' + rows.map(holdingCard).join('') + '</div>';
-    }
+    if (all.length) html += '<div class="holding-search">' + UI.icon('search', 18) +
+      '<input id="holding-search" type="search" autocomplete="off" aria-label="搜索当前账户持仓" ' +
+      'placeholder="搜索持仓名称或代码" data-input="searchHoldings" value="' + U.esc(st.ui.holdingQuery || '') + '">' +
+      '<button class="ghost-btn" data-act="clearHoldingSearch"' + (st.ui.holdingQuery ? '' : ' hidden') +
+      ' aria-label="清除持仓搜索">清除</button></div>';
+    html += '<div id="holding-results">' + holdingResults(st, all) + '</div>';
 
     html += renderAboutCard();
     return html;
@@ -15208,6 +15248,7 @@ XJ.views.overview = (function () {
 
   return {
     render: render,
+    updateSearch: updateSearch,
     sortHoldings: sortHoldings,
     holdingCard: holdingCard,
     heroCard: heroCard,
@@ -19896,7 +19937,21 @@ XJ.views.symbol = (function () {
 
   var prevRenderedTab = null;   // Tab 切换动效：记录上一次渲染的视图
 
+  var holdingSearchComposing = false, holdingSearchRenderPending = false;
+  document.addEventListener('compositionstart', function (event) {
+    if (event.target.id === 'holding-search') holdingSearchComposing = true;
+  });
+  document.addEventListener('compositionend', function (event) {
+    if (event.target.id !== 'holding-search') return;
+    holdingSearchComposing = false;
+    XJ.views.overview.updateSearch(event.target);
+    if (holdingSearchRenderPending) {
+      holdingSearchRenderPending = false;
+      render();
+    }
+  });
   function render() {
+    if (holdingSearchComposing) { holdingSearchRenderPending = true; return; }
     var top = document.getElementById('view-top');
     var body = document.getElementById('view-body');
     var tabs = document.getElementById('view-tabs');
@@ -19905,9 +19960,19 @@ XJ.views.symbol = (function () {
     var tabSwitched = prevRenderedTab !== null && !S.ui.subPage && prevRenderedTab !== S.ui.tab;
     prevRenderedTab = S.ui.subPage ? null : S.ui.tab;
     var prevAnim = XJ.anim ? XJ.anim.snapshot() : null;   // ① 重建前快照（值比对动效）
+    var search = document.activeElement;
+    var searching = search && search.id === 'holding-search';
+    var selection = searching ? [search.selectionStart, search.selectionEnd] : null;
     top.innerHTML = topHtml();
     body.innerHTML = viewHtml();
     tabs.innerHTML = tabsHtml();
+    if (searching) {
+      var nextSearch = document.getElementById('holding-search');
+      if (nextSearch) {
+        nextSearch.focus({ preventScroll: true });
+        try { nextSearch.setSelectionRange(selection[0], selection[1]); } catch (e) {}
+      }
+    }
     if (XJ.dnd) {
       XJ.dnd.bind(tabs, {
         itemSel: '.tab',
@@ -21185,6 +21250,15 @@ XJ.views.symbol = (function () {
   });
 
   /* 「资产变动」快照曲线已被账户分析里的「资产走势」卡取代，setChartRange 动作随之移除 */
+
+  UI.on('searchHoldings', function (node) { XJ.views.overview.updateSearch(node); });
+  UI.on('clearHoldingSearch', function () {
+    var input = document.getElementById('holding-search');
+    if (!input) return;
+    input.value = '';
+    XJ.views.overview.updateSearch(input);
+    input.focus({ preventScroll: true });
+  });
 
   UI.on('setMarketFilter', function (node) {
     S.setUI({ marketFilter: node.getAttribute('data-key') });
@@ -22771,7 +22845,7 @@ XJ.views.symbol = (function () {
     var filter = S.ui.marketFilter;
     navTo({ tab: 'overview', subPage: null, floatOpen: false,
       accountId: S.acc() === XJ.calc.ALL ? XJ.calc.ALL : accId,
-      marketFilter: filter === XJ.market.assetType(sym) ? filter : 'all' });
+      holdingQuery: '', marketFilter: filter === XJ.market.assetType(sym) ? filter : 'all' });
     requestAnimationFrame(function () {
       var card = document.querySelector('.hc-main[data-symbol="' + CSS.escape(sym) + '"]');
       if (card) card.scrollIntoView({ block: 'nearest' });
