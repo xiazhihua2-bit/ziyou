@@ -2051,6 +2051,12 @@
     S.setUI({ selDate: d || null });
   });
 
+  UI.on('setCalType', function (node) {
+    var type = node.getAttribute('data-type');
+    if (['all', 'payout', 'register', 'exdiv'].indexOf(type) < 0) return;
+    S.setUI({ calType: type });
+  });
+
   UI.on('calPrev', function () {
     var y = S.ui.calYear, m = S.ui.calMonth - 1;
     if (m < 1) { m = 12; y--; }
@@ -2989,7 +2995,7 @@
 
   UI.on('openRecentCalendar', function (node) {
     var date = node.getAttribute('data-date');
-    navTo({ tab: 'calendar', subPage: null, calView: 'calendar', calYear: Number(date.slice(0, 4)),
+    navTo({ tab: 'calendar', subPage: null, calView: 'calendar', calType: 'all', calYear: Number(date.slice(0, 4)),
       calMonth: Number(date.slice(5, 7)), selDate: date, floatOpen: false });
     window.scrollTo(0, 0);
   });
