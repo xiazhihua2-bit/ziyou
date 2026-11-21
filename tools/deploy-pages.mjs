@@ -80,6 +80,8 @@ const FILES = [
   ['tools/sync-e2e.mjs', 'tools/sync-e2e.mjs'],
   ['tools/deploy-pages.mjs', 'tools/deploy-pages.mjs'],
   ['manifest.webmanifest', 'dist/pwa/manifest.webmanifest'],
+  ...fs.readdirSync(path.join(ROOT, 'dist/pwa')).filter(f => /^(pool|holder)-[0-9a-f]{16}\.js$/.test(f))
+    .map(f => [f, 'dist/pwa/' + f]),
   ['index.html', 'dist/pwa/index.html'],
   ['sw.js', 'dist/pwa/sw.js'],
 ];
