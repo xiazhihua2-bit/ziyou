@@ -56,6 +56,7 @@ const FILES = [
   ['src/views/mine.js', 'src/views/mine.js'],
   ['src/views/symbol.js', 'src/views/symbol.js'],
   ['build.mjs', 'build.mjs'],
+  ['template.html', 'template.html'],
   ['assets/sw.template.js', 'assets/sw.template.js'],
   ['AGENTS.md', 'AGENTS.md'],
   ['README.md', 'README.md'],
