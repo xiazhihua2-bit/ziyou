@@ -525,6 +525,14 @@ async function main() {
   close('快照日 mv 不被 99999 覆盖（仍按日线 20010）', atMix(ws, '2026-11-04').mv, 20010, 1e-9);
   eq('快照日仍标 source=snapshot（仅表示当日有快照）', atMix(ws, '2026-11-04').source, 'snapshot');
 
+  const fxTrade = mkMix();
+  fxTrade.transactions = [Object.assign({}, fxTrade.transactions[1], {date:'2026-11-03', fee:1})];
+  fxTrade.snapshots = {'2026-11-03':{fx:{USD:7}},'2026-11-04':{fx:{USD:7.2}}};
+  const actual = C.marketValueSeries(fxTrade, 'acc_1', mixPm, {end:'2026-11-04',periodPerformance:true}).series;
+  close('成交日含手续费：2001美元按7折算', actual[1].net, 14007, 1e-9);
+  close('买入日收益含7元手续费', actual[1].nw, -7, 1e-9);
+  close('次日区间收益含汇兑：2100×7.2减2000×7', C.rangeReturn(actual.slice(1)).gain, 1120, 1e-9);
+  close('单日时间加权收益率：1120除以14000', C.twrIndex(actual.slice(1))[1].idx, 1.08, 1e-9);
   /* ---------------- 汇总 ---------------- */
   console.log('\n============================================');
   console.log('test-usdiv: ' + pass + ' passed, ' + fail + ' failed');
