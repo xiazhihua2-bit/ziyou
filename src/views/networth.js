@@ -27,7 +27,7 @@ XJ.views.networth = (function () {
     ['today', '当日'], ['1m', '本月'], ['3m', '近三月'],
     ['6m', '近6月'], ['ytd', '今年'], ['all', '全部'], ['custom', '自定义'],
   ];
-  var METRICS = [['mv', '持仓市值'], ['nw', '累计收益'], ['ret', '收益率']];
+  var METRICS = [['mv', '持仓市值'], ['nw', '区间收益'], ['ret', '收益率']];
   var MODES = [['line', '曲线收益率'], ['candle', 'K线收益率']];
   var RET_MODES = [['twr', '时间加权'], ['cost', '成本收益率']];
 
@@ -64,19 +64,7 @@ XJ.views.networth = (function () {
   var cacheOrder = [];
 
   function fingerprint(st, acc, range, gran, beg, end) {
-    var s = st.state;
-    var histStamp = '';
-    Object.keys(s.priceHistory || {}).forEach(function (k) {
-      histStamp += k + ':' + (s.priceHistory[k].points || []).length + ';';
-    });
-    Object.keys(s.indexHistory || {}).forEach(function (k) {
-      histStamp += k + ':' + ((s.indexHistory[k] || {}).bars || []).length + ';';
-    });
-    return [acc, range, gran, beg || '', end || '',
-      s.transactions.length, s.received.length,
-      Object.keys(s.snapshots || {}).length, histStamp,
-      (s.settings.fx && s.settings.fx.HKD) || '', (s.settings.fx && s.settings.fx.USD) || '',
-    ].join('|');
+    return [st.revision, U.today(), acc, range, gran, beg, end].join('|');
   }
 
   function build(st, ns) {
@@ -96,22 +84,32 @@ XJ.views.networth = (function () {
 
     var cr = XJ.calc.chartRange(range, U.today(), beg, end);
     var res = XJ.calc.marketValueSeries(st.state, acc, priceMap, {
-      beg: cr.beg, end: cr.end, fx: st.state.settings.fx,
+      periodPerformance: true, end: cr.end, fx: st.state.settings.fx,
     });
     /* 成本收益率 = 累计收益 ÷ 累计净投入（每一元本金赚了多少，含股息）。
        净投入 ≤ 0（本金已被卖出/分红全部收回）时没有意义 → 给 null，绝不给 Infinity。 */
+    if (cr.beg && res.series.length) {
+      var first = res.series.findIndex(function (p) { return p.date >= cr.beg; });
+      res.series = first < 0 ? [] : res.series.slice(Math.max(0, first - 1));
+    }
+    function sample(points) {
+      var sampled = XJ.calc.downsample(points, gran);
+      if (sampled.length && sampled[0] !== points[0]) sampled.unshift(points[0]);
+      return sampled;
+    }
     var costRet = res.series.map(function (p) {
       var net = U.n0(p.net);
       return { date: p.date, idx: net > 0 ? U.n0(p.nw) / net : null };
     });
     var value = {
       range: range, beg: cr.beg, end: cr.end, res: res,
-      series: XJ.calc.downsample(res.series, gran),
-      twr: XJ.calc.downsample(XJ.calc.twrIndex(res.series), gran),
-      costRet: XJ.calc.downsample(costRet, gran),
+      series: sample(res.series),
+      twr: sample(XJ.calc.twrIndex(res.series)),
+      costRet: sample(costRet),
     };
     /* 区间收益：与曲线用同一份（降采样后的）序列，保证「大数字 == 曲线末点」 */
-    value.rangeRet = XJ.calc.rangeReturn(value.series);
+    value.rangeRet = XJ.calc.rangeReturn(res.series);
+    if (value.rangeRet) value.rangeRet.points = sample(value.rangeRet.points);
     cache[key] = value;
     cacheOrder.push(key);
     while (cacheOrder.length > 4) delete cache[cacheOrder.shift()];
@@ -251,15 +249,19 @@ XJ.views.networth = (function () {
         var def = MK.indexDef(key);
         var rec = st.state.indexHistory[key];
         if (!def || !rec || !rec.bars || rec.bars.length < 2) return;
-        var bars = XJ.calc.indexBarsInRange(rec.bars, b.beg, b.end);
+        var start = idxPts0.length ? idxPts0[0].date : b.beg;
+        var bars = XJ.calc.indexBarsInRange(rec.bars, start, b.end);
+        if (start && (!bars.length || bars[0].d > start)) {
+          var prior = rec.bars.filter(function (bar) { return bar.d < start; }).pop();
+          if (!prior) return;
+          bars = [Object.assign({}, prior, { d: start })].concat(bars);
+        }
         if (bars.length < 2) return;
         rawIdx.push({ key: key, def: def, bars: bars, first: bars[0].d });
       });
-      common = XJ.calc.commonStart(
-        [{ date: idxPts0.length ? idxPts0[0].date : '' }].concat(rawIdx.map(function (r) { return { date: r.first }; }))
-      );
+      common = idxPts0.length ? idxPts0[0].date : null;
       /* 日粒度：组合 + 指数都以「相对共同起点的百分比」表示 */
-      var portPts = XJ.calc.rebasePercent(idxPts0, 'idx', common);
+      var portPts = XJ.calc.rebasePercent(idxPts0, 'idx', idxPts0.length ? idxPts0[0].date : common);
       if (portPts.length >= 2) {
         chartSeries.push({
           key: 'ret', name: '组合收益率', color: MK.METRIC_COLORS.ret, points: portPts,
@@ -539,7 +541,7 @@ XJ.views.networth = (function () {
     }
     if (!isToday) {
       notes.push('全部日期统一重建，快照只提供当日汇率、不再覆盖曲线数值；' +
-        '无日线的标的按现价补常量，清仓标的保留历史盈亏');
+        '缺少历史报价时按当日持仓成本估算，清仓标的保留历史盈亏');
     }
     /* 汇率口径：历史日按当日快照汇率（不随实时汇率漂移），今天用实时汇率 */
     var liveFx = (st.state && st.state.settings && st.state.settings.fx) || {};
@@ -550,9 +552,11 @@ XJ.views.networth = (function () {
     if (st.ui.fxError) notes.push('本次汇率刷新失败，仍在用上一次取到的汇率');
     if (!isToday && b.res.missing.length) {
       notes.push('有 ' + b.res.missing.length + ' 只标的没有历史行情（场外基金净值或长期停牌），' +
-        '按现价作常量计入市值，避免曲线在这些日子整块缺失');
+        '相关日期按持仓成本估算');
     }
+    if (!isToday && b.res.estimatedPrices) notes.push('部分日期的历史收盘价缺失，收益含估算');
     if (!isToday && b.res.missingFx) notes.push('部分历史日期缺少汇率，曲线只包含可折算的金额');
+    if (isToday) notes.push('分时持仓按日估算，日内成交时点可能影响收益');
     if (isToday && intradayMissing && intradayMissing.length) {
       notes.push('有 ' + intradayMissing.length + ' 只标的没有当日分时（场外基金 / 美股 / 长期停牌），' +
         '不参与逐分钟曲线' + (metric === 'nw' ? '（当日收益里按其最新市值、按币种折算作常量计入，日内不波动）' : '，未计入曲线'));
