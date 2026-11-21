@@ -114,7 +114,31 @@
     }).join('');
   }
 
+  var snapshotLoads = {};
+  function snapshotPlaceholder(page) {
+    var file = window.ziyouSnapshots && window.ziyouSnapshots[page];
+    if (!file || XJ[page + '515450']) return '';
+    if (!snapshotLoads[page]) {
+      snapshotLoads[page] = 'loading';
+      var script = document.createElement('script');
+      script.src = file.url;
+      script.integrity = file.integrity;
+      script.onload = script.onerror = function () {
+        snapshotLoads[page] = XJ[page + '515450'] ? 'ready' : 'error';
+        script.remove();
+        if (S.ui.subPage === page) render();
+      };
+      document.head.appendChild(script);
+    }
+    return snapshotLoads[page] === 'error'
+      ? '<div class="card">暂时无法读取数据 <button class="ghost-btn" data-act="retrySnapshot">重试</button></div>'
+      : '<div class="card" role="status">正在读取数据…</div>';
+  }
+  UI.on('retrySnapshot', function () { delete snapshotLoads[S.ui.subPage]; render(); });
+
   function viewHtml() {
+    var loading = snapshotPlaceholder(S.ui.subPage);
+    if (loading) return loading;
     if (S.ui.subPage && XJ.views[S.ui.subPage]) {
       try { return XJ.views[S.ui.subPage].render(); }
       catch (e) {
@@ -4627,7 +4651,7 @@
       applyTheme();          // 外观（跟随系统 / 浅 / 深）必须在首屏渲染前落地，否则会闪一下
       S.subscribe(render);
       injectManifest();
-      registerSW();
+      requestAnimationFrame(function () { setTimeout(registerSW, 0); });
 
       /* ---- 跨设备同步：挂钩 + 前后台监听（接回预留点，app.js:3626） ---- */
       XJ.sync.attach();
@@ -4685,7 +4709,9 @@
         });
       }
 
-      refreshAll({ silent: true }).then(function () { maybeShowPayoutPopup(); });
+      requestAnimationFrame(function () {
+        setTimeout(function () { refreshAll({ silent: true }).then(maybeShowPayoutPopup); }, 0);
+      });
       setInterval(function () {
         if (document.hidden) return;
         refreshAll({ silent: true });
