@@ -2946,7 +2946,7 @@
       '</div>' +
       '<div class="tiny" style="margin-top:6px">支持正数与零（送股填 0）。若成本为负，是「卖出回款超过买入支出」的结果，' +
       '系统会按所选口径自动算出，无需手填。</div></div>';
-    html += '<output id="add-holding-preview" class="holding-entry-preview" aria-live="polite">' + holdingEntryPreview(fields) + '</output>';
+    html += '<output id="add-holding-preview" class="holding-entry-preview" aria-live="polite">' + entryAmountPreview(fields, draft.symbol, 'BUY') + '</output>';
     html += '<label class="switch tiny" style="margin:4px 0 6px"><input type="checkbox" data-k="negativeCost"' +
       (draft.negative ? ' checked' : '') + '> 标记为负成本（成本已通过卖出全部收回）</label>';
     html += '</fieldset>';
@@ -2978,23 +2978,25 @@
     return html;
   }
 
-  function holdingEntryPreview(fields) {
+  function entryAmountPreview(fields, symbol, action) {
     var quantity = U.num(fields.quantity), price = U.num(fields.price);
     var fee = String(fields.fee || '').trim() ? U.num(fields.fee) : 0;
     if (!(quantity > 0) || price === null || price < 0 || fee === null || fee < 0) {
-      return '<span class="tiny">填写数量、成本价后可核对本次记账金额。</span>';
+      return '<span class="tiny">填写数量、价格后可核对本次记账金额。</span>';
     }
     var amount = quantity * price;
-    var total = amount + fee;
+    var selling = action === 'SELL';
+    var total = selling ? amount - fee : amount + fee;
     if (!isFinite(total)) return '<span class="tiny">请检查数量与金额。</span>';
-    var currency = XJ.market.currency(draft.symbol || 'sh000000');
-    return '<span>本次记账投入 <strong>' + currency + ' ' + U.money(total, 2) + '</strong></span>' +
-      '<span class="tiny">数量 × 成本价 ' + U.money(amount, 2) + ' + 费用 ' + U.money(fee, 2) + '</span>';
+    if (!symbol) return '<span class="tiny">请选择股票后核对金额。</span>';
+    var currency = XJ.market.currency(symbol);
+    return '<span>' + (selling ? '本次卖出净额' : '本次记账投入') + ' <strong>' + currency + ' ' + U.money(total, 2) + '</strong></span>' +
+      '<span class="tiny">数量 × 单价 ' + U.money(amount, 2) + (selling ? ' − 费用 ' : ' + 费用 ') + U.money(fee, 2) + '</span>';
   }
   UI.on('addHoldingPreview', function (node) {
     var sheet = node.closest('.sheet');
     var preview = sheet.querySelector('#add-holding-preview');
-    if (preview) preview.innerHTML = holdingEntryPreview(UI.readFields(sheet));
+    if (preview) preview.innerHTML = entryAmountPreview(UI.readFields(sheet), draft.symbol, 'BUY');
   });
 
   function paintAddHolding() {
@@ -3211,33 +3213,42 @@
   /* ---- 交易编辑 ---- */
   function showTxEditor(id, presetSym) {
     var tx = id ? S.state.transactions.filter(function (t) { return t.txId === id; })[0] : null;
-
-    /* 成本调整是独立的记录类型：没有数量/价格，只有一个 signed 的调整金额 */
     if (tx && tx.action === 'ADJUST') return showAdjustEditor(tx);
-
+    var symbol = tx ? tx.symbol : presetSym;
+    var currency = symbol ? XJ.market.currency(symbol) : '原币';
     var accSelected = tx ? tx.accountId : (S.acc() === C.ALL ? S.state.settings.defaultAccountId : S.acc());
-
     var html =
       UI.field('所属账户', '<select data-k="accountId">' + accountOptions(accSelected) + '</select>') +
-      UI.field('股票代码', UI.inputHtml('code', tx ? M.codeOf(tx.symbol) : (presetSym ? M.codeOf(presetSym) : ''), { placeholder: '600023', inputmode: 'numeric' })) +
-      UI.field('交易方向', '<select data-k="action">' +
+      UI.field('股票代码', UI.inputHtml('code', symbol || '', {
+        placeholder: 'sh600023 / hk00700 / usAAPL', dataInput: 'txPreview',
+      })) +
+      UI.field('交易方向', '<select data-k="action" data-input="txPreview">' +
         '<option value="BUY"' + (tx && tx.action === 'SELL' ? '' : ' selected') + '>买入 / 加仓</option>' +
-        '<option value="SELL"' + (tx && tx.action === 'SELL' ? ' selected' : '') + '>卖出 / 减仓</option>' +
-        '</select>') +
+        '<option value="SELL"' + (tx && tx.action === 'SELL' ? ' selected' : '') + '>卖出 / 减仓</option></select>') +
       '<div class="field-row">' +
-      UI.field('数量（股）', UI.inputHtml('quantity', tx ? tx.quantity : '', { inputmode: 'numeric' })) +
-      UI.field('价格（元）', UI.inputHtml('price', tx ? tx.price : '', { inputmode: 'decimal' })) +
-      '</div>' +
-      '<div class="field-row">' +
-      UI.field('手续费（元）', UI.inputHtml('fee', tx ? U.n0(tx.fee) : '0', { inputmode: 'decimal' })) +
-      UI.field('交易日期', UI.inputHtml('date', tx ? tx.date : U.today(), { type: 'date' })) +
-      '</div>' +
+      UI.field('数量（股 / 份）', UI.inputHtml('quantity', tx ? tx.quantity : '', { inputmode: 'decimal', dataInput: 'txPreview' })) +
+      '<div class="field"><label>价格（<span data-tx-currency>' + U.esc(currency) + '</span>）</label>' +
+        UI.inputHtml('price', tx ? tx.price : '', { inputmode: 'decimal', dataInput: 'txPreview' }) + '</div></div>' +
+      '<div class="field-row"><div class="field"><label>手续费（<span data-tx-currency>' + U.esc(currency) + '</span>）</label>' +
+        UI.inputHtml('fee', tx ? U.n0(tx.fee) : '0', { inputmode: 'decimal', dataInput: 'txPreview' }) + '</div>' +
+      UI.field('交易日期', UI.inputHtml('date', tx ? tx.date : U.today(), { type: 'date' })) + '</div>' +
       UI.field('备注', UI.inputHtml('note', tx ? (tx.note || '') : '', { placeholder: '可选' })) +
+      '<output id="tx-preview" class="holding-entry-preview" aria-live="polite">' +
+        entryAmountPreview(tx || {}, symbol, tx && tx.action) + '</output>' +
       '<button class="btn-block" data-act="saveTx" data-id="' + U.esc(id || '') + '">' + (tx ? '保存修改' : '保存交易') + '</button>' +
       (tx ? '<button class="btn-block danger" data-act="deleteTx" data-id="' + U.esc(id) + '">删除这笔交易</button>' : '');
-
     UI.openSheet({ title: tx ? '编辑交易' : '记一笔交易', html: html });
   }
+
+  UI.on('txPreview', function (node) {
+    var sheet = node.closest('.sheet');
+    var fields = UI.readFields(sheet);
+    var symbol = M.normalizeSymbol(fields.code);
+    sheet.querySelectorAll('[data-tx-currency]').forEach(function (label) {
+      label.textContent = symbol ? XJ.market.currency(symbol) : '原币';
+    });
+    sheet.querySelector('#tx-preview').innerHTML = entryAmountPreview(fields, symbol, fields.action);
+  });
 
   /** 「成本调整」记录的编辑器：只改金额与日期 */
   function showAdjustEditor(tx) {
@@ -3245,7 +3256,7 @@
       '<div class="field"><label>标的</label>' +
       '<div class="kv" style="padding:0"><span class="k">' + U.esc(S.symbolName(tx.symbol)) + '</span>' +
       '<span class="v">' + U.esc(XJ.market.displayCode(tx.symbol)) + '</span></div></div>' +
-      UI.field('调整金额（元，可为负）', UI.inputHtml('amount', tx.amount, { inputmode: 'decimal' })) +
+      UI.field('调整金额（' + XJ.market.currency(tx.symbol) + '，可为负）', UI.inputHtml('amount', tx.amount, { inputmode: 'decimal' })) +
       UI.field('日期', UI.inputHtml('date', tx.date, { type: 'date' })) +
       UI.field('备注', UI.inputHtml('note', tx.note || '', { placeholder: '可选' })) +
       '<button class="btn-block" data-act="saveTx" data-id="' + U.esc(tx.txId) + '" data-adjust="1">保存修改</button>' +
@@ -3647,7 +3658,7 @@
       if (!old) return UI.toast('记录不存在');
       var adj = Object.assign({}, old, {
         amount: U.num(f.amount),
-        date: f.date || old.date,
+        date: f.date,
         note: f.note || '',
       });
       var aerrs = M.validateTransaction(adj);
@@ -3664,18 +3675,23 @@
     var sym = M.normalizeSymbol(f.code);
     if (!sym) return UI.toast('股票代码格式不正确');
 
-    var tx = {
+    var previous = id ? S.state.transactions.find(function (t) { return t.txId === id; }) : null;
+    if (id && !previous) return UI.toast('记录不存在');
+    var fee = String(f.fee || '').trim() ? U.num(f.fee) : 0;
+    if (fee === null || fee < 0) return UI.toast('请输入有效的非负交易费用');
+
+    var tx = Object.assign({}, previous || {}, {
       txId: id || U.uid('tx'),
       accountId: f.accountId,
       symbol: sym,
       action: f.action === 'SELL' ? 'SELL' : 'BUY',
-      date: f.date || U.today(),
+      date: f.date,
       quantity: U.num(f.quantity),
       price: U.num(f.price),
-      fee: U.n0(f.fee),
+      fee: fee,
       note: f.note || '',
-      createdAt: U.nowStamp(),
-    };
+      createdAt: previous ? previous.createdAt : U.nowStamp(),
+    });
     var errs = M.validateTransaction(tx);
     if (errs.length) return UI.toast(errs[0]);
 
