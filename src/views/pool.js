@@ -122,10 +122,10 @@ XJ.views.pool = (function () {
   /** 股东持股情况入口：另一个独立子页，不参与本页排序 / 行情逻辑 */
   function holderEntryHtml() {
     var H = XJ.holder515450;
-    if (!H) return '';
+    if (!H && !window.ziyouSnapshots) return '';
     return '<button class="card holder-enter" data-act="holderEnter">' +
-      '<span class="he-t">股东持股情况 <b>' + U.esc(H.FUND) + '</b></span>' +
-      '<span class="he-r">' + H.rows(H.latest()).length + ' 家参股公司' +
+      '<span class="he-t">股东持股情况 <b>' + '515450' + '</b></span>' +
+      '<span class="he-r">' + (H ? H.rows(H.latest()).length + ' 家参股公司' : '查看报告') +
       '<span class="he-arrow">›</span></span></button>';
   }
 
@@ -137,6 +137,7 @@ XJ.views.pool = (function () {
   }
 
   function render() {
+    P = XJ.pool515450;
     var rows = sortedRows();
     return headHtml() +
       holderEntryHtml() +
@@ -190,7 +191,7 @@ XJ.views.pool = (function () {
   /* ---------------- 实时行情（进页一次 + 全局 60s 节拍） ---------------- */
 
   function ensureQuotes(force) {
-    if (pxPending || S.ui.subPage !== GROUP) return;
+    if (!P || pxPending || S.ui.subPage !== GROUP) return;
     if (!force && Date.now() - pxMemo.at < PX_TTL) return;
     pxPending = true;
     XJ.fetcher.fetchQuotes(P.symbols()).then(function (qs) {
