@@ -151,6 +151,17 @@ const PROBE = `
   var esheet = document.querySelector('.sheet');
   out.expenseEditor = { catButtons: esheet ? esheet.querySelectorAll('.xp-cat').length : 0,
     hiddenCat: esheet && esheet.querySelector('[data-k="category"]') ? esheet.querySelector('[data-k="category"]').value : null };
+  var cols = getComputedStyle(document.querySelector('.exp-grid')).gridTemplateColumns.split(' ').length;
+  var name = '通勤预算';
+  esheet.querySelector('[data-k="label"]').value = name;
+  esheet.querySelector('[data-k="monthlyAmount"]').value = '321';
+  esheet.querySelector('.xp-cat[data-v="quality"]').click();
+  esheet.querySelector('[data-k="enabled"]').checked = false;
+  esheet.querySelector('[data-act="saveExpenseEditor"]').click();
+  await sleep(900);
+  var saved = (await XJ.storage.load()).expenses.find(function(e){return e.label === name;});
+  out.expenseEditor.saved = cols >= 2 && saved && saved.monthlyAmount === 321 &&
+    saved.category === 'quality' && !saved.enabled && document.querySelector('.exp-grid').parentElement.parentElement.textContent.includes(name);
   XJ.ui.closeSheet();
 
   return out;
@@ -232,6 +243,7 @@ try {
   await sleep(700);
 
   const r = await browser.send('Runtime.evaluate', { expression: PROBE, awaitPromise: true, returnByValue: true }, sessionId);
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description || r.exceptionDetails.text);
   const out = r.result.value || {};
   const errs = browser.events.filter((m) => (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') || m.method === 'Runtime.exceptionThrown');
   if (errs.length) bad('控制台错误: ' + JSON.stringify(errs.slice(0, 2)).slice(0, 300)); else ok('控制台零错误');
@@ -272,7 +284,7 @@ try {
     const cv = out.covRange || {};
     if (cv.ui === '3m') ok('⑨ 覆盖率切到近三月'); else bad('覆盖率尺度切换异常 ' + JSON.stringify(cv));
     const ex = out.expenseEditor || {};
-    if (ex.catButtons === 2 && ex.hiddenCat) ok('支出编辑器含分类选择'); else bad('支出分类缺失 ' + JSON.stringify(ex));
+    if (ex.catButtons === 2 && ex.hiddenCat && ex.saved) ok('支出编辑器含分类选择'); else bad('支出分类缺失 ' + JSON.stringify(ex));
   }
 
   /* 深浅双模式截图 */
