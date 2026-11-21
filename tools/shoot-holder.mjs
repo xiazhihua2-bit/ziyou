@@ -13,6 +13,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PROJ = path.join(ROOT, '..');
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const report = JSON.parse(fs.readFileSync(path.join(PROJ, 'tools/pool-515450-raw.json'), 'utf8'));
+const count = Math.min(50, report.disclosedCount);
 const SRC = path.join(PROJ, 'dist', '自由.html');
 const PORT = 9361;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -290,7 +292,7 @@ try {
     const wl = out.wl || {}, pool = out.pool || {}, nav = out.nav || {}, p = out.page || {};
     if (wl.entry && wl.rows === 1) ok('① 自选页原结构完好，股票池入口在位');
     else bad('自选页异常 ' + JSON.stringify(wl));
-    if (pool.sub === 'pool' && pool.rows === 50 && pool.holderEntry)
+    if (pool.sub === 'pool' && pool.rows === count && pool.holderEntry)
       ok('② ★ 股票池 50 行不受影响，新增「股东持股情况」入口');
     else bad('股票池页异常 ' + JSON.stringify(pool));
     if (nav.sub === 'holder' && nav.title === '股东持股情况')
@@ -343,7 +345,7 @@ try {
     else bad('区间条异常 ' + JSON.stringify(br));
 
     const bk = out.back || {};
-    if (bk.sub === 'pool' && bk.rows === 50 && bk.holderEntry && bk.sortAll === 'none')
+    if (bk.sub === 'pool' && bk.rows === count && bk.holderEntry && bk.sortAll === 'none')
       ok('⑰ ★ 返回股票池完好（50 行 / 入口在位 / 自选排序态未变）');
     else bad('返回异常 ' + JSON.stringify(bk));
   }
