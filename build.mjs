@@ -97,10 +97,10 @@ const bundle = `(function(){\n'use strict';\n${body}\n})();`;
 const tpl = read('template.html');
 
 /** 渲染 HTML。key 传 null 表示置空（部署版） */
-function renderHtml(key, headExtra) {
+function renderHtml(key, headExtra, code = bundle) {
   const app = (key === null || key === undefined)
-    ? bundle
-    : bundle.split(KEY_PLACEHOLDER).join(key);
+    ? code
+    : code.split(KEY_PLACEHOLDER).join(key);
   return tpl
     .replace('__HEAD__', headExtra || '')
     .replace('__CSS__', () => css)
@@ -122,13 +122,25 @@ fs.mkdirSync(pwaDir, { recursive: true });
 
 /* ★ 版本号必须把 CSS 一起算进去：CSS 不在 JS bundle 里，只改样式时 bundle 的 sha1 不变，
    sw 版本号就不推进 —— 已安装 PWA 的设备会一直吃旧缓存，新样式永远到不了（实测踩过）。 */
-const version = createHash('sha1').update(bundle + css + tpl + read('assets/sw.template.js')).digest('hex').slice(0, 8);
+const snapshots = {};
+for (const name of ['pool', 'holder']) {
+  const bytes = fs.readFileSync(path.join(ROOT, 'src', name + '-515450.js'));
+  const digest = createHash('sha256').update(bytes).digest();
+  const filename = name + '-' + digest.toString('hex').slice(0, 16) + '.js';
+  fs.writeFileSync(path.join(pwaDir, filename), bytes);
+  snapshots[name] = { url: './' + filename, integrity: 'sha256-' + digest.toString('base64') };
+}
+const onlineCode = JS_FILES.filter(f => !/^src\/(pool|holder)-515450\.js$/.test(f))
+  .map(f => read(f)).join('\n');
+const onlineBundle = '(function(){\n"use strict";\n' + onlineCode + '\n})();';
 const head = [
   '<link rel="manifest" href="./manifest.webmanifest">',
   '<link rel="apple-touch-icon" href="./apple-touch-icon.png">',
+  '<script>window.ziyouSnapshots=' + JSON.stringify(snapshots) + ';</script>',
 ].join('\n');
-fs.writeFileSync(path.join(pwaDir, 'index.html'), renderHtml(null, head), 'utf8');
-
+const onlineHtml = renderHtml(null, head, onlineBundle);
+fs.writeFileSync(path.join(pwaDir, 'index.html'), onlineHtml, 'utf8');
+const version = createHash('sha1').update(onlineHtml + read('assets/sw.template.js')).digest('hex').slice(0, 8);
 const manifest = {
   name: APP_NAME,
   short_name: SHORT_NAME,
@@ -149,7 +161,9 @@ const manifest = {
 };
 fs.writeFileSync(path.join(pwaDir, 'manifest.webmanifest'), JSON.stringify(manifest, null, 2), 'utf8');
 
-const sw = read('assets/sw.template.js').replaceAll('__XJ_VERSION__', version);
+const sw = read('assets/sw.template.js').replaceAll('__XJ_VERSION__', version)
+  .replace('__XJ_SNAPSHOTS__', JSON.stringify(Object.values(snapshots)))
+  .replace('__XJ_HTML_SRI__', 'sha256-' + createHash('sha256').update(onlineHtml).digest('base64'));
 fs.writeFileSync(path.join(pwaDir, 'sw.js'), sw, 'utf8');
 
 /* 关掉 GitHub Pages 的 Jekyll 处理：部署更快、行为更可预测 */
