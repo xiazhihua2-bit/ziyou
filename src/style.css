@@ -2102,3 +2102,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .cal-note{margin-top:12px;color:var(--text-2);font-size:12px;line-height:1.7}
 .cal-note summary{cursor:pointer;padding:8px 0}
 .cal-note p{margin:4px 0 0}
+
+.holding-entry-preview{display:flex;flex-direction:column;gap:5px;padding:12px;margin:10px 0;border:1px solid var(--line);border-radius:12px;background:var(--card-2);font-size:13px;line-height:1.6}
+.holding-entry-preview strong{color:var(--blue);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
