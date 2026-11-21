@@ -428,10 +428,10 @@ XJ.views.watchlist = (function () {
 
   /** 股票池入口：独立子页，不参与本页分组 / 排序 / 行情逻辑 */
   function poolEntryHtml() {
-    if (!XJ.pool515450) return '';
+    if (!XJ.pool515450 && !window.ziyouSnapshots) return '';
     return '<button class="card pool-enter" data-act="poolEnter">' +
-      '<span class="pe-t">股票池 <b>' + U.esc(XJ.pool515450.FUND) + '</b></span>' +
-      '<span class="pe-r">' + XJ.pool515450.items().length + ' 只成分股' +
+      '<span class="pe-t">股票池 <b>' + '515450' + '</b></span>' +
+      '<span class="pe-r">' + (XJ.pool515450 ? XJ.pool515450.items().length + ' 只成分股' : '查看持仓') +
       '<span class="pe-arrow">›</span></span></button>';
   }
 
