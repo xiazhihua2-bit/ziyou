@@ -1,5 +1,5 @@
 /* ==================== Service Worker 模板 ====================
- * build.mjs 会把 ad5107dd 替换成产物内容的短 hash 后写入 dist/pwa/sw.js。
+ * build.mjs 会把 574f25d1 替换成产物内容的短 hash 后写入 dist/pwa/sw.js。
  *
  * 策略：
  *   · 导航请求（HTML）→ 当前完整版本的本机首页优先
@@ -7,7 +7,7 @@
  *   · 跨域请求一律不拦截（行情/分红/搜索/OCR 必须实时，缓存它们只会给出过期数据）
  * 注意：SW 缓存的是**应用外壳**，与 IndexedDB 里的持仓数据无关，不会影响记录。
  */
-const VERSION = 'ad5107dd';
+const VERSION = '574f25d1';
 const PREFIX = 'ziyou:' + self.registration.scope + ':';
 const CACHE = PREFIX + VERSION;
 const SNAPSHOTS = JSON.parse('[{"url":"./pool-015e586e23fc8d74.js","integrity":"sha256-AV5YbiP8jXTdykzHNQuJSiPqYY3F4SX1DZTNatjtJiY="},{"url":"./holder-f930c332acdeda69.js","integrity":"sha256-+TDDMqze2mlxqv+pX6WVn7V/BF9NHNYB7ihGRgmijWc="}]');
@@ -17,7 +17,7 @@ const SHELL = ['./manifest.webmanifest', './icon-192.png', './icon-512.png',
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
-    const resources = [{url:'./index.html', integrity:'sha256-rYN1NIl0LIqGyqW1ttcPP95nqUjlJj3NE9awCtHNPJk='}, ...SNAPSHOTS];
+    const resources = [{url:'./index.html', integrity:'sha256-dU/ivG7WolDKk4ukxy3j8vG/tkOWSyhw7PvCWtW/wgs='}, ...SNAPSHOTS];
     await Promise.all(resources.map(async asset => {
       const res = await fetch(new URL(asset.url, self.registration.scope),
         {cache:'reload', integrity:asset.integrity});
