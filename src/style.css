@@ -2085,3 +2085,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focu
 .recent-div .recent-event:active{background:var(--blue-soft)}
 .recent-div .recent-event svg{flex-shrink:0;color:var(--text-3)}
 @media(prefers-reduced-motion:no-preference){.holding-search{transition:border-color .16s,box-shadow .16s}}
+
+.calendar-types{display:flex;flex-wrap:nowrap;overflow:auto;gap:6px}
+.calendar-types .chip{flex-shrink:0;min-height:40px;padding:7px 12px}
+.calendar-types .chip span{opacity:.7;font-variant-numeric:tabular-nums}
+.calendar-event-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cal-day-group{margin-bottom:16px}
+.cal-day-group h3{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:13px;margin:0 2px 8px;font-weight:650}
+.cal-day-group h3 span{color:var(--text-2);font-size:12px;font-weight:400}
+.calendar-event{align-items:flex-start}
+.calendar-event .row-s{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.6;overflow-wrap:anywhere}
+.calendar-event .row-t{flex-wrap:wrap}
+.calendar-event .row-right{max-width:36%}
+.calendar-event .row-v{overflow-wrap:anywhere}
+.calendar-empty{text-align:center;padding:18px}
+.cal-note{margin-top:12px;color:var(--text-2);font-size:12px;line-height:1.7}
+.cal-note summary{cursor:pointer;padding:8px 0}
+.cal-note p{margin:4px 0 0}
