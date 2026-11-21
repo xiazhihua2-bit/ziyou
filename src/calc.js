@@ -167,10 +167,11 @@ XJ.calc = (function () {
   function yieldFiscalSteps(plans) {
     var byYear = {};
     (plans || []).forEach(function (p) {
-      if (!p) return;
+      if (!p || /取消/.test(p.assignProgress) || p.source === 'fund' || p.source === 'us') return;
       var y = reportYear(p);
       if (!y) return;
-      if (!byYear[y]) byYear[y] = { sum: 0, annual: [] };
+      if (!byYear[y]) byYear[y] = { sum: 0, annual: [], unknown: false };
+      if (p.amountUnknown || U.num(p.pretaxBonusPer10) === null) byYear[y].unknown = true;
       byYear[y].sum += perSharePretax(p);
       if (isAnnualReport(p)) byYear[y].annual.push(p);
     });
@@ -179,8 +180,8 @@ XJ.calc = (function () {
     Object.keys(byYear).forEach(function (key) {
       var y = U.num(key);
       var g = byYear[key];
-      if (!y || !g.annual.length) return;          // 没有年报的财年不作候选
-      if (!(g.sum > 0)) return;                    // 该财年一分钱都没派 → 不参与（股息率 0 无意义）
+      if (!y || g.unknown || !g.annual.length) return;          // 没有年报的财年不作候选
+      if (!g.sum && !g.annual.some(function (p) { return p.pretaxBonusPer10 === 0 && !p.amountUnknown; })) return;                    // 该财年一分钱都没派 → 不参与（股息率 0 无意义）
       /* 生效日取该财年最早一条年报方案的公告日；缺则沿退化链往下找 */
       var best = null;
       g.annual.forEach(function (p) {
@@ -196,6 +197,31 @@ XJ.calc = (function () {
     return out;
   }
 
+  function fiscalTimeline(plans) {
+    var notices = [];
+    (plans || []).forEach(function (p, key) {
+      var versions = (p.fiscalHistory || []).concat([p]);
+      versions.forEach(function (v) {
+        var date = v.fiscalEffective || v.planNoticeDate || v.noticeDate || v.equityRecordDate || v.exDividendDate;
+        if (date) notices.push({ date: date, key: key, plan: v });
+      });
+    });
+    notices.sort(function (a, b) { return a.date.localeCompare(b.date); });
+    var known = {}, out = [];
+    notices.forEach(function (n, index) {
+      known[n.key] = n.plan;
+      if (index + 1 < notices.length && notices[index + 1].date === n.date) return;
+      var years = yieldFiscalSteps(Object.values(known));
+      var last = years[years.length - 1], prev = out[out.length - 1];
+      if (last && (!prev || prev.year !== last.year || prev.perShare !== last.perShare)) {
+        out.push({ year: last.year, perShare: last.perShare, effectiveFrom: n.date });
+      } else if (!last && prev && prev.perShare !== null) {
+        out.push({ year: null, perShare: null, effectiveFrom: n.date });
+      }
+    });
+    return out;
+  }
+
   /**
    * 股息率时间序列。
    * @param plans  该标的的全部 DividendPlan（含预案）
@@ -206,7 +232,7 @@ XJ.calc = (function () {
    * 所以曲线上的「台阶」位置就是各年年报的公告日，这是符合预期且可验证的。
    */
   function dividendYieldSeries(plans, closes) {
-    var steps = yieldFiscalSteps(plans);
+    var steps = fiscalTimeline(plans);
     if (!steps.length) return [];
     var list = closes || [];
     var out = [];
@@ -221,6 +247,7 @@ XJ.calc = (function () {
       while (si + 1 < steps.length && steps[si + 1].effectiveFrom <= d) si++;
       if (si < 0) continue;                        // 还没到任何一个财年的生效日
       var s = steps[si];
+      if (s.perShare === null) continue;
       out.push({ date: d, y: s.perShare / c * 100, year: s.year });
     }
     return out;
@@ -345,8 +372,8 @@ XJ.calc = (function () {
    * @return {Number|null} 无方案 / 无有效价 → null
    */
   function yieldNow(plans, price, today) {
-    var s = yieldStepOn(yieldFiscalSteps(plans), String(today || '').slice(0, 10));
-    if (!s) return null;
+    var s = yieldStepOn(fiscalTimeline(plans), String(today || '').slice(0, 10));
+    if (!s || s.perShare === null) return null;
     var p = U.num(price);
     if (p === null || !(p > 0)) return null;
     return s.perShare / p * 100;
@@ -377,10 +404,10 @@ XJ.calc = (function () {
     var from = shiftYearsBack(today, years);
     if (!from) return null;
 
-    var steps = yieldFiscalSteps(plans);
+    var steps = fiscalTimeline(plans);
     if (!steps.length) return null;
     var curStep = yieldStepOn(steps, today);
-    if (!curStep) return null;
+    if (!curStep || curStep.perShare === null) return null;
 
     var list = closes || [];
     var vals = [];
@@ -396,7 +423,7 @@ XJ.calc = (function () {
       if (c === null || !(c > 0)) continue;
       lastClose = c; lastDate = d;
       while (si + 1 < steps.length && steps[si + 1].effectiveFrom <= d) si++;
-      if (si < 0 || d < from) continue;            // 财年生效日之前的点无股息率可言
+      if (si < 0 || steps[si].perShare === null || d < from) continue;            // 财年生效日之前的点无股息率可言
       var y = steps[si].perShare / c * 100;
       vals.push(y);
       if (min === null || y < min) { min = y; minDate = d; }
@@ -589,6 +616,7 @@ XJ.calc = (function () {
       var yldPerShare = annual.perShare > 0 ? annual.perShare : ttm;
       var dividendYield = (price && price > 0 && yldPerShare > 0) ? yldPerShare / price * 100 : null;
 
+      if (XJ.market.dividendSource(sym) === 'cn' || XJ.market.dividendSource(sym) === 'hk') dividendYield = yieldNow(plans, price, today);
       var predictedDividend = pos.qty * annual.perShare;
 
       /* 成本息率：成本为负（已回本）时不显示百分比 */
@@ -2376,6 +2404,10 @@ XJ.calc = (function () {
 
     /* 首笔交易之前不该有市值 */
     var firstTx = txs.map(function (t) { return t.date; }).sort()[0];
+    if (opts.periodPerformance) {
+      txs.forEach(function (t) { dateSet[t.date] = true; });
+      state.received.forEach(function (r) { if (r.exDividendDate && (acc === ALL || r.accountId === acc)) dateSet[r.exDividendDate] = true; });
+    }
     var snapDates = state.snapshots ? Object.keys(state.snapshots) : [];
     snapDates.forEach(function (d) { dateSet[d] = true; });   // 快照日期也纳入（可能有 K 线没有的日期）
 
@@ -2456,6 +2488,7 @@ XJ.calc = (function () {
     }
 
     var series = [], missingFx = false;
+    var investedCny = 0, estimatedPrices = false;
     var prevNetLocal = {};   // sym -> 上一个曲线日的【原币】累计净投入
     for (var i = 0; i < dates.length; i++) {
       var d = dates[i];
@@ -2482,7 +2515,8 @@ XJ.calc = (function () {
         if (pos.qty <= 0) return;
         /* 无日线标的（美股裸代码只回 1 根、场外基金没净值）：按现价 /
            最近一根日线价 / 当日均价补一个常量市值，绝不整只标的从历史日消失。 */
-        var usePx = px === null
+        if (opts.periodPerformance && px === null) estimatedPrices = true;
+        var usePx = opts.periodPerformance && px === null ? U.n0(pos.avgCost) : px === null
           ? (info.fallbackPrice !== null ? info.fallbackPrice : U.n0(pos.avgCost))
           : px;
         if (!(usePx > 0)) return;
@@ -2490,7 +2524,8 @@ XJ.calc = (function () {
         cost += pos.costBasis * rate;
         hasAny = true;
       });
-      if (!hasAny && !net && !recv) continue;
+      if (opts.periodPerformance) { investedCny += flow; net = investedCny; }
+      if (!hasAny && !net && !recv && !flow) continue;
 
       /* ★ 统一重建：不再用快照 mv/cost/net/recv 覆盖任何一天。
          快照的 mv 是「全部持仓 × 实时价」，过去 K 线重建只算「有日线的标的 × 收盘价」，
@@ -2511,7 +2546,10 @@ XJ.calc = (function () {
         source: snap ? 'snapshot' : 'kline',   // 仅标记「当日有快照」，数值一律重建
       });
     }
-    return { series: series, missing: missing, used: used, missingFx: missingFx };
+    if (opts.periodPerformance && series.length && series[0].date === firstTx) {
+      series.unshift({ date: U.addDays(firstTx, -1), mv: 0, net: 0, cost: 0, recv: 0, flow: 0, nw: 0 });
+    }
+    return { series: series, missing: missing, used: used, missingFx: missingFx, estimatedPrices: estimatedPrices };
   }
 
   /** 日/月粒度降采样：月粒度取每月最后一个点 */
@@ -2618,7 +2656,8 @@ XJ.calc = (function () {
       } else {
         /* 优先用 marketValueSeries 给出的「真实交易现金流」；老序列没有 flow 时回退到净投入差分 */
         var flow = (p.flow === undefined || p.flow === null) ? (net - prevNet) : U.n0(p.flow);
-        var r = prevV > 1e-6 ? (V - prevV - flow) / prevV : 0;
+        var base = prevV > 1e-6 ? prevV : flow;
+        var r = base > 1e-6 ? (V - prevV - flow) / base : 0;
         if (!isFinite(r)) r = 0;
         idx = idx * (1 + r);
         out.push({ date: p.date, idx: Math.round(idx * 1e8) / 1e8, mv: p.mv, net: net, recv: p.recv });
