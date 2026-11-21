@@ -190,6 +190,19 @@ const PROBE = `(async () => {
     debug: XJ.views.holder.debug(),
   };
 
+  var row = document.querySelector('[data-act="holderOpenSymbol"]');
+  if (row) {
+    row.scrollIntoView({block:'center'});
+    await sleep(150);
+    var holderY = window.scrollY;
+    row.click();
+    await sleep(250);
+    if (XJ.store.ui.subPage !== 'symbol' || window.scrollY !== 0) throw Error('股东页进入个股详情位置错误');
+    history.back();
+    await sleep(300);
+    if (XJ.store.ui.subPage !== 'holder' || Math.abs(window.scrollY - holderY) > 12) throw Error('股东页返回位置丢失');
+  }
+
   /* ⑧ 返回股票池：history.back() 走 navTo 返回栈 */
   history.back(); await sleep(400);
   if (XJ.store.ui.subPage === 'holder') XJ.store.setUI({ subPage: 'pool' });
